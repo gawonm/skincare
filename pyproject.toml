@@ -1,0 +1,52 @@
+[project]
+name = "alembic-singledb"
+version = "0.1.0"
+description = "RAG backend on a single PostgreSQL database managed by Alembic"
+readme = "README.md"
+authors = [
+    { name = "421079a", email = "421079a@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.19.2",
+    "asyncpg>=0.31.0",
+    "fastapi>=0.141.1",
+    "langchain>=1.4.0",
+    "langchain-community>=0.4.2",
+    "langchain-core>=1.6.2",
+    "langchain-openai>=1.6.0",
+    "langchain-text-splitters>=1.1.2",
+    "pgvector>=0.5.0",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
+    "redis>=8.1.0",
+    "sqlalchemy[asyncio]>=2.0.52",
+    "uvicorn[standard]>=0.52.4",
+]
+
+# 이 저장소는 배포용 라이브러리가 아니라 실행하는 애플리케이션이다.
+# 패키지로 빌드하지 않으므로 build-system 과 project.scripts 를 두지 않는다.
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "pyrefly>=1.2.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.6",
+]
+
+# 이 프로젝트는 패키지로 설치하지 않으므로, 테스트가 core/ backend/ agent/ 를
+# 찾을 수 있도록 루트 디렉터리를 import 경로에 넣어 준다.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+# 기존 코드가 한 줄 100자 기준으로 쓰여 있어 그 폭을 그대로 쓴다.
+# 88자(ruff 기본값)로 두면 멀쩡한 코드가 한꺼번에 줄바꿈되어 변경 이력이 지저분해진다.
+[tool.ruff]
+line-length = 100
