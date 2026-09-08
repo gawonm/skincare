@@ -31,6 +31,8 @@ winget install Docker.DockerDesktop
 # 1) 파이썬 패키지 설치. .venv 가 자동으로 만들어진다.
 uv sync --dev
 
+uv tool install rust-just
+
 # 2) 커밋 전 자동 검사 설치 (git 저장소여야 한다)
 uv run pre-commit install
 
