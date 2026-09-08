@@ -1,0 +1,56 @@
+# 파이썬이 만드는 파일
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# 가상 환경
+.venv/
+.venv*/
+
+# 비밀 값이 들어가는 설정 파일. 절대 커밋하지 않는다.
+# 대신 값이 비어 있는 config.yaml.sample 과 .env.example 을 커밋한다.
+config.yaml
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 검사와 테스트 도구가 만드는 캐시
+.pytest_cache/
+.ruff_cache/
+.pyrefly_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# 에디터, 운영체제
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# 로컬에서만 쓰는 파일
+*.log
+*.sqlite3
+*.db
+tmp/
+scratch/
+
+# 프론트엔드 (스택을 정한 뒤 필요하면 더 넣는다)
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/.next/
+
+# RAG 관련 로컬 데이터. 용량이 크고 다시 만들 수 있으므로 커밋하지 않는다.
+data/
+uploads/
+models_cache/
+*.faiss

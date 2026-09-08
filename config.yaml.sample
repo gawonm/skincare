@@ -1,0 +1,26 @@
+# config.yaml.sample -> config.yaml 으로 복사한 뒤 실제 값을 넣는다.
+# config.yaml 은 반드시 .gitignore 에 넣는다.
+
+database:
+  # SQLAlchemy async URL. 런타임 연결이자 마이그레이션 대상이다.
+  url: postgresql+asyncpg://app:app@localhost:5432/app
+
+  # Alembic autogenerate 전에 import 할 모델 모듈. 여기에 없는 모델은
+  # metadata 에 올라오지 않아 마이그레이션에 나타나지 않는다.
+  # models/ 에 파일을 추가할 때마다 여기에도 모듈 경로를 추가한다.
+  model_modules:
+    - models.document
+    - models.chunk
+
+# 블록 전체를 지우면 아래 기본값이 그대로 쓰인다.
+redis:
+  url: redis://localhost:6379/0
+  # 연결 풀이 동시에 여는 최대 연결 수.
+  max_connections: 20
+  # True 면 응답이 str, False 면 bytes.
+  decode_responses: true
+
+# 블록 전체를 지우면 아래 기본값이 그대로 쓰인다.
+app:
+  # OpenAPI 문서와 /docs 상단에 표시되는 이름.
+  title: alembic-singledb

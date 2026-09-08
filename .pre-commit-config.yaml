@@ -1,0 +1,65 @@
+# 커밋할 때 자동으로 도는 검사 목록.
+# 처음 한 번만 `uv run pre-commit install` 을 실행하면 그다음부터는 커밋할 때 알아서 돈다.
+# 전체 파일을 한 번에 검사하려면 `uv run pre-commit run --all-files`.
+
+# 검사하지 않을 경로.
+# migrations 는 Alembic 이 자동 생성하는 파일이라 형식을 강제하지 않는다.
+exclude: '^migrations/|^docs/|devcontainer\.json'
+default_stages: [pre-commit]
+minimum_pre_commit_version: "3.2.0"
+
+default_language_version:
+  python: python3.13
+
+repos:
+  # 언어와 무관한 기본 검사. 공백, 줄바꿈, 파일 형식, 실수로 커밋한 비밀키 등.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-json
+      - id: check-toml
+      - id: check-xml
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: debug-statements       # 지우지 않고 남긴 breakpoint() 를 잡는다
+      - id: check-builtin-literals
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: detect-private-key
+
+  # 아래 세 개는 이미 설치된 개발 의존성을 그대로 쓴다.
+  # pre-commit 이 따로 환경을 만들지 않으므로 버전이 pyproject.toml 과 항상 같다.
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix --exit-non-zero-on-fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: pyrefly
+        name: pyrefly
+        entry: uv run pyrefly check
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+        require_serial: true
+
+# pre-commit.ci 는 원격 훅 버전만 올려 준다.
+# local 훅은 uv 환경이 필요해서 CI 에서는 건너뛴다.
+ci:
+  autoupdate_schedule: weekly
+  skip: [ruff-check, ruff-format, pyrefly]
+  submodules: false
