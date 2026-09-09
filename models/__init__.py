@@ -7,3 +7,17 @@
 
 의존: `core` 만 import 한다.
 """
+
+from models.evidence import Evidence, EvidenceRegulateType, EvidenceSourceType, EvidenceTopic
+from models.ingredient import IngredientMaster
+from models.ingredient_knowledge import IngredientKnowledgeFact, RegulatoryConfidence
+
+__all__ = [
+    "Evidence",
+    "EvidenceRegulateType",
+    "EvidenceSourceType",
+    "EvidenceTopic",
+    "IngredientKnowledgeFact",
+    "IngredientMaster",
+    "RegulatoryConfidence",
+]

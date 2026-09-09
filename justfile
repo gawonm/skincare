@@ -1,5 +1,5 @@
-# Windows PowerShell 기준. POSIX 셸이면 아래 한 줄을 지운다.
-set shell := ["powershell", "-NoLogo", "-NoProfile", "-Command"]
+# Windows 에서만 PowerShell 을 쓴다. macOS/Linux 는 just 기본값(sh)을 그대로 쓴다.
+set windows-shell := ["powershell", "-NoLogo", "-NoProfile", "-Command"]
 
 # Alembic 명령 실행. 예: `just migrate upgrade head`, `just migrate downgrade -1`.
 migrate +args:

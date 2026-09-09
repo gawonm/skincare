@@ -26,6 +26,7 @@ alembic-singledb/
 │   ├── services/          #   업무 로직. agent 호출 + 트랜잭션
 │   └── repositories/      #   DB 조회/저장 쿼리
 ├── frontend/              # 아직 미정
+├── scripts/               # 일회성 데이터 적재/ETL. 원본 파일 → models/ 테이블
 ├── examples/models/       # 모델 작성 예시 (참고용)
 └── tests/
 ```
@@ -62,6 +63,9 @@ tools  →  core
   한쪽 안에 두면 반대쪽이 상대를 import 하게 되어 방향이 꺾인다.
 - SQLAlchemy 쿼리는 `repositories/` 에만 쓴다. `api/` 와 `services/` 에서는 쓰지 않는다.
 - commit 은 `services/` 에서만 한다. 리포지토리는 조회와 저장만 하고 트랜잭션을 끝내지 않는다.
+- `scripts/` 는 웹 요청 경로(`backend`)나 에이전트 도구(`agent/tools`)와 분리된 일회성
+  데이터 적재용이다. PDF·엑셀 등 원본 파일을 파싱해 `models/` 테이블에 적재하는 코드가
+  여기 들어간다. `core`, `models` 만 import 하고 `backend`, `agent` 는 import 하지 않는다.
 
 ## 새 모델을 추가할 때
 

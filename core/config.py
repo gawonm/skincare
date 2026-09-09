@@ -21,6 +21,21 @@ from core.database import DatabaseConfig
 from core.redis import RedisConfig
 
 
+class MfdsConfig(PydanticBaseModel):
+    """`config.yaml`의 `mfds` 블록. 공공데이터포털 식약처 OpenAPI 인증 정보.
+
+    서비스키는 비밀값이라 `.env`가 아니라 여기(`config.yaml`, gitignore 대상)에 둔다.
+    이 프로젝트의 설정 소스는 `config.yaml` 하나뿐이라는 원칙을 따른 것이다.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    service_key: Annotated[str, Field(min_length=1)]
+    base_url: Annotated[str, Field(min_length=1)] = (
+        "https://apis.data.go.kr/1471000/CsmtcsUseRstrcInfoService"
+    )
+
+
 class AppConfig(PydanticBaseModel):
     """`config.yaml`의 `app` 블록.
 
@@ -46,6 +61,8 @@ class Settings(BaseSettings):
     redis: RedisConfig = RedisConfig()
     # `app` 블록이 없으면 기본 제목을 쓴다.
     app: AppConfig = AppConfig()
+    # `mfds` 블록이 없으면 None. MFDS 연동 스크립트를 실행할 때만 필요하다.
+    mfds: MfdsConfig | None = None
 
     @classmethod
     def settings_customise_sources(
