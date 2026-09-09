@@ -88,20 +88,28 @@ uv run pyrefly check .  → 전체 0 에러
 uv run pytest                # 기본 실행 - integration 제외
 tests/db/test_mfds_replace_rollback.py .. (2)
 tests/db/test_rag_chunk_repository_sync.py ....... (7)
+tests/db/test_rag_query_service_search_symmetry.py . (1)  # 청크ID·점수 단위 순서대칭성, OpenAI 불필요
 tests/unit/test_condition_preservation_checker.py ..... (5)
 tests/unit/test_field_chunker.py .. (2)
-tests/unit/test_hybrid_retriever.py ... (3)
+tests/unit/test_hybrid_retriever.py .... (4)
 tests/unit/test_ingredient_mention_resolver.py .... (4)
 tests/unit/test_question_intent_classifier.py ..... (5)
-= 28 passed =
+= 30 passed =
 
 uv run pytest -m integration  # 실제 OpenAI 호출 포함
 tests/integration/test_rag_query_flow.py .... (4)
-tests/integration/test_rag_query_service.py ..... (5)  # 순서 대칭성, 개별답변 문맥누출 없음 포함
-= 9 passed =
+tests/integration/test_rag_query_service.py ......... (9)  # 순서대칭성 최종판정·개별답변 문맥누출 없음·자유텍스트 관련성(검증셋 4건) 포함
+= 13 passed =
 ```
 
-기본 28 + integration 9 = 총 37개.
+기본 30 + integration 13 = 총 43개.
+
+**자유 텍스트 관련성 판정** (`RagQueryService._answer_free_text`): 성분이 특정 안 된 질문은
+코사인 유사도 원점수가 임계값(0.45)을 못 넘기면 신뢰도 높은 자료가 검색됐어도 LLM 호출
+없이 `NOT_RELEVANT_TO_QUESTION`을 반환한다. 임계값은 튜닝셋(관련 3문항/무관 3문항)으로
+정하고, 튜닝에 안 쓴 별도 검증셋(관련 2/무관 2)으로 4/4 확인했다 - 같은 세트로 정하고
+검증하면 의미가 없어서 분리했다. "오늘 날씨/주식시장/자동차" 같은 질문은 이제 보류되고,
+"피부 처짐/지성 피부 성분" 같은 질문은 정상 답변된다.
 
 DB 테스트는 SAVEPOINT 격리(`tests/conftest.py`)라 로컬 개발 DB(위 65,196청크)를 건드리지 않는다
 — 매 테스트 후 롤백되는 걸 실제로 확인했다(대량 삭제·삽입을 하는 MFDS 롤백 테스트 전후로
@@ -121,7 +129,6 @@ DB 테스트는 SAVEPOINT 격리(`tests/conftest.py`)라 로컬 개발 DB(위 65
 | 항목 | 상태 |
 |---|---|
 | 조건보존 검사 | 정규식 기반 휴리스틱(%, 국가명). "이하/이상/제외" 같은 정성적 조건, 나이·용도 조건은 못 잡음 |
-| 자유 텍스트(성분 미특정) 질문의 관련성 | intents가 비면 티어 판정만 함 - "오늘 날씨"가 우연히 `ONLY_AI_GENERATED_AVAILABLE`로 걸린 것도 운이 좋았을 뿐, 임계값 기반 관련성 판정은 없음 |
 | 전체 동기화(문서 자체가 사라진 경우) | `sync_documents`는 "문서 안의 필드가 줄어든" 경우는 처리하지만, "문서(예: 특정 Evidence row)가 소스에서 통째로 사라졌는데 그 사실을 fetched_refs로 어떻게 알려줄지"는 호출부(rag_ingestion_service)가 아직 소스 테이블 전체와 diff하는 로직을 안 짜뒀음 - 지금은 Evidence는 MFDS 전량교체로, Knowledgedata/NIA는 매번 전체 재조회라 실질적 문제는 없지만 명시적으로 짜진 않음 |
 | CIR 2단계(개별 성분 스크래핑) | 미착수. 포털만 있고 벌크 API 없어서 이용약관 확인 먼저 필요 |
 | 커버리지 문서(`docs/rag_coverage_mvp.md`) | 글라이콜릭애씨드 권장농도 셀 수치 직접 파싱 확인 안 함 |
@@ -143,8 +150,7 @@ DB 테스트는 SAVEPOINT 격리(`tests/conftest.py`)라 로컬 개발 DB(위 65
 
 ## 7. 다음에 할 일 (우선순위)
 
-1. 자유 텍스트 질문 관련성 판정 — 지금은 사실상 무방비. 평가셋으로 임계값/판정 기준을 정하고,
-   임계값 정하는 세트와 최종 검증 세트를 분리해야 한다(같은 세트로 정하고 검증하면 의미 없음).
+1. ~~자유 텍스트 질문 관련성 판정~~ — 완료(2026-09-10, 4.3절 참고).
 2. 전체 동기화 경계를 명시적으로 짜기 — "이 소스에서 이 문서가 완전히 사라졌다"를 판단하는
    경로를 rag_ingestion_service에 만들기(지금은 Evidence만 전량교체라 우회하고 있음).
 3. 조건보존 검사 고도화 — 정규식 토큰 매칭 말고 더 일반적인 조건 누락 탐지.
