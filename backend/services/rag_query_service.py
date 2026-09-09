@@ -26,15 +26,21 @@ from agent.rag.schemas import (
     IngredientVerificationResult,
     PerIngredientResult,
     RagQueryResult,
+    RetrievedChunk,
     UnverifiableReason,
 )
 from backend.repositories.ingredient_master_repository import IngredientMasterRepository
 from backend.repositories.rag_chunk_repository import RagChunkRepository
-from models.rag_chunk import RagChunk
 
 # 검색 결과 개수. HybridRetriever.fuse의 top_k와 동일한 의미로, 벡터/BM25 각각 이만큼 뽑아
 # RRF로 합친다.
 _DEFAULT_TOP_K = 8
+
+# 조합 질문에서 개별 성분 결과를 낼 때 쓰는 질문 텍스트. 원본 질문("A랑 B 같이 써도
+# 되나요?")을 그대로 쓰면 LLM이 그 문맥을 보고 개별 답변에서도 병용 가능성을 암묵적으로
+# 언급할 위험이 있다(2026-09-10 지적 반영) - 병용 판정은 반드시 combination 결과에서만
+# 나와야 하므로, 개별 결과는 성분 하나만 두고 묻는 중립적인 질문으로 완전히 바꾼다.
+_INDIVIDUAL_QUESTION_TEMPLATE = "{ingredient_name}의 효능과 주의사항이 무엇인가요?"
 
 
 class RagQueryService:
@@ -78,7 +84,9 @@ class RagQueryService:
         per_ingredient: list[PerIngredientResult] = []
         resolved_ids: list[UUID] = []
         for mention in mentions:
-            per_ingredient.append(await self._resolve_one(question, mention, intents))
+            per_ingredient.append(
+                await self._resolve_one(question, mention, intents, is_combination_intent)
+            )
             if not mention.ambiguous and mention.ingredient_id is not None:
                 resolved_ids.append(mention.ingredient_id)
 
@@ -95,6 +103,7 @@ class RagQueryService:
         question: str,
         mention: IngredientMentionResolution,
         intents: tuple[QuestionIntent, ...],
+        is_combination_intent: bool,
     ) -> PerIngredientResult:
         if mention.ambiguous or mention.ingredient_id is None:
             return PerIngredientResult(
@@ -105,8 +114,15 @@ class RagQueryService:
                     unverifiable_reason=UnverifiableReason.AMBIGUOUS_INGREDIENT,
                 ),
             )
+        # 조합 질문이면 원본 질문("A랑 B 같이 써도 되나요?") 대신 중립적인 단일 성분
+        # 질문으로 바꿔서 검색·생성한다 - 개별 답변에 병용 문맥이 새어 들어가지 않게 한다.
+        individual_question = (
+            _INDIVIDUAL_QUESTION_TEMPLATE.format(ingredient_name=mention.matched_text)
+            if is_combination_intent
+            else question
+        )
         result = await self._search_and_generate(
-            question,
+            individual_question,
             ingredient_ids=[mention.ingredient_id],
             intents=intents,
             is_combination_question=False,
@@ -122,35 +138,37 @@ class RagQueryService:
         intents: tuple[QuestionIntent, ...],
         is_combination_question: bool,
     ) -> IngredientVerificationResult:
-        query_vector = self._embedder.embed_query(question)
-        vector_results = await self._search_by_vector(list(query_vector), ingredient_ids)
-        bm25_results = await self._search_by_bm25(question, ingredient_ids)
-        retrieved = self._retriever.fuse(vector_results, bm25_results, self._top_k)
+        retrieved = await self._search(question, ingredient_ids)
         return self._generator.generate(
             question, retrieved, intents=intents, is_combination_question=is_combination_question
         )
 
-    async def _search_by_vector(
-        self, query_vector: list[float], ingredient_ids: list[UUID] | None
-    ) -> list[RagChunk]:
-        if not ingredient_ids:
-            return await self._repo.search_by_vector(query_vector, self._top_k, ingredient_id=None)
-        # 리포지토리는 성분 하나로만 좁히는 검색만 지원한다(단일 성분 질문이 압도적으로
-        # 많아서 그게 기본 경로다) - 조합 질문처럼 여러 성분이 필요하면 성분마다 따로
-        # 검색해 여기서 합친다.
-        results: list[RagChunk] = []
-        for ingredient_id in ingredient_ids:
-            results.extend(
-                await self._repo.search_by_vector(query_vector, self._top_k, ingredient_id)
-            )
-        return results
-
-    async def _search_by_bm25(
+    async def _search(
         self, question: str, ingredient_ids: list[UUID] | None
-    ) -> list[RagChunk]:
-        if not ingredient_ids:
-            return await self._repo.search_by_bm25(question, self._top_k, ingredient_id=None)
-        results: list[RagChunk] = []
+    ) -> list[RetrievedChunk]:
+        query_vector = list(self._embedder.embed_query(question))
+
+        if not ingredient_ids or len(ingredient_ids) == 1:
+            ingredient_id = ingredient_ids[0] if ingredient_ids else None
+            vector_results = await self._repo.search_by_vector(
+                query_vector, self._top_k, ingredient_id
+            )
+            bm25_results = await self._repo.search_by_bm25(question, self._top_k, ingredient_id)
+            return self._retriever.fuse(vector_results, bm25_results, self._top_k)
+
+        # 복수 성분(조합 질문): 성분마다 따로 검색해서 각자 fuse부터 끝낸다. RRF 점수는
+        # 그 성분 내부 순위(1..top_k)만으로 계산되므로 성분별로 독립적으로 비교 가능한
+        # 척도다 - 이렇게 하면 "성분을 나열한 순서"가 최종 순위에 영향을 주지 않는다.
+        # (예전엔 성분별 원시 결과를 이어붙인 뒤 통째로 fuse해서, 리스트 뒤쪽 성분의
+        # 실제 1등 결과가 앞쪽 성분 결과들 뒤로 밀려 순위가 밀리는 편향이 있었다 -
+        # 2026-09-10 지적으로 발견.)
+        merged: list[RetrievedChunk] = []
         for ingredient_id in ingredient_ids:
-            results.extend(await self._repo.search_by_bm25(question, self._top_k, ingredient_id))
-        return results
+            vector_results = await self._repo.search_by_vector(
+                query_vector, self._top_k, ingredient_id
+            )
+            bm25_results = await self._repo.search_by_bm25(question, self._top_k, ingredient_id)
+            merged.extend(self._retriever.fuse(vector_results, bm25_results, self._top_k))
+
+        merged.sort(key=lambda chunk: chunk.fused_score or 0.0, reverse=True)
+        return merged[: self._top_k]
