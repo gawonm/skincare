@@ -11,6 +11,13 @@
 from models.evidence import Evidence, EvidenceRegulateType, EvidenceSourceType, EvidenceTopic
 from models.ingredient import IngredientMaster
 from models.ingredient_knowledge import IngredientKnowledgeFact, RegulatoryConfidence
+from models.product_ingredient import (
+    IngredientMatchAcceptance,
+    ProductIngredient,
+    ProductIngredientSectionLinkStatus,
+    ProductIngredientSnapshot,
+    ProductIngredientTokenParseStatus,
+)
 from models.rag_chunk import (
     EMBEDDING_DIMENSION,
     RagChunk,
@@ -27,6 +34,11 @@ __all__ = [
     "EvidenceTopic",
     "IngredientKnowledgeFact",
     "IngredientMaster",
+    "IngredientMatchAcceptance",
+    "ProductIngredient",
+    "ProductIngredientSectionLinkStatus",
+    "ProductIngredientSnapshot",
+    "ProductIngredientTokenParseStatus",
     "RagChunk",
     "RagChunkField",
     "RagConfidenceTier",

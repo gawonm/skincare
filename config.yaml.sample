@@ -12,6 +12,7 @@ database:
     - models.evidence
     - models.ingredient
     - models.ingredient_knowledge
+    - models.product_ingredient
     - models.rag_chunk
 
 # 블록 전체를 지우면 아래 기본값이 그대로 쓰인다.

@@ -35,6 +35,8 @@ htmlcov/
 Thumbs.db
 Desktop.ini
 ehthumbs.db
+.DS_Store
+.Rhistory
 
 # 로컬에서만 쓰는 파일
 *.log
