@@ -7,7 +7,7 @@ from datetime import datetime
 
 from scripts.naver_shopping_candidate_builder import ProductCandidateBuilder
 from scripts.naver_shopping_client import NaverShoppingClient
-from scripts.naver_shopping_schemas import ProductCandidateRow, TargetGroup
+from scripts.product_candidate_schemas import ProductCandidateRow, TargetGroup
 
 
 class ProductCandidateCollector:

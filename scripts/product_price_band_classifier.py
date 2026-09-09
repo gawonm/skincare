@@ -3,7 +3,7 @@
 경계값은 `docs/data.md` 의 가격대 표와 동일하게 유지한다. 여기서 바꾸면 문서도 같이 고친다.
 """
 
-from scripts.naver_shopping_schemas import PriceBand
+from scripts.product_candidate_schemas import PriceBand
 
 
 class PriceBandClassifier:

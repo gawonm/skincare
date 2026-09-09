@@ -13,13 +13,15 @@
 
 from pathlib import Path
 
+from scripts.image_downloader import ImageDownloader
 from scripts.naver_shopping_candidate_builder import ProductCandidateBuilder
 from scripts.naver_shopping_candidate_collector import ProductCandidateCollector
-from scripts.naver_shopping_candidate_csv_writer import ProductCandidateCsvWriter
 from scripts.naver_shopping_client import NaverShoppingClient, NaverShoppingCredentials
-from scripts.naver_shopping_price_band_classifier import PriceBandClassifier
-from scripts.naver_shopping_schemas import TargetGroup
 from scripts.naver_shopping_title_cleaner import ShoppingTitleCleaner
+from scripts.product_candidate_csv_writer import ProductCandidateCsvWriter
+from scripts.product_candidate_schemas import TargetGroup
+from scripts.product_price_band_classifier import PriceBandClassifier
+from scripts.product_volume_parser import ProductVolumeParser
 
 _OUTPUT_PATH = Path("data/processed/product_candidates.csv")
 
@@ -28,22 +30,32 @@ TARGET_GROUP_SEARCH_QUERIES: dict[TargetGroup, tuple[str, ...]] = {
     TargetGroup.VITAMIN_C: ("비타민C 세럼", "아스코빅애씨드 세럼"),
     TargetGroup.NIACINAMIDE: ("나이아신아마이드 세럼", "나이아신아마이드 앰플"),
     TargetGroup.RETINOL: ("레티놀 세럼", "레티놀 크림"),
-    TargetGroup.AHA: ("AHA 토너", "글라이콜릭애씨드 토너", "락틱애씨드 세럼"),
+    # "AHA 토너"/"락틱애씨드 세럼"은 뺐다. TargetGroup.AHA 값이 "글라이콜릭애씨드"로
+    # 특정 성분을 가리키는데, "AHA 토너"는 락틱애씨드 등 다른 AHA 계열 산까지 섞여
+    # 나오고 "락틱애씨드 세럼"은 아예 다른 산이라 이 그룹에 넣으면 성분명이 틀린다.
+    TargetGroup.AHA: ("글라이콜릭애씨드 토너", "글라이콜릭애씨드 세럼"),
     TargetGroup.BHA: ("BHA 토너", "살리실릭애씨드 토너", "살리실릭애씨드 세럼"),
 }
 
 
 def main() -> None:
     client = NaverShoppingClient(NaverShoppingCredentials.from_env())
+    image_downloader = ImageDownloader()
     try:
         collector = ProductCandidateCollector(
             client=client,
-            builder=ProductCandidateBuilder(ShoppingTitleCleaner(), PriceBandClassifier()),
+            builder=ProductCandidateBuilder(
+                ShoppingTitleCleaner(),
+                PriceBandClassifier(),
+                image_downloader,
+                ProductVolumeParser(),
+            ),
             search_queries=TARGET_GROUP_SEARCH_QUERIES,
         )
         rows = collector.collect()
     finally:
         client.close()
+        image_downloader.close()
 
     ProductCandidateCsvWriter().write(rows, _OUTPUT_PATH)
     print(f"{len(rows)}개 후보 저장: {_OUTPUT_PATH}")
