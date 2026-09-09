@@ -66,6 +66,21 @@ class OliveYoungGlobalProductOption(BaseModel):
         return self.sold_out_flag == "Y"
 
 
+class OliveYoungGlobalDescriptionItem(BaseModel):
+    """`POST global.oliveyoung.com/product/description-info` 응답의 `description[]` 원소.
+
+    법정 고시 항목(용량·전성분·사용법·주의사항 등) 한 줄. `code_dtl_name` 이 "Ingredients"
+    인 항목이 전성분(INCI) — 옵션이 여러 개인 상품은 `[옵션명]` 단위로 옵션별 전성분이
+    한 문자열 안에 이어져 있다 (`OliveYoungGlobalClient.get_ingredients_text` 참고).
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    prdt_no: str = Field(alias="prdtNo")
+    code_dtl_name: str = Field(alias="codeDtlName")
+    item_cont: str = Field(alias="itemCont")
+
+
 class OliveYoungGlobalProductDetail(BaseModel):
     """`POST global.oliveyoung.com/product/detail-data` 응답의 `product` 필드."""
 

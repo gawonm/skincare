@@ -24,6 +24,7 @@ from playwright.sync_api import Playwright, sync_playwright
 
 from scripts.exchange_rate_client import ExchangeRateClient
 from scripts.oliveyoung_global_schemas import (
+    OliveYoungGlobalDescriptionItem,
     OliveYoungGlobalProductDetail,
     OliveYoungGlobalSearchItem,
 )
@@ -36,6 +37,11 @@ class OliveYoungGlobalClient:
         "https://cbe-external-api.oliveyoung.com/display/v1/search/products/unified-search"
     )
     _DETAIL_URL = "https://global.oliveyoung.com/product/detail-data"
+    _DESCRIPTION_URL = "https://global.oliveyoung.com/product/description-info"
+    # description-info 응답 안에서 전성분(INCI) 항목을 가리키는 라벨. 상품마다 코드번호
+    # (prdtNotcItemCode)는 "045"로 관찰됐지만 상품 유형에 따라 달라질 수 있어, 코드보다
+    # 안정적인 라벨 문자열로 찾는다.
+    _INGREDIENTS_LABEL = "Ingredients"
     # Cloudflare 클리어런스 쿠키를 발급받기 위해 최초 1회만 여는 페이지. 검색 결과가
     # 실제로 필요한 페이지는 아니고, 클리어런스 쿠키를 심는 용도다.
     _CLEARANCE_BOOTSTRAP_URL = "https://global.oliveyoung.com/kr/search/results?query=serum"
@@ -115,6 +121,36 @@ class OliveYoungGlobalClient:
             raise RuntimeError(f"올리브영 글로벌 상품 상세 조회 실패 (prdtNo={prdt_no!r}): {body}")
 
         return self._build_product_detail(product)
+
+    def get_ingredients_text(self, prdt_no: str) -> str | None:
+        """상품 번호로 전성분(INCI) 원문을 가져온다. 쿠키가 없어도 호출된다.
+
+        옵션이 여러 개인 상품은 `[옵션명]` 단위로 옵션별 전성분이 한 문자열 안에 줄바꿈으로
+        이어져 있다 — 옵션별로 쪼개지 않고 원문 그대로 돌려준다(파싱은 호출자 책임).
+        고시 항목 목록에 "Ingredients" 라벨이 아예 없는 상품이면 `None`.
+        """
+        try:
+            response = self._http_client.post(
+                self._DESCRIPTION_URL,
+                json={"prdtNo": prdt_no, "langCode": self._LANG_CODE_EN},
+                headers={"Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise RuntimeError(
+                f"올리브영 글로벌 전성분 조회 실패 (prdtNo={prdt_no!r}): {error}"
+            ) from error
+
+        body = response.json()
+        items = body.get("description")
+        if items is None:
+            raise RuntimeError(f"올리브영 글로벌 전성분 조회 실패 (prdtNo={prdt_no!r}): {body}")
+
+        for item in items:
+            description_item = OliveYoungGlobalDescriptionItem.model_validate(item)
+            if description_item.code_dtl_name == self._INGREDIENTS_LABEL:
+                return description_item.item_cont
+        return None
 
     def _build_search_item(self, product: dict) -> OliveYoungGlobalSearchItem:
         price_info = dict(product["priceInfo"])

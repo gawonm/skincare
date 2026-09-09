@@ -143,6 +143,12 @@ class ProductCandidateRow(BaseModel):
     # 수집 시점에 내려받은 이미지의 로컬 경로 (`ImageDownloader` 참고). 프로젝트 루트
     # 기준 상대경로 문자열로 저장한다 (예: "data/processed/images/oliveyoung_global_GA240824996.jpg").
     local_image_path: str
+    # 전성분(INCI) 원문. 소스가 안 주면(네이버 쇼핑, 또는 올리브영이 고시 항목 자체를
+    # 안 내려준 경우) None — 아직 파싱 전 원문이며, 옵션이 여러 개인 상품은
+    # "[옵션명]\n성분,성분,..." 형태로 옵션별 구간이 이어져 있을 수 있다. 이 값이 있어도
+    # `match_status` 는 그대로 MANUAL_REVIEW_REQUIRED 다 — 원문 존재가 파싱·매칭 완료를
+    # 뜻하지 않는다.
+    raw_ingredients_text: str | None = None
     shopping_url: str
     mall_name: str
     product_type: str

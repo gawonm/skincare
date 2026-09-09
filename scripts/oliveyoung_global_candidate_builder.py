@@ -60,6 +60,7 @@ class OliveYoungGlobalCandidateBuilder:
         target_group: TargetGroup,
         search_query: str,
         detail: OliveYoungGlobalProductDetail,
+        raw_ingredients_text: str | None,
         observed_at: datetime,
     ) -> ProductCandidateRow:
         category1, category2, category3 = self._split_category_path(detail.category_path_en)
@@ -119,6 +120,7 @@ class OliveYoungGlobalCandidateBuilder:
             volume_unit=volume_unit,
             image_url=image_url,
             local_image_path=str(local_image_path),
+            raw_ingredients_text=raw_ingredients_text,
             shopping_url=_PRODUCT_DETAIL_URL_TEMPLATE.format(prdt_no=detail.prdt_no),
             mall_name=_MALL_NAME,
             product_type=_PRODUCT_TYPE,

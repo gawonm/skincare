@@ -2,7 +2,9 @@
 
 같은 성분군 안에서 동일한 상품 ID 가 여러 검색어에 걸리면 하나만 남긴다. 검색 결과 자체엔
 정가·카테고리가 정확히 없어(할인가만 있고, 카테고리는 아예 없음), 후보로 남긴 상품마다
-`get_product_detail` 을 한 번 더 불러 정가와 카테고리를 채운다.
+`get_product_detail` 을 한 번 더 불러 정가와 카테고리를 채운다. 전성분(INCI) 원문도
+`get_ingredients_text` 로 같이 받아온다 — 별도 API(`product/description-info`)라 상품당
+호출이 하나 더 늘어난다.
 """
 
 from collections import Counter
@@ -47,12 +49,14 @@ class OliveYoungGlobalCandidateCollector:
                     seen_keys.add(dedupe_key)
 
                     detail = self._client.get_product_detail(item.product_id)
+                    raw_ingredients_text = self._client.get_ingredients_text(item.product_id)
                     rows.append(
                         self._builder.build(
                             candidate_id=f"{_CANDIDATE_ID_PREFIX}{len(rows) + 1:04d}",
                             target_group=target_group,
                             search_query=query,
                             detail=detail,
+                            raw_ingredients_text=raw_ingredients_text,
                             observed_at=observed_at,
                         )
                     )
