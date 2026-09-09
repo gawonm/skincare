@@ -170,5 +170,9 @@ class RagQueryService:
             bm25_results = await self._repo.search_by_bm25(question, self._top_k, ingredient_id)
             merged.extend(self._retriever.fuse(vector_results, bm25_results, self._top_k))
 
-        merged.sort(key=lambda chunk: chunk.fused_score or 0.0, reverse=True)
+        # 점수가 완전히 같은 동점 청크가 나올 수 있다(예: 두 성분의 근거 내용이 겹칠
+        # 때). 점수만으로 정렬하면 동점 처리 순서가 리스트에 쌓인 순서(=성분 나열
+        # 순서)에 좌우돼 결과가 미묘하게 달라질 수 있어, chunk_id를 2차 정렬 키로 둬서
+        # 동점이어도 항상 같은 순서가 나오게 한다(2026-09-10 실제 테스트로 확인).
+        merged.sort(key=lambda chunk: (-(chunk.fused_score or 0.0), str(chunk.chunk_id)))
         return merged[: self._top_k]
