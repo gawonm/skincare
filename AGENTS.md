@@ -173,3 +173,100 @@ SQLAlchemy 쿼리(`select`, `insert` 등)는 `backend/repositories/` 안에서�
 `models/`에 새 파일을 만들면 `config.yaml`의 `database.model_modules`에 모듈 경로를 반드시 추가한다.
 빠뜨리면 Alembic이 모델을 인식하지 못해 마이그레이션에 아무 변경도 나오지 않는다.
 원인을 찾기 어려운 실수라 항상 같이 확인한다.
+
+## 14. 개발 플로우는 SETUP.md를 따른다
+
+명령과 실행 순서의 정본은 `SETUP.md`다. 이 문서는 "어떻게 쓰는가"만 요약한다.
+헷갈리면 `SETUP.md`를 열어서 확인하고, 두 문서가 어긋나면 `SETUP.md`가 맞는 것으로 본다.
+
+### 처음 한 번만 하는 것
+
+`SETUP.md`의 "2. 최초 1회 준비"를 순서대로 따른다. 요약하면 다섯 단계다.
+
+1. `uv sync --dev` — 파이썬 패키지를 깔고 `.venv`를 만든다.
+2. `uv run pre-commit install` — 커밋 전 자동 검사를 건다.
+3. `config.yaml.sample` 을 `config.yaml` 로, `.env.example` 을 `.env` 로 복사한다.
+   `config.yaml` 은 `.gitignore` 에 들어 있어 커밋되지 않는다.
+4. `just up` — PostgreSQL 과 Redis 컨테이너를 켜고 준비될 때까지 기다린다.
+5. `just migrate upgrade head` — 테이블을 만든다.
+
+### 매일 개발할 때
+
+```bash
+just up        # 컨테이너 켜기
+just server    # FastAPI 개발 서버 (파일이 바뀌면 자동 재시작)
+just down      # 다 하면 컨테이너 끄기
+```
+
+`just down` 은 컨테이너만 멈춘다. DB 안의 데이터는 그대로 남으므로 매일 반복해도 안전하다.
+
+### 모델을 바꿨을 때
+
+가장 자주 밟는 흐름이다. 순서를 지키지 않으면 마이그레이션이 비거나 깨진다.
+
+1. `models/` 에 파일을 만들거나 고친다.
+2. `config.yaml` 의 `database.model_modules` 에 모듈 경로를 추가한다. (규칙 13)
+   Alembic 은 여기 적힌 모듈만 import 하므로, 빠뜨리면 3번 결과가 빈 파일로 나온다.
+3. `just makemigrations "설명"` — 모델과 DB 의 차이로 리비전 파일을 만든다.
+4. **생성된 `migrations/versions/*.py` 를 반드시 열어서 읽는다.** 자동 생성 결과가 항상
+   맞지는 않는다. 의도하지 않은 `drop_table` 이나 `drop_column` 이 들어 있으면 그대로
+   실행하지 말고 먼저 사용자에게 알린다.
+5. `just migrate upgrade head` — 확인이 끝난 뒤에만 DB 에 적용한다.
+
+되돌릴 때는 `just migrate downgrade -1` 을 쓴다. 지금 어느 리비전인지는
+`just migrate current`, 전체 목록은 `just migrate history` 로 본다.
+
+리비전 파일은 **downgrade 로 되돌리기 전에 지우지 않는다.** 먼저 지우면 DB 의
+`alembic_version` 테이블만 그 리비전을 가리킨 채 남아서
+`Can't locate revision ...` 에러가 나고, 그때는 DB 를 비우는 것 말고 방법이 없다.
+
+### 실행 전에 반드시 사용자 확인을 받는 명령
+
+되돌릴 수 없고 데이터가 사라진다. 임의로 실행하지 않는다. (규칙 3과 같은 맥락)
+
+| 명령 | 무슨 일이 일어나는가 |
+| --- | --- |
+| `just reset` | 컨테이너를 내리고 볼륨까지 지운다. DB 와 Redis 의 데이터가 전부 사라진다. 실행 뒤에는 `just up`, `just migrate upgrade head` 를 다시 해야 한다. |
+| `just migrate downgrade base` | 모든 마이그레이션을 되돌린다. 테이블과 그 안의 데이터가 지워진다. |
+| `DELETE FROM alembic_version;` | Alembic 이 "아무것도 적용 안 된 상태"로 인식한다. 테이블 자체는 남아 있어서 다음 `upgrade` 가 "이미 존재함" 에러로 실패할 수 있다. |
+
+### 막혔을 때
+
+`SETUP.md` 의 "6. 안 될 때" 표를 먼저 본다. 자주 나오는 증상과 원인이 정리돼 있다.
+표에 없는 증상이면 임의로 추측해서 고치지 말고 사용자에게 묻는다.
+
+## 15. 개발 문서는 `docs/` 아래에 계층별로 쓴다
+
+개발 문서를 만들거나 고칠 때는 루트에 새 마크다운 파일을 흩뿌리지 않는다.
+`docs/` 폴더를 만들고 그 아래에 계층 기준으로 파일을 나눈다.
+
+```
+docs/
+├── data.md        # models/, migrations/, config.yaml 의 model_modules
+├── backend.md     # backend/ (api, schemas, services, repositories)
+├── frontend.md    # frontend/
+└── agent.md       # agent/ (rag, tools)
+```
+
+문서를 쓰기 전에 어느 파일에 들어갈 내용인지 먼저 정한다. 한 문서가 여러 계층을
+설명하기 시작하면, 그 계층을 고칠 때 어느 문서를 같이 고쳐야 하는지 알 수 없게 된다.
+
+### 어느 문서에 쓰는가
+
+| 내용 | 위치 |
+| --- | --- |
+| 특정 계층에서 작업하는 순서, 그 계층의 규칙과 판단 기준 | `docs/<계층>.md` |
+| 설치·실행 명령, 전체 개발 사이클, 문제 해결 | `SETUP.md` |
+| 폴더 구조와 의존 방향 | `STRUCTURE.md` |
+| 코드 작성 규칙 | 이 문서(`CLAUDE.md`) |
+
+같은 내용을 두 곳에 적지 않는다. 다른 문서에 이미 있으면 그쪽을 링크한다.
+문서가 서로 어긋나면 어느 쪽이 맞는지 알 수 없어진다.
+
+### 지킬 것
+
+- 위 네 파일 외에 다른 문서가 필요해 보이면 **만들기 전에 사용자에게 묻는다.**
+  계층이 아닌 기준으로 파일이 늘어나면 분류가 무너진다.
+- 코드를 바꿔서 문서 내용이 틀리게 되면 그 문서도 같이 고친다.
+- `frontend/README.md` 처럼 폴더 안에 이미 문서가 있으면, 같은 내용을 복사하지 말고
+  둘 중 하나를 정본으로 정하고 나머지는 링크만 남긴다.
