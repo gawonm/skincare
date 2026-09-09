@@ -50,6 +50,14 @@
    "같이 써도 된다"로 오인하지 않게) ✅
 7. MFDS 교체 실패 복원 테스트 — 가짜 임베더로 두 실패 지점(임베딩 준비 실패 / DB 쓰기 중 실패)을
    실제 MFDS API 호출 없이 검증 ✅
+8. **커밋 후 지적받은 `RagQueryService` 버그 2건 추가 발견 → 수정+재검증** ✅ (커밋 `66dbc0b`)
+   - 복수 성분 검색이 성분별 원시 결과를 이어붙인 뒤 통째로 RRF를 매겨, 나중에 언급된 성분의
+     1등 근거가 먼저 언급된 성분 결과들 뒤로 밀리던 순서 편향 → 성분마다 독립적으로 fuse한
+     뒤 fused_score로 재정렬. "A랑 B"/"B랑 A" 실제 질문으로 동일 판정 확인
+   - 조합 질문의 개별 성분 답변에 원본 질문("A랑 B 같이 써도 되나요")을 그대로 넘겨 LLM이
+     병용 문맥을 암묵적으로 언급할 위험 → 개별 답변은 중립적인 단일 성분 질문으로 완전히
+     분리(`_INDIVIDUAL_QUESTION_TEMPLATE`). 실제 답변에 상대 성분명 미포함 확인
+   - integration 테스트 2건 추가, 전체 37개(단위/DB 28 + API 9) 통과
 
 ## 4. 지금 이 순간의 검증 상태
 
@@ -89,9 +97,11 @@ tests/unit/test_question_intent_classifier.py ..... (5)
 
 uv run pytest -m integration  # 실제 OpenAI 호출 포함
 tests/integration/test_rag_query_flow.py .... (4)
-tests/integration/test_rag_query_service.py ... (3)
-= 7 passed =
+tests/integration/test_rag_query_service.py ..... (5)  # 순서 대칭성, 개별답변 문맥누출 없음 포함
+= 9 passed =
 ```
+
+기본 28 + integration 9 = 총 37개.
 
 DB 테스트는 SAVEPOINT 격리(`tests/conftest.py`)라 로컬 개발 DB(위 65,196청크)를 건드리지 않는다
 — 매 테스트 후 롤백되는 걸 실제로 확인했다(대량 삭제·삽입을 하는 MFDS 롤백 테스트 전후로
