@@ -7,7 +7,7 @@
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from backend.repositories.user import UserRepository
 from backend.services.auth import AuthService
 from backend.services.security import PasswordHasher
 from core.config import settings
+from models import User
 
 # argon2 파라미터만 들고 있어 상태가 없다. 요청마다 새로 만들 이유가 없어 한 번만 만든다.
 _password_hasher = PasswordHasher()
@@ -56,3 +57,23 @@ def get_auth_service(session: SessionDep, redis: RedisDep) -> AuthService:
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+
+
+async def get_current_user(request: Request, auth_service: AuthServiceDep) -> User:
+    """세션 쿠키로 로그인 사용자를 확인한다. 쿠키가 없거나 무효면 401을 던진다."""
+    token = request.cookies.get(settings.auth.cookie_name)
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="로그인이 필요합니다.",
+        )
+    user = await auth_service.get_current_user(token)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="세션이 만료되었거나 유효하지 않습니다. 다시 로그인해 주세요.",
+        )
+    return user
+
+
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
