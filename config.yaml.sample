@@ -12,6 +12,7 @@ database:
     - models.evidence
     - models.ingredient
     - models.ingredient_knowledge
+    - models.user
 
 # 블록 전체를 지우면 아래 기본값이 그대로 쓰인다.
 redis:
@@ -25,6 +26,19 @@ redis:
 app:
   # OpenAPI 문서와 /docs 상단에 표시되는 이름.
   title: alembic-singledb
+
+# 로그인 세션 설정. 블록 전체를 지우면 아래 기본값이 그대로 쓰인다.
+auth:
+  # 세션 만료 시간(초). 기본 14일. 이 시간이 지나면 Redis 키가 사라져 재로그인이 필요하다.
+  session_ttl_seconds: 1209600
+  # 세션 ID 를 담는 쿠키 이름.
+  cookie_name: session_id
+  # HTTPS 에서만 쿠키를 보낼지 여부. 로컬 http 개발은 false, 배포는 반드시 true.
+  cookie_secure: false
+  # 크로스 사이트 요청에 쿠키를 붙일지. lax|strict|none. none 은 cookie_secure=true 필수.
+  cookie_samesite: lax
+  # 쿠키를 공유할 도메인. 비우면 요청을 받은 호스트에만 한정된다.
+  cookie_domain: null
 
 # MFDS 연동 스크립트(scripts/import_mfds_restricted_ingredients.py)를 실행할 때만 필요하다.
 # 블록이 없으면 해당 스크립트가 명확한 에러를 내고 종료한다.

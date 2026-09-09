@@ -11,6 +11,7 @@
 from models.evidence import Evidence, EvidenceRegulateType, EvidenceSourceType, EvidenceTopic
 from models.ingredient import IngredientMaster
 from models.ingredient_knowledge import IngredientKnowledgeFact, RegulatoryConfidence
+from models.user import User
 
 __all__ = [
     "Evidence",
@@ -20,4 +21,5 @@ __all__ = [
     "IngredientKnowledgeFact",
     "IngredientMaster",
     "RegulatoryConfidence",
+    "User",
 ]
