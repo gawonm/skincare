@@ -42,6 +42,18 @@ _DEFAULT_TOP_K = 8
 # 나와야 하므로, 개별 결과는 성분 하나만 두고 묻는 중립적인 질문으로 완전히 바꾼다.
 _INDIVIDUAL_QUESTION_TEMPLATE = "{ingredient_name}의 효능과 주의사항이 무엇인가요?"
 
+# 자유 텍스트(성분 미특정) 질문의 관련성 판정 임계값. 성분 필터가 없으면 RRF 순위만으로는
+# "질문과 실제로 관련 있는 결과"를 "그나마 제일 가까운 결과"와 구분하지 못한다 - 무관한
+# 질문도 상대적 1등은 나온다. 그래서 최상위 결과의 코사인 유사도 원점수가 이 값을 못
+# 넘기면, 신뢰도 티어가 높은 자료가 검색됐더라도 답변을 보류한다.
+#
+# 값을 정한 방법(2026-09-10): 튜닝셋(관련 질문 3개, 무관 질문 3개, 이 임계값을 정하는
+# 데만 씀)에서 관련 질문의 top_vector_similarity는 0.519~0.725, 무관 질문은 0.267~0.407로
+# 뚜렷이 갈렸다. 그 중간값 0.45를 임계값으로 정하고, 튜닝에 안 쓴 별도 검증셋(관련 2개,
+# 무관 2개)으로 확인해 4/4 정확히 갈렸다. 두 세트를 분리한 이유: 같은 사례로 기준을
+# 정하고 그걸로 통과 여부까지 확인하면 검증력이 없다.
+_FREE_TEXT_MIN_VECTOR_SIMILARITY = 0.45
+
 
 class RagQueryService:
     """질문 텍스트 하나를 `RagQueryResult`로 바꾼다. DB에 쓰지 않는다(조회 전용)."""
@@ -76,10 +88,7 @@ class RagQueryService:
         mentions = self._mention_resolver.resolve(question)
 
         if not mentions:
-            free_text_result = await self._search_and_generate(
-                question, ingredient_ids=None, intents=intents, is_combination_question=False
-            )
-            return RagQueryResult(free_text=free_text_result)
+            return RagQueryResult(free_text=await self._answer_free_text(question, intents))
 
         per_ingredient: list[PerIngredientResult] = []
         resolved_ids: list[UUID] = []
@@ -129,6 +138,32 @@ class RagQueryService:
         )
         return PerIngredientResult(
             matched_text=mention.matched_text, ingredient_id=mention.ingredient_id, result=result
+        )
+
+    async def _answer_free_text(
+        self, question: str, intents: tuple[QuestionIntent, ...]
+    ) -> IngredientVerificationResult:
+        """성분이 특정 안 된 질문. 성분 필터가 없어 관련성을 원점수로 직접 확인해야 한다.
+
+        신뢰도 높은 근거가 검색됐더라도, 그게 질문과 실제로 관련 있다는 뜻은 아니다 -
+        "무관한 질문에 신뢰도 높은 자료가 검색되더라도 답변을 보류한다"가 핵심 기준이다
+        (2026-09-10). 근거를 아예 안 찾은 경우와 구분하기 위해 검색 자체는 하되, LLM
+        호출(비용 발생) 전에 관련성부터 확인해서 걸러진 경우는 생성 단계로 안 보낸다.
+        """
+        retrieved = await self._search(question, ingredient_ids=None)
+        if not self._is_relevant(retrieved):
+            return IngredientVerificationResult(
+                has_verifiable_evidence=False,
+                unverifiable_reason=UnverifiableReason.NOT_RELEVANT_TO_QUESTION,
+            )
+        return self._generator.generate(
+            question, retrieved, intents=intents, is_combination_question=False
+        )
+
+    def _is_relevant(self, retrieved: list[RetrievedChunk]) -> bool:
+        return any(
+            (chunk.vector_similarity or 0.0) >= _FREE_TEXT_MIN_VECTOR_SIMILARITY
+            for chunk in retrieved
         )
 
     async def _search_and_generate(

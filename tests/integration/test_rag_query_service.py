@@ -4,6 +4,7 @@ import pytest
 
 from agent.rag.embedding.openai_embedder import OpenAiEmbedder
 from agent.rag.generation.answer_generator import AnswerGenerator
+from agent.rag.schemas import UnverifiableReason
 from backend.services.rag_query_service import RagQueryService
 from core.config import settings
 
@@ -106,3 +107,36 @@ async def test_individual_answers_in_combination_question_do_not_mention_the_oth
     # "나이아신아마이드"가, 그 반대가 언급되면 병용 문맥이 새어 들어간 것이다.
     assert "나이아신아마이드" not in retinol_answer
     assert "레티놀" not in niacinamide_answer
+
+
+# 자유 텍스트 관련성 판정 검증셋 - 임계값(RagQueryService._FREE_TEXT_MIN_VECTOR_SIMILARITY)을
+# 정하는 데 쓴 튜닝셋과 다른 질문이다(2026-09-10). 튜닝셋으로 임계값을 고르고 같은 세트로
+# 통과 여부까지 확인하면 검증력이 없어서 분리했다.
+_RELEVANT_FREE_TEXT_QUESTIONS = ("지성 피부에 맞는 성분 있을까요?", "피부 처짐에 좋은 성분 뭐예요?")
+_IRRELEVANT_FREE_TEXT_QUESTIONS = ("오늘 주식시장 어때요?", "가장 빠른 자동차는 뭐예요?")
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@pytest.mark.parametrize("question", _RELEVANT_FREE_TEXT_QUESTIONS)
+async def test_free_text_relevant_question_is_not_held_back(session, question):
+    service = await _service(session)
+    result = await service.answer(question)
+
+    assert result.free_text is not None
+    assert result.free_text.has_verifiable_evidence
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@pytest.mark.parametrize("question", _IRRELEVANT_FREE_TEXT_QUESTIONS)
+async def test_free_text_irrelevant_question_is_held_back_even_if_something_is_retrieved(
+    session, question
+):
+    """핵심 기준: 무관한 질문에 신뢰도 높은 자료가 검색되더라도 답변을 보류한다."""
+    service = await _service(session)
+    result = await service.answer(question)
+
+    assert result.free_text is not None
+    assert not result.free_text.has_verifiable_evidence
+    assert result.free_text.unverifiable_reason == UnverifiableReason.NOT_RELEVANT_TO_QUESTION
