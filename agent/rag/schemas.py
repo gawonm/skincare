@@ -106,7 +106,14 @@ class RetrievedChunk(BaseModel):
     citation_refs: tuple[str, ...]
     vector_rank: int | None = Field(default=None, description="벡터 검색 결과에서의 순위(1부터)")
     bm25_rank: int | None = Field(default=None, description="BM25 검색 결과에서의 순위(1부터)")
-    fused_score: float | None = Field(default=None, description="RRF로 병합한 최종 점수")
+    fused_score: float | None = Field(default=None, description="RRF로 병합한 최종 점수(순위 기반)")
+    vector_similarity: float | None = Field(
+        default=None,
+        description="코사인 유사도 원점수(1-거리, 클수록 유사). 자유 텍스트 관련성 판정에 씀",
+    )
+    bm25_relevance: float | None = Field(
+        default=None, description="ParadeDB BM25 원점수(클수록 관련). 자유 텍스트 관련성 판정에 씀"
+    )
 
 
 class SourceCitation(BaseModel):
@@ -174,7 +181,8 @@ class PerIngredientResult(BaseModel):
 
     matched_text: str = Field(description="질문에서 실제로 매칭된 표기")
     ingredient_id: UUID | None = Field(
-        default=None, description="모호해서 해소 못 하면 None(unverifiable_reason=AMBIGUOUS_INGREDIENT)"
+        default=None,
+        description="모호해서 해소 못 하면 None(unverifiable_reason=AMBIGUOUS_INGREDIENT)",
     )
     result: IngredientVerificationResult
 

@@ -2,8 +2,9 @@
 
 검색 알고리즘(코사인 거리, BM25 랭킹)이 SQL 쿼리 그 자체라 STRUCTURE.md 규칙("SQLAlchemy
 쿼리는 backend/repositories/에만")을 따라 이 클래스가 소유한다. `agent/rag/retrieval`은
-이 리포지토리가 이미 랭킹까지 끝낸 `list[RagChunk]` 두 개(벡터 결과, BM25 결과)를 받아
-병합(RRF)만 한다 - 순수 데이터만 받고 세션을 직접 만들지 않는다는 agent 규칙을 지킨다.
+이 리포지토리가 이미 랭킹까지 끝낸 `list[tuple[RagChunk, float]]` 두 개(벡터 결과, BM25
+결과 - float는 원점수)를 받아 병합(RRF)만 한다 - 순수 데이터만 받고 세션을 직접 만들지
+않는다는 agent 규칙을 지킨다.
 
 `RagChunkInsert`를 이 파일에 따로 두는 이유: `backend/repositories/`는 `models`만 import
 한다는 규칙(import 방향)이 있어 `agent.rag.schemas.EmbeddedChunk`를 직접 받을 수 없다.
@@ -202,29 +203,38 @@ class RagChunkRepository:
 
     async def search_by_vector(
         self, query_vector: list[float], top_k: int, ingredient_id: UUID | None
-    ) -> list[RagChunk]:
-        statement = select(RagChunk)
+    ) -> list[tuple[RagChunk, float]]:
+        """반환값의 float는 코사인 유사도(1 - 거리, 클수록 유사)다.
+
+        원문 관련성 판정(자유 텍스트 질문이 실제로 근거와 관련 있는지)에는 순위만으로는
+        부족하고 원점수가 필요하다 - RRF 순위는 상대적 순서일 뿐 "이 결과가 질문과 실제로
+        가까운가"는 말해주지 않는다(2026-09-10 지적).
+        """
+        distance = RagChunk.embedding.cosine_distance(query_vector)
+        statement = select(RagChunk, (1 - distance).label("similarity"))
         if ingredient_id is not None:
             statement = statement.where(RagChunk.ingredient_id == ingredient_id)
-        statement = statement.order_by(RagChunk.embedding.cosine_distance(query_vector)).limit(
-            top_k
-        )
+        statement = statement.order_by(distance).limit(top_k)
         result = await self._session.execute(statement)
-        return list(result.scalars().all())
+        return [(row.RagChunk, row.similarity) for row in result]
 
     async def search_by_bm25(
         self, query_text: str, top_k: int, ingredient_id: UUID | None
-    ) -> list[RagChunk]:
+    ) -> list[tuple[RagChunk, float]]:
+        """반환값의 float는 ParadeDB BM25 점수(클수록 관련성 높음)다."""
         # ParadeDB pg_search 연산자. `@@@`는 인덱싱된 컬럼에 대한 BM25 매치 조건이다.
         safe_query_text = self._sanitize_bm25_query(query_text)
         if not safe_query_text:
             return []
-        statement = select(RagChunk).where(RagChunk.content.op("@@@")(safe_query_text))
+        score = func.paradedb.score(RagChunk.id)
+        statement = select(RagChunk, score.label("score")).where(
+            RagChunk.content.op("@@@")(safe_query_text)
+        )
         if ingredient_id is not None:
             statement = statement.where(RagChunk.ingredient_id == ingredient_id)
-        statement = statement.order_by(func.paradedb.score(RagChunk.id).desc()).limit(top_k)
+        statement = statement.order_by(score.desc()).limit(top_k)
         result = await self._session.execute(statement)
-        return list(result.scalars().all())
+        return [(row.RagChunk, row.score) for row in result]
 
     def _sanitize_bm25_query(self, query_text: str) -> str:
         return _BM25_UNSAFE_CHARACTERS_PATTERN.sub(" ", query_text).strip()

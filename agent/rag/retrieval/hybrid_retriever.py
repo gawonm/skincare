@@ -2,8 +2,12 @@
 
 실제 벡터/BM25 쿼리는 `backend/repositories/rag_chunk_repository.py`(`RagChunkRepository`)가
 실행한다 - SQLAlchemy 쿼리는 repositories에만 쓴다는 STRUCTURE.md 규칙 때문이다. 이 클래스는
-이미 각각 랭킹까지 끝난 `list[RagChunk]` 두 개(순수 데이터)만 받아 병합 계산만 한다 -
-세션도 리포지토리도 직접 만들지 않는다.
+이미 각각 랭킹까지 끝난 `(RagChunk, 원점수)` 목록 두 개(순수 데이터)만 받아 병합 계산만
+한다 - 세션도 리포지토리도 직접 만들지 않는다.
+
+원점수(코사인 유사도, BM25 점수)를 같이 받는 이유: RRF 순위만으로는 "얼마나" 관련 있는지
+모른다 - 무관한 질문이라도 상대적으로 제일 가까운 결과에는 순위 1등이 붙는다. 자유 텍스트
+질문의 관련성 판정(`RagQueryService`)은 이 원점수를 봐야 한다.
 """
 
 from uuid import UUID
@@ -21,11 +25,14 @@ class HybridRetriever:
     """벡터 검색 순위와 BM25 검색 순위를 RRF로 합쳐 `RetrievedChunk` 목록을 만든다."""
 
     def fuse(
-        self, vector_results: list[RagChunk], bm25_results: list[RagChunk], top_k: int
+        self,
+        vector_results: list[tuple[RagChunk, float]],
+        bm25_results: list[tuple[RagChunk, float]],
+        top_k: int,
     ) -> list[RetrievedChunk]:
-        vector_ranks = self._ranks_by_id(vector_results)
-        bm25_ranks = self._ranks_by_id(bm25_results)
-        chunks_by_id = {chunk.id: chunk for chunk in (*vector_results, *bm25_results)}
+        vector_ranks, vector_scores = self._ranks_and_scores(vector_results)
+        bm25_ranks, bm25_scores = self._ranks_and_scores(bm25_results)
+        chunks_by_id = {chunk.id: chunk for chunk, _ in (*vector_results, *bm25_results)}
 
         scored: list[tuple[float, RagChunk, int | None, int | None]] = []
         for chunk_id, chunk in chunks_by_id.items():
@@ -34,7 +41,9 @@ class HybridRetriever:
             score = self._rrf_score(vector_rank) + self._rrf_score(bm25_rank)
             scored.append((score, chunk, vector_rank, bm25_rank))
 
-        scored.sort(key=lambda item: item[0], reverse=True)
+        # 동점일 때 정렬 순서가 입력 순서(=호출부가 어떤 순서로 검색했는지)에 좌우되지
+        # 않도록 chunk id를 2차 정렬 키로 둔다(2026-09-10, 성분 순서 편향 수정과 같은 이유).
+        scored.sort(key=lambda item: (-item[0], str(item[1].id)))
 
         return [
             RetrievedChunk(
@@ -48,12 +57,18 @@ class HybridRetriever:
                 vector_rank=vector_rank,
                 bm25_rank=bm25_rank,
                 fused_score=score,
+                vector_similarity=vector_scores.get(chunk.id),
+                bm25_relevance=bm25_scores.get(chunk.id),
             )
             for score, chunk, vector_rank, bm25_rank in scored[:top_k]
         ]
 
-    def _ranks_by_id(self, results: list[RagChunk]) -> dict[UUID, int]:
-        return {chunk.id: rank for rank, chunk in enumerate(results, start=1)}
+    def _ranks_and_scores(
+        self, results: list[tuple[RagChunk, float]]
+    ) -> tuple[dict[UUID, int], dict[UUID, float]]:
+        ranks = {chunk.id: rank for rank, (chunk, _) in enumerate(results, start=1)}
+        scores = {chunk.id: score for chunk, score in results}
+        return ranks, scores
 
     def _rrf_score(self, rank: int | None) -> float:
         if rank is None:
