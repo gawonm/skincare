@@ -68,6 +68,11 @@ class KnowledgedataImporter:
             "source_row_no": row.source_row_no,
             "inci_name": row.inci_name,
             "name_ko": row.name_ko,
+            "chemical_properties": row.chemical_properties,
+            "product_characteristics": row.product_characteristics,
+            "solubility": row.solubility,
+            "molecular_formula": row.molecular_formula,
+            "molecular_weight": row.molecular_weight,
             "efficacy": row.efficacy,
             "recommended_skin_types": row.recommended_skin_types,
             "precautions": row.precautions,
@@ -75,6 +80,8 @@ class KnowledgedataImporter:
             "compounding_regulation_text": row.compounding_regulation_text,
             "raw_material_source": row.raw_material_source,
             "source_reference": row.source_reference,
+            "copyright_resolution": row.copyright_resolution,
+            "token_count": row.token_count,
             "regulatory_confidence": RegulatoryConfidence.UNVERIFIED,
         }
         update_values = {**values, "updated_at": func.now()}

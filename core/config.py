@@ -36,6 +36,21 @@ class MfdsConfig(PydanticBaseModel):
     )
 
 
+class OpenAiConfig(PydanticBaseModel):
+    """`config.yaml`의 `openai` 블록. RAG 임베딩·답변 생성에 쓰는 OpenAI 인증·모델 설정.
+
+    API 키는 비밀값이라 `.env`가 아니라 여기(`config.yaml`, gitignore 대상)에 둔다.
+    임베딩 모델을 바꾸면 기존 `rag_chunk.embedding` 벡터를 전부 다시 만들어야 하므로,
+    모델명은 기본값을 두되 바꿀 때는 재임베딩이 필요하다는 걸 알고 바꿔야 한다.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    api_key: Annotated[str, Field(min_length=1)]
+    embedding_model: Annotated[str, Field(min_length=1)] = "text-embedding-3-small"
+    chat_model: Annotated[str, Field(min_length=1)] = "gpt-4.1-mini"
+
+
 class AppConfig(PydanticBaseModel):
     """`config.yaml`의 `app` 블록.
 
@@ -63,6 +78,8 @@ class Settings(BaseSettings):
     app: AppConfig = AppConfig()
     # `mfds` 블록이 없으면 None. MFDS 연동 스크립트를 실행할 때만 필요하다.
     mfds: MfdsConfig | None = None
+    # `openai` 블록이 없으면 None. RAG 임베딩·생성 파이프라인을 실행할 때만 필요하다.
+    openai: OpenAiConfig | None = None
 
     @classmethod
     def settings_customise_sources(

@@ -29,6 +29,11 @@ class KnowledgedataRow(BaseModel):
     source_row_no: int = Field(description="'No' 컬럼")
     inci_name: str = Field(description="'성분명(INCI)' 컬럼")
     name_ko: str | None = Field(default=None, description="'한글명' 컬럼")
+    chemical_properties: str | None = Field(default=None, description="화학적물성")
+    product_characteristics: str | None = Field(default=None, description="제품적특성")
+    solubility: str | None = Field(default=None, description="용해도")
+    molecular_formula: str | None = Field(default=None, description="분자식")
+    molecular_weight: str | None = Field(default=None, description="분자량")
     efficacy: str | None = Field(default=None, description="효능")
     recommended_skin_types: str | None = Field(default=None, description="권장피부타입")
     precautions: str | None = Field(default=None, description="사용상주의사항(안전성)")
@@ -36,6 +41,10 @@ class KnowledgedataRow(BaseModel):
     compounding_regulation_text: str | None = Field(default=None, description="배합규제")
     raw_material_source: str | None = Field(default=None, description="원료출처")
     source_reference: str | None = Field(default=None, description="원시 데이터 출처")
+    copyright_resolution: str | None = Field(default=None, description="저작권해결방안")
+    token_count: str | None = Field(
+        default=None, description="토큰. 원본이 수식·혼합값이라 문자열로 그대로 보존"
+    )
 
 
 class KnowledgedataImportSummary(BaseModel):

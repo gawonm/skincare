@@ -3,11 +3,16 @@
 이 API는 재실행할 때마다 안정적인 자연키가 없어(같은 성분이 국가마다 여러 행으로 나오고,
 같은 성분·국가에도 고시원료명이 다르면 별도 행일 수 있다) upsert 대신, 이전에 적재한
 MFDS 출처 `Evidence`를 지우고 새로 채우는 전체 새로고침 방식을 쓴다.
+
+`build_new_rows`가 DB에 쓰지 않고 새 행만 만드는 이유: `backend/services/rag_ingestion_service.py`가
+"임베딩까지 전부 준비한 뒤에 DB 교체를 확정"하는 원자적 갱신에 이 클래스를 재사용한다.
+그러려면 아직 DB에 없는 새 `Evidence`의 id를 미리 알아야 그 id로 RAG 청크를 만들 수 있어서,
+행마다 `id`를 서버가 아니라 여기서(`uuid4()`) 미리 정한다.
 """
 
 import csv
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete, insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,12 +47,30 @@ class MfdsRestrictedIngredientImporter:
         self._review_queue_path = review_queue_path
 
     async def import_items(self, items: list[MfdsRestrictedIngredientItem]) -> MfdsImportSummary:
+        rows_to_insert, review_entries = self.build_new_rows(items)
+
         await self._session.execute(
             delete(Evidence).where(
                 Evidence.source_type == EvidenceSourceType.MFDS_RESTRICTED_INGREDIENT
             )
         )
+        if rows_to_insert:
+            await self._session.execute(insert(Evidence), rows_to_insert)
 
+        self.write_review_queue(review_entries)
+
+        return MfdsImportSummary(
+            total_items=len(items),
+            inserted=len(rows_to_insert),
+            manual_review=len(review_entries),
+        )
+
+    def build_new_rows(
+        self, items: list[MfdsRestrictedIngredientItem]
+    ) -> tuple[
+        list[dict[str, object]], list[tuple[MfdsRestrictedIngredientItem, IngredientMatchResult]]
+    ]:
+        """매칭만 수행하고 DB에는 아무것도 쓰지 않는다. 각 행에 `id`를 미리 채워 반환한다."""
         rows_to_insert: list[dict[str, object]] = []
         review_entries: list[tuple[MfdsRestrictedIngredientItem, IngredientMatchResult]] = []
 
@@ -60,16 +83,7 @@ class MfdsRestrictedIngredientImporter:
                 continue
             rows_to_insert.append(self._build_row(item, result.matched_ingredient_id))
 
-        if rows_to_insert:
-            await self._session.execute(insert(Evidence), rows_to_insert)
-
-        self._write_review_queue(review_entries)
-
-        return MfdsImportSummary(
-            total_items=len(items),
-            inserted=len(rows_to_insert),
-            manual_review=len(review_entries),
-        )
+        return rows_to_insert, review_entries
 
     def _build_row(
         self, item: MfdsRestrictedIngredientItem, ingredient_id: UUID
@@ -78,6 +92,7 @@ class MfdsRestrictedIngredientImporter:
             part for part in (item.provision_article, item.limit_condition) if part
         )
         return {
+            "id": uuid4(),
             "ingredient_id": ingredient_id,
             "topic": EvidenceTopic.COSMETIC_USE_RESTRICTION,
             "claim": f"{item.country_name} 배합 규제: {item.regulate_type_label}",
@@ -92,7 +107,7 @@ class MfdsRestrictedIngredientImporter:
             "source_url": _SOURCE_URL,
         }
 
-    def _write_review_queue(
+    def write_review_queue(
         self, review_entries: list[tuple[MfdsRestrictedIngredientItem, IngredientMatchResult]]
     ) -> None:
         self._review_queue_path.parent.mkdir(parents=True, exist_ok=True)
