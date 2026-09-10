@@ -3,8 +3,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from data.scripts.ingredient_schemas import IngredientCandidate
 from models.ingredient import IngredientMaster
-from scripts.ingredient_schemas import IngredientCandidate
 
 
 class IngredientMasterRepository:

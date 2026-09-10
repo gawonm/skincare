@@ -1,11 +1,11 @@
-"""올리브영 파서(`scripts/product_ingredient_text_parser.py` +
-`scripts/product_ingredient_option_linker.py`)가 만든 `ProductIngredientParseResult`를 받아
+"""올리브영 파서(`data/scripts/product_ingredient_text_parser.py` +
+`data/scripts/product_ingredient_option_linker.py`)가 만든 `ProductIngredientParseResult`를 받아
 표준 성분(`IngredientMaster`)과 매칭하고 `product_ingredient_snapshot`/`product_ingredient`에
 저장한다.
 
-`scripts/`에 두지 않고 여기 두는 이유는 `rag_ingestion_service.py`와 같다 - 저장에
+`data/scripts/`에 두지 않고 여기 두는 이유는 `rag_ingestion_service.py`와 같다 - 저장에
 `backend/repositories`가 필요하고, `backend/services/`가 이미 `scripts`를 부르는 계층이라
-(`RagIngestionService`가 `scripts.mfds_importer` 등을 이미 그렇게 쓴다) 여기서 조립한다.
+(`RagIngestionService`가 `data.scripts.mfds_importer` 등을 이미 그렇게 쓴다) 여기서 조립한다.
 
 원문이 그대로면(해시 동일) 재실행해도 새 스냅샷을 만들지 않는다. 원문은 그대로인데 파서
 버전만 올라간 경우(로직 개선) 기존 스냅샷의 `parser_version`만 갱신하고 토큰을
@@ -22,23 +22,23 @@ from backend.repositories.product_ingredient_repository import (
     ProductIngredientTokenInsert,
     ProductIngredientTokenSyncResult,
 )
-from models.product_ingredient import (
-    IngredientMatchAcceptance,
-    ProductIngredientSectionLinkStatus,
-    ProductIngredientSnapshot,
-    ProductIngredientTokenParseStatus,
-)
-from scripts.ingredient_name_matcher import IngredientNameMatcher
-from scripts.ingredient_name_normalizer import IngredientNameNormalizer
-from scripts.product_ingredient_match_acceptance_policy import (
+from data.scripts.ingredient_name_matcher import IngredientNameMatcher
+from data.scripts.ingredient_name_normalizer import IngredientNameNormalizer
+from data.scripts.product_ingredient_match_acceptance_policy import (
     ProductIngredientMatchAcceptancePolicy,
 )
-from scripts.product_ingredient_parse_schemas import (
+from data.scripts.product_ingredient_parse_schemas import (
     IngredientSectionLinkStatus,
     IngredientSectionParse,
     IngredientTokenParseStatus,
     ParsedIngredientToken,
     ProductIngredientParseResult,
+)
+from models.product_ingredient import (
+    IngredientMatchAcceptance,
+    ProductIngredientSectionLinkStatus,
+    ProductIngredientSnapshot,
+    ProductIngredientTokenParseStatus,
 )
 
 
@@ -58,7 +58,7 @@ class ProductIngredientIngestionResult:
 
 # 파싱 단계의 두 Enum(`IngredientSectionLinkStatus`/`IngredientTokenParseStatus`)과 저장
 # 단계의 두 Enum(`ProductIngredientSectionLinkStatus`/`ProductIngredientTokenParseStatus`)은
-# 값(`.value`)만 같고 별개 타입이다 - `models/`가 `scripts/`를 import하지 않는다는 규칙
+# 값(`.value`)만 같고 별개 타입이다 - `models/`가 `data/scripts/`를 import하지 않는다는 규칙
 # 때문에 값으로만 변환한다. 값이 어긋나면 아래 매핑에서 KeyError로 바로 드러난다.
 _SECTION_LINK_STATUS_MAP = {
     IngredientSectionLinkStatus.NO_OPTION_SECTIONS: ProductIngredientSectionLinkStatus.NO_OPTION_SECTIONS,

@@ -1,7 +1,7 @@
 """상품 전성분(INCI) 원문 스냅샷과, 그 안의 성분 토큰별 표준 성분 매칭 결과.
 
-원문 수집·구간 분리·토큰화는 올리브영 세션(`scripts/product_ingredient_text_parser.py`,
-`scripts/product_ingredient_option_linker.py`)이 담당하고, 그 결과(`ProductIngredientParseResult`)를
+원문 수집·구간 분리·토큰화는 올리브영 세션(`data/scripts/product_ingredient_text_parser.py`,
+`data/scripts/product_ingredient_option_linker.py`)이 담당하고, 그 결과(`ProductIngredientParseResult`)를
 받아 `IngredientMaster`로 매칭·저장하는 건 이 RAG 세션 담당이다
 (`docs/oliveyoung_global_pipeline_handoff.md` 참고).
 
@@ -33,9 +33,9 @@ def _sql_enum(enum_cls: type[StrEnum], *, length: int) -> SqlEnum:
 
 
 class ProductIngredientSectionLinkStatus(StrEnum):
-    """`scripts.product_ingredient_parse_schemas.IngredientSectionLinkStatus`와 값을 맞춘다.
+    """`data.scripts.product_ingredient_parse_schemas.IngredientSectionLinkStatus`와 값을 맞춘다.
 
-    이 값을 별도로 여기 다시 선언하는 이유: `models/`는 `scripts/`를 import하지 않는다
+    이 값을 별도로 여기 다시 선언하는 이유: `models/`는 `data/scripts/`를 import하지 않는다
     (`scripts`는 일회성 ETL이라 `models → core`만 지키는 계층 규칙 밖에 있다, STRUCTURE.md
     참고). 두 Enum의 값(`.value`)이 어긋나면 저장 시점에 바로 드러나므로 안전하다.
     """
@@ -46,7 +46,7 @@ class ProductIngredientSectionLinkStatus(StrEnum):
 
 
 class ProductIngredientTokenParseStatus(StrEnum):
-    """`scripts.product_ingredient_parse_schemas.IngredientTokenParseStatus`와 값을 맞춘다."""
+    """`data.scripts.product_ingredient_parse_schemas.IngredientTokenParseStatus`와 값을 맞춘다."""
 
     PARSED = "parsed"
     NEEDS_REVIEW = "needs_review"

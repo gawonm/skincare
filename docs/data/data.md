@@ -1,7 +1,7 @@
 # 데이터 파이프라인
 
 `models/`, `migrations/`, `config.yaml`의 `database.model_modules`, 그리고 데이터 수집·정제
-스크립트(`scripts/`)를 다룬다. 폴더 구조와 의존 방향은 [STRUCTURE.md](../STRUCTURE.md), 코드
+스크립트(`data/scripts/`)를 다룬다. 폴더 구조와 의존 방향은 [STRUCTURE.md](../STRUCTURE.md), 코드
 작성 규칙은 [CLAUDE.md](../CLAUDE.md)를 따른다.
 
 ## 담당 범위
@@ -35,8 +35,8 @@
 | MFDS(식약처) 성분 데이터 | 성분 주의사항·규제 근거 | RAG |
 | KCIA 표준화명칭 (`data/별첨1. 표준화명칭목록_260831.pdf`) | 성분명 정규화 | RAG 전처리 |
 | NIA AI Hub 스킨케어 성분-효능 추천 데이터 (dataset 71886) | 성분 지식(=Knowledgedata와 동일 파일 확인됨) + 상황별 Q&A/CoT 상담 근거 | RAG |
-| 네이버 쇼핑 검색 API | 제품 가격·이미지 | **미사용.** API 인증 실패로 막혀 있다. 코드(`scripts/naver_shopping_*.py`, `collect_naver_shopping_candidates.py`)는 남겨 뒀지만 실행되지 않는다. 인증이 풀리면 재사용 가능 |
-| 올리브영 글로벌 (global.oliveyoung.com) | 제품 가격(KRW 환산)·이미지 | 사용 중. `scripts/collect_oliveyoung_global_candidates.py`. 검색은 Cloudflare 봇 관리 때문에 Playwright 세션이 필요하고, 상품 상세·이미지는 쿠키 없이 열려 있다. 한국 올리브영(oliveyoung.co.kr)과 글로벌의 `/kr/...` 경로는 curl·브라우저 모두 403/차단 확인됨 — 공식 한글 상품명 매칭 불가 상태 |
+| 네이버 쇼핑 검색 API | 제품 가격·이미지 | **미사용.** API 인증 실패로 막혀 있다. 코드(`data/scripts/naver_shopping_*.py`, `collect_naver_shopping_candidates.py`)는 남겨 뒀지만 실행되지 않는다. 인증이 풀리면 재사용 가능 |
+| 올리브영 글로벌 (global.oliveyoung.com) | 제품 가격(KRW 환산)·이미지 | 사용 중. `data/scripts/collect_oliveyoung_global_candidates.py`. 검색은 Cloudflare 봇 관리 때문에 Playwright 세션이 필요하고, 상품 상세·이미지는 쿠키 없이 열려 있다. 한국 올리브영(oliveyoung.co.kr)과 글로벌의 `/kr/...` 경로는 curl·브라우저 모두 403/차단 확인됨 — 공식 한글 상품명 매칭 불가 상태 |
 
 ### NIA AI Hub "스킨케어 성분-효능 추천 데이터"(dataset 71886)
 
@@ -330,7 +330,7 @@ data/reports/price_collection_quality_report.json
 
 ## 수집 스크립트 책임 범위
 
-`scripts/`에 두는 클래스의 책임 범위는 다음과 같다. (폴더 규칙은 [STRUCTURE.md](../STRUCTURE.md) 참고)
+`data/scripts/`에 두는 클래스의 책임 범위는 다음과 같다. (폴더 규칙은 [STRUCTURE.md](../STRUCTURE.md) 참고)
 모든 코드는 클래스 기반으로 작성한다([CLAUDE.md](../CLAUDE.md) 규칙 1). 아래는 함수가 아니라
 클래스와 그 책임 메서드다.
 
@@ -349,7 +349,7 @@ PriceCollectionQualityReporter.generate()
 
 ## 성분명 정규화 진행 상태
 
-`scripts/import_kcia_ingredients.py`, `scripts/import_knowledgedata.py`로 실행한다. 매칭
+`data/scripts/import_kcia_ingredients.py`, `data/scripts/import_knowledgedata.py`로 실행한다. 매칭
 로직(`IngredientNameMatcher`)의 우선순위는 각 스크립트 상단 docstring 참고.
 
 | 단계 | 상태 | 결과 |
@@ -360,10 +360,10 @@ PriceCollectionQualityReporter.generate()
 
 **MFDS 결과 관련 참고**
 
-- `scripts/import_mfds_restricted_ingredients.py`로 실행. `getCsmtcsUseRstrcInfoService`는
+- `data/scripts/import_mfds_restricted_ingredients.py`로 실행. `getCsmtcsUseRstrcInfoService`는
   성분명 필터가 없어 전량(31,191행, numOfRows=500 기준 63페이지)을 받아온 뒤 매칭한다.
   재실행 시 upsert 대신 기존 MFDS `Evidence`를 지우고 새로 채우는 전체 새로고침 방식이다
-  (안정적인 자연키가 없어서다. `scripts/mfds_importer.py` 참고).
+  (안정적인 자연키가 없어서다. `data/scripts/mfds_importer.py` 참고).
 - 매칭률이 26.6%로 Knowledgedata보다 낮다. 이 데이터셋에는 화장품에 쓰이지 않는 산업용
   화학물질도 다수 포함돼 있어 KCIA 표준화명칭목록에 없는 게 정상이다. 낮은 매칭률 자체는
   버그가 아니다.
@@ -396,7 +396,7 @@ PriceCollectionQualityReporter.generate()
 
 `agent/rag/*`(로더·청킹·임베딩·검색·생성)과 `models/rag_chunk.py`(pgvector+ParadeDB BM25
 통합 인덱스)로 구현했다. 적재 실행은 `backend/services/rag_ingestion_service.py`에 있다 -
-`agent`(로딩·청킹·임베딩)와 `backend/repositories`(저장) 양쪽이 다 필요한데 `scripts/`는
+`agent`(로딩·청킹·임베딩)와 `backend/repositories`(저장) 양쪽이 다 필요한데 `data/scripts/`는
 그 두 계층을 import할 수 없어(STRUCTURE.md), `backend/services/`에 CLI 진입점으로 뒀다.
 
 ```

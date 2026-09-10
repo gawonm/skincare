@@ -1,9 +1,9 @@
-from scripts.product_candidate_schemas import DataSource
-from scripts.product_ingredient_parse_schemas import (
+from data.scripts.product_candidate_schemas import DataSource
+from data.scripts.product_ingredient_parse_schemas import (
     IngredientSectionLinkStatus,
     IngredientTokenParseStatus,
 )
-from scripts.product_ingredient_text_parser import ProductIngredientTextParser
+from data.scripts.product_ingredient_text_parser import ProductIngredientTextParser
 
 
 def _parse_single_section_tokens(text: str):
@@ -36,9 +36,7 @@ def test_extracts_trailing_ppb_concentration_with_internal_comma() -> None:
 
 
 def test_keeps_plant_common_name_paren_attached() -> None:
-    tokens = _parse_single_section_tokens(
-        "Citrus Aurantium Dulcis (Orange) Peel Oil, Water"
-    )
+    tokens = _parse_single_section_tokens("Citrus Aurantium Dulcis (Orange) Peel Oil, Water")
     target = tokens[0]
     assert target.matching_name == "Citrus Aurantium Dulcis (Orange) Peel Oil"
     assert target.concentration_text is None
@@ -97,9 +95,7 @@ def test_detects_at_sign_delimiter_when_dominant() -> None:
 
 
 def test_splits_option_sections_by_bracket_header() -> None:
-    text = (
-        "[Niacinamide]\nWater, Niacinamide, Glycerin\n\n[Retinol]\nWater, Retinol, Glycerin"
-    )
+    text = "[Niacinamide]\nWater, Niacinamide, Glycerin\n\n[Retinol]\nWater, Retinol, Glycerin"
     result = ProductIngredientTextParser().parse(DataSource.OLIVEYOUNG_GLOBAL, "P1", text)
 
     assert [s.section_label for s in result.sections] == ["Niacinamide", "Retinol"]

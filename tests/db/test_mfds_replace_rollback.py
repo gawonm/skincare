@@ -19,13 +19,13 @@ from sqlalchemy import select
 from agent.rag.schemas import EmbeddedChunk, RagChunkDraft
 from backend.repositories.rag_chunk_repository import RagChunkInsert, RagChunkRepository
 from backend.services.rag_ingestion_service import RagIngestionService
+from data.scripts.evidence_schemas import MfdsRestrictedIngredientItem
+from data.scripts.ingredient_name_matcher import IngredientNameMatcher
+from data.scripts.ingredient_name_normalizer import IngredientNameNormalizer
+from data.scripts.ingredient_schemas import IngredientCandidate
 from models.evidence import Evidence, EvidenceSourceType, EvidenceTopic
 from models.ingredient import IngredientMaster
 from models.rag_chunk import RagChunk, RagChunkField, RagConfidenceTier, RagSourceTable
-from scripts.evidence_schemas import MfdsRestrictedIngredientItem
-from scripts.ingredient_name_matcher import IngredientNameMatcher
-from scripts.ingredient_name_normalizer import IngredientNameNormalizer
-from scripts.ingredient_schemas import IngredientCandidate
 
 
 class _FailingEmbedder:

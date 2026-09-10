@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from agent.rag.retrieval.ingredient_mention_resolver import IngredientMentionResolver
-from scripts.ingredient_schemas import IngredientCandidate
+from data.scripts.ingredient_schemas import IngredientCandidate
 
 
 def _candidate(standard_name_ko: str, old_names_ko: tuple[str, ...] = ()) -> IngredientCandidate:

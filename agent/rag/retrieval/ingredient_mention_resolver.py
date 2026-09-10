@@ -1,6 +1,6 @@
 """질문 텍스트에서 성분 언급을 찾아 `IngredientMaster`로 해소한다.
 
-`scripts.ingredient_name_matcher.IngredientNameMatcher`는 이미 분리된 후보 이름 문자열
+`data.scripts.ingredient_name_matcher.IngredientNameMatcher`는 이미 분리된 후보 이름 문자열
 하나를 표준 성분에 매칭하는 것만 한다 - 자연어 문장에서 성분 언급 자체를 뽑아내는 기능은
 없다(코드 확인 완료, 2026-09-10). 그래서 이 클래스가 그 앞 단계(언급 추출)를 맡고, 해소는
 `IngredientNameMatcher`를 그대로 재사용한다.
@@ -20,7 +20,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from scripts.ingredient_schemas import IngredientCandidate
+from data.scripts.ingredient_schemas import IngredientCandidate
 
 # 이보다 짧은 이름은 후보에서 뺀다 - 한두 글자 이름은 질문의 무관한 부분과 우연히 겹칠
 # 확률이 높아서(예: 원소기호, 흔한 조사) 오탐이 잦다.

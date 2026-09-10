@@ -1,5 +1,5 @@
-from scripts.catalog_eligibility_policy import CatalogEligibilityPolicy, CatalogExclusionReason
-from scripts.oliveyoung_global_category_schemas import OliveYoungGlobalCategoryHitFields
+from data.scripts.catalog_eligibility_policy import CatalogEligibilityPolicy, CatalogExclusionReason
+from data.scripts.oliveyoung_global_category_schemas import OliveYoungGlobalCategoryHitFields
 
 
 def _hit(
@@ -57,7 +57,9 @@ def test_excludes_double_pack_addon_pattern() -> None:
     # 라이브 API로 실제 확인한 회귀 케이스: "Double Pack (+X)"는 본품에 다른 상품을
     # 얹어 파는 구성이라 "ml+ml" 정규식만으로는 못 잡는다.
     result = CatalogEligibilityPolicy().evaluate(
-        _hit(prdt_name="ROUND LAB Birch Juice Moisturizing Cream 80ml Double Pack (+Birch Drop Serum 20ml)")
+        _hit(
+            prdt_name="ROUND LAB Birch Juice Moisturizing Cream 80ml Double Pack (+Birch Drop Serum 20ml)"
+        )
     )
     assert not result.is_eligible
     assert CatalogExclusionReason.BUNDLE_KEYWORD in result.reasons
@@ -66,7 +68,9 @@ def test_excludes_double_pack_addon_pattern() -> None:
 def test_does_not_exclude_brand_name_containing_plus_sign() -> None:
     # 라이브 API로 실제 확인한 회귀 케이스: "Dr.Jart+"가 브랜드명이라 "+"만 보고 묶음
     # 상품으로 오판하면 안 된다.
-    result = CatalogEligibilityPolicy().evaluate(_hit(prdt_name="Dr.Jart+ Cicapair Cleansing Foam 150ml"))
+    result = CatalogEligibilityPolicy().evaluate(
+        _hit(prdt_name="Dr.Jart+ Cicapair Cleansing Foam 150ml")
+    )
     assert result.is_eligible
 
 

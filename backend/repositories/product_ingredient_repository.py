@@ -1,7 +1,7 @@
 """`product_ingredient_snapshot`/`product_ingredient` 저장·조회. commit은 하지 않는다.
 
 `ProductIngredientInsert`를 이 파일에 따로 두는 이유는 `rag_chunk_repository.py`와 같다 -
-`backend/repositories/`는 `models`만 import한다는 규칙이 있어 `scripts.product_ingredient_parse_schemas`를
+`backend/repositories/`는 `models`만 import한다는 규칙이 있어 `data.scripts.product_ingredient_parse_schemas`를
 직접 받을 수 없다. 호출하는 쪽(`backend/services/`)이 그 결과를 이 DTO로 변환해 넘긴다.
 """
 

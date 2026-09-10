@@ -3,7 +3,7 @@
 지금까지 따로 검증된 부품들(`IngredientMentionResolver`, `QuestionIntentClassifier`,
 `HybridRetriever`, `AnswerGenerator`)을 여기서 조립한다. `backend/services/`에 두는 이유는
 `rag_ingestion_service.py`와 같다 - `agent`(검색·생성)와 `backend/repositories`(DB 쿼리)
-양쪽이 필요한데 `scripts/`는 그 둘을 import할 수 없다.
+양쪽이 필요한데 `data/scripts/`는 그 둘을 import할 수 없다.
 
 성분이 특정된 질문은 그 성분으로 검색을 좁히고(다른 성분 근거로 대체하지 않는다), 모호한
 언급은 검색을 아예 안 하고 "명확화 필요"로 반환한다. 복수 성분 질문은 개별 성분 판정과

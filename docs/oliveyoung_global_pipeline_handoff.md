@@ -11,7 +11,7 @@
 
 ## 1. 왜 이 파이프라인이 필요했나
 
-원래 계획은 네이버 쇼핑 검색 API(`scripts/naver_shopping_*.py`)로 제품 가격·이미지를
+원래 계획은 네이버 쇼핑 검색 API(`data/scripts/naver_shopping_*.py`)로 제품 가격·이미지를
 모으는 것이었다. 하지만 **네이버 쇼핑 API 인증이 막혀 있어 사용 불가**로 확정됐다
 (`docs/data.md` 참고). 대체 수단으로 올리브영 글로벌(global.oliveyoung.com)을 크롤링해
 같은 역할을 하도록 새로 만든 게 이 파이프라인이다.
@@ -39,7 +39,7 @@
 
 ```bash
 cd /Users/moon/projects/skincare-rag-pipeline
-uv run python -m scripts.collect_oliveyoung_global_candidates
+uv run python -m data.scripts.collect_oliveyoung_global_candidates
 ```
 
 - 최초 1회 `uv sync` 후 `uv run playwright install chromium` 필요 (검색 API 우회에 헤드리스
@@ -70,25 +70,25 @@ uv run python -m scripts.collect_oliveyoung_global_candidates
 
 | 파일 | 역할 |
 | --- | --- |
-| `scripts/oliveyoung_global_schemas.py` | API 원본 응답을 그대로 반영하는 Pydantic 모델. `*_krw` 필드만 클라이언트가 계산해서 채움. |
-| `scripts/oliveyoung_global_client.py` | 검색(Playwright)·상품상세(httpx)·전성분 원문(`get_ingredients_text`, httpx) API 호출. |
-| `scripts/oliveyoung_global_candidate_builder.py` | 상품 상세 1건 → `ProductCandidateRow` 1건. 옵션 매칭·번역·용량파싱·이미지다운로드·검토사유 태깅을 여기서 조립. |
-| `scripts/oliveyoung_global_candidate_collector.py` | 성분군별 검색어 순회 + 그룹 간 중복상품 후처리(`DUPLICATE_PRODUCT_ACROSS_GROUPS`). |
-| `scripts/collect_oliveyoung_global_candidates.py` | 진입점. 검색어 목록(`TARGET_GROUP_SEARCH_QUERIES`)이 여기 있다. |
+| `data/scripts/oliveyoung_global_schemas.py` | API 원본 응답을 그대로 반영하는 Pydantic 모델. `*_krw` 필드만 클라이언트가 계산해서 채움. |
+| `data/scripts/oliveyoung_global_client.py` | 검색(Playwright)·상품상세(httpx)·전성분 원문(`get_ingredients_text`, httpx) API 호출. |
+| `data/scripts/oliveyoung_global_candidate_builder.py` | 상품 상세 1건 → `ProductCandidateRow` 1건. 옵션 매칭·번역·용량파싱·이미지다운로드·검토사유 태깅을 여기서 조립. |
+| `data/scripts/oliveyoung_global_candidate_collector.py` | 성분군별 검색어 순회 + 그룹 간 중복상품 후처리(`DUPLICATE_PRODUCT_ACROSS_GROUPS`). |
+| `data/scripts/collect_oliveyoung_global_candidates.py` | 진입점. 검색어 목록(`TARGET_GROUP_SEARCH_QUERIES`)이 여기 있다. |
 
 ### 소스 공통(네이버/올리브영이 같이 씀)
 
 | 파일 | 역할 |
 | --- | --- |
-| `scripts/product_candidate_schemas.py` | `TargetGroup`, `DataSource`, `TitleSource`, `ReviewReason`, `PriceBand`, `MatchStatus`, `ProductCandidateRow` — 최종 CSV 스키마. |
-| `scripts/product_candidate_csv_writer.py` | CSV 저장. 소스별 병합 로직, `review_reasons` 의 `\|` 직렬화. |
-| `scripts/product_price_band_classifier.py` | `lowest_price` → 가격대 분류. |
-| `scripts/product_title_translator.py` | `raw_title` → `display_title` 조회 전용(번역 자체는 안 함). |
-| `scripts/product_volume_parser.py` | 제목에서 단품 용량 추출. 애매하면 `None`. |
-| `scripts/product_option_matcher.py` | 옵션이 여러 개인 상품에서 성분 키워드로 정확한 옵션 찾기. |
-| `scripts/review_reason_overrides.py` | 코드가 자동 판단 못 하는 검토 사유(원문-공식명 충돌 등) 수동 등록 조회. |
-| `scripts/image_downloader.py` | 이미지 다운로드 + raw/processed 이중 저장 + 매직바이트 확장자 판별. |
-| `scripts/exchange_rate_client.py` | USD→KRW 환율 조회(Frankfurter API). |
+| `data/scripts/product_candidate_schemas.py` | `TargetGroup`, `DataSource`, `TitleSource`, `ReviewReason`, `PriceBand`, `MatchStatus`, `ProductCandidateRow` — 최종 CSV 스키마. |
+| `data/scripts/product_candidate_csv_writer.py` | CSV 저장. 소스별 병합 로직, `review_reasons` 의 `\|` 직렬화. |
+| `data/scripts/product_price_band_classifier.py` | `lowest_price` → 가격대 분류. |
+| `data/scripts/product_title_translator.py` | `raw_title` → `display_title` 조회 전용(번역 자체는 안 함). |
+| `data/scripts/product_volume_parser.py` | 제목에서 단품 용량 추출. 애매하면 `None`. |
+| `data/scripts/product_option_matcher.py` | 옵션이 여러 개인 상품에서 성분 키워드로 정확한 옵션 찾기. |
+| `data/scripts/review_reason_overrides.py` | 코드가 자동 판단 못 하는 검토 사유(원문-공식명 충돌 등) 수동 등록 조회. |
+| `data/scripts/image_downloader.py` | 이미지 다운로드 + raw/processed 이중 저장 + 매직바이트 확장자 판별. |
+| `data/scripts/exchange_rate_client.py` | USD→KRW 환율 조회(Frankfurter API). |
 
 ### 수동 관리 데이터 파일
 
@@ -99,7 +99,7 @@ uv run python -m scripts.collect_oliveyoung_global_candidates
 
 ### 네이버 (비활성 상태로 유지)
 
-`scripts/naver_shopping_*.py`, `scripts/collect_naver_shopping_candidates.py` — 코드는
+`data/scripts/naver_shopping_*.py`, `data/scripts/collect_naver_shopping_candidates.py` — 코드는
 남아 있지만 API 인증 실패로 실행 안 됨. 인증이 풀리면 그대로 재사용 가능(스키마는 이미
 올리브영과 공유하도록 리팩터링해 둠).
 
@@ -197,10 +197,10 @@ RAG 세션과 역할을 나눴다: **올리브영 세션 = 원문 수집·파싱
 
 | 파일 | 역할 |
 | --- | --- |
-| `scripts/product_ingredient_parse_schemas.py` | 파싱 결과 Pydantic 모델·Enum. `ProductIngredientParseResult`(source+source_product_id+원문+구간들), `IngredientSectionParse`(라벨+연결상태+토큰들), `ParsedIngredientToken`(순서+원문+매칭명+함량+파싱상태) |
-| `scripts/product_ingredient_text_parser.py` | 원문 → 구간·토큰 파싱. `PARSER_VERSION` 상수 있음(로직 바뀌면 올릴 것) |
-| `scripts/product_ingredient_option_linker.py` | 구간 라벨(`[옵션명]`)을 실제 판매 옵션(`gds_cd`)에 연결. 라벨이 옵션명 목록 중 정확히 하나와만 겹칠 때만 `LINKED` |
-| `scripts/inspect_ingredient_parsing.py` | DB 안 씀. 실제 수집 데이터 전체(고유 상품 91개)에 파서+링커를 돌려 리포트 생성(`data/manual_review/ingredient_parse_sample_report.txt`, gitignore 대상) |
+| `data/scripts/product_ingredient_parse_schemas.py` | 파싱 결과 Pydantic 모델·Enum. `ProductIngredientParseResult`(source+source_product_id+원문+구간들), `IngredientSectionParse`(라벨+연결상태+토큰들), `ParsedIngredientToken`(순서+원문+매칭명+함량+파싱상태) |
+| `data/scripts/product_ingredient_text_parser.py` | 원문 → 구간·토큰 파싱. `PARSER_VERSION` 상수 있음(로직 바뀌면 올릴 것) |
+| `data/scripts/product_ingredient_option_linker.py` | 구간 라벨(`[옵션명]`)을 실제 판매 옵션(`gds_cd`)에 연결. 라벨이 옵션명 목록 중 정확히 하나와만 겹칠 때만 `LINKED` |
+| `data/scripts/inspect_ingredient_parsing.py` | DB 안 씀. 실제 수집 데이터 전체(고유 상품 91개)에 파서+링커를 돌려 리포트 생성(`data/manual_review/ingredient_parse_sample_report.txt`, gitignore 대상) |
 | `tests/unit/test_product_ingredient_text_parser.py`, `tests/unit/test_product_ingredient_option_linker.py` | 회귀 테스트 15개(슬래시 보존, 함량 괄호 추출, 식물명 괄호 보존, 1,2-Hexanediol 재결합, 구분자 누락 오탐 방지, `@` 구분자 감지, 섹션 분리, 옵션 링크 유일/0/다중매칭) |
 
 ### 핵심 설계 결정
@@ -242,7 +242,7 @@ RAG 세션과 역할을 나눴다: **올리브영 세션 = 원문 수집·파싱
 - `models/product_ingredient.py`: `ProductIngredientSnapshot`(원문 스냅샷,
   source+source_product_id+원문해시로 중복 방지) / `ProductIngredient`(토큰+매칭 결과,
   미매칭도 `ingredient_id=NULL`로 보존) — 필드명이 이 세션의 Pydantic 스키마와 1:1 대응
-- `scripts/product_ingredient_match_acceptance_policy.py`: 기존 `IngredientNameMatcher`는
+- `data/scripts/product_ingredient_match_acceptance_policy.py`: 기존 `IngredientNameMatcher`는
   안 건드리고, 영문 정규화 정확일치만 자동 확정 + 나머지는 전부 검토로 돌리는 정책 레이어
 - `backend/repositories/product_ingredient_repository.py`,
   `backend/services/product_ingredient_service.py`: 저장/조회 (진행 중)
@@ -254,7 +254,7 @@ RAG 세션과 역할을 나눴다: **올리브영 세션 = 원문 수집·파싱
    커밋 예정이지만, RAG 쪽 파일(`models/product_ingredient.py`,
    `backend/repositories/product_ingredient_repository.py`,
    `backend/services/product_ingredient_service.py`,
-   `scripts/product_ingredient_match_acceptance_policy.py`, 마이그레이션,
+   `data/scripts/product_ingredient_match_acceptance_policy.py`, 마이그레이션,
    `config.yaml.sample`/`models/__init__.py`의 등록 변경)는 RAG 세션이 별도로 커밋해야
    한다 — 안 했으면 그 세션에 먼저 확인할 것.
 2. RAG 세션의 repository/service 설계가 이 세션의 파싱 계약(4·6번 원칙: 미매칭 보존,

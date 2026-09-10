@@ -1,8 +1,8 @@
-from scripts.oliveyoung_global_schemas import OliveYoungGlobalProductOption
-from scripts.product_candidate_schemas import DataSource
-from scripts.product_ingredient_option_linker import ProductIngredientOptionLinker
-from scripts.product_ingredient_parse_schemas import IngredientSectionLinkStatus
-from scripts.product_ingredient_text_parser import ProductIngredientTextParser
+from data.scripts.oliveyoung_global_schemas import OliveYoungGlobalProductOption
+from data.scripts.product_candidate_schemas import DataSource
+from data.scripts.product_ingredient_option_linker import ProductIngredientOptionLinker
+from data.scripts.product_ingredient_parse_schemas import IngredientSectionLinkStatus
+from data.scripts.product_ingredient_text_parser import ProductIngredientTextParser
 
 
 def _option(gds_cd: str, option_name: str) -> OliveYoungGlobalProductOption:

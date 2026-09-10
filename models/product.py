@@ -1,6 +1,6 @@
 """상품 카탈로그(이름·가격·이미지). 전성분 매칭 결과는 여기 담지 않는다.
 
-`scripts/product_candidate_schemas.py`의 `ProductCandidateRow`가 이 테이블의 CSV 형태다.
+`data/scripts/product_candidate_schemas.py`의 `ProductCandidateRow`가 이 테이블의 CSV 형태다.
 소스(올리브영 글로벌 등) + 수집 방식(성분 키워드 검색/카테고리 전수 크롤링)에 상관없이
 같은 테이블에 담고, 크롤링마다 `(source, source_product_id)` 기준으로 최신 상태 한 행만
 유지한다(UPSERT) — 가격·재고 이력은 이번 범위에 없다. 이력이 필요해지면 별도 테이블로
@@ -34,7 +34,7 @@ def _sql_enum(enum_cls: type[StrEnum], *, length: int) -> SqlEnum:
 
 
 class ProductTargetGroup(StrEnum):
-    """`scripts.product_candidate_schemas.TargetGroup`과 값을 맞춘다.
+    """`data.scripts.product_candidate_schemas.TargetGroup`과 값을 맞춘다.
 
     `models`는 `scripts`를 import하지 않으므로(STRUCTURE.md 의존 방향) 값을 여기 다시
     선언한다. 카테고리 전수 크롤링으로 모은 행은 특정 성분에 배정하지 않아 NULL이다.
@@ -48,7 +48,7 @@ class ProductTargetGroup(StrEnum):
 
 
 class ProductTitleSource(StrEnum):
-    """`scripts.product_candidate_schemas.TitleSource`와 값을 맞춘다."""
+    """`data.scripts.product_candidate_schemas.TitleSource`와 값을 맞춘다."""
 
     NATIVE_KR = "native_kr"
     OLIVEYOUNG_KR = "oliveyoung_kr"
@@ -57,7 +57,7 @@ class ProductTitleSource(StrEnum):
 
 
 class ProductPriceBand(StrEnum):
-    """`scripts.product_candidate_schemas.PriceBand`와 값을 맞춘다."""
+    """`data.scripts.product_candidate_schemas.PriceBand`와 값을 맞춘다."""
 
     UNDER_10K = "1만원 미만"
     BAND_10K = "1만원대"
@@ -67,7 +67,7 @@ class ProductPriceBand(StrEnum):
 
 
 class ProductMatchStatus(StrEnum):
-    """`scripts.product_candidate_schemas.MatchStatus`와 값을 맞춘다."""
+    """`data.scripts.product_candidate_schemas.MatchStatus`와 값을 맞춘다."""
 
     MATCHED = "matched"
     MANUAL_REVIEW_REQUIRED = "manual_review_required"
@@ -89,10 +89,14 @@ class Product(EntityBase):
         comment="예: 'oliveyoung_global'. product_ingredient_snapshot.source와 값을 맞춘다",
     )
     source_product_id: Mapped[str] = mapped_column(
-        Text, nullable=False, comment="쇼핑몰 상품 ID. candidate_id(수집 실행 순번)는 저장하지 않는다"
+        Text,
+        nullable=False,
+        comment="쇼핑몰 상품 ID. candidate_id(수집 실행 순번)는 저장하지 않는다",
     )
     search_query: Mapped[str] = mapped_column(
-        Text, nullable=False, comment="이 행을 찾은 검색어. 카테고리 전수 크롤링이면 'category:<코드>'"
+        Text,
+        nullable=False,
+        comment="이 행을 찾은 검색어. 카테고리 전수 크롤링이면 'category:<코드>'",
     )
     target_group: Mapped[ProductTargetGroup | None] = mapped_column(
         _sql_enum(ProductTargetGroup, length=20),
@@ -102,14 +106,18 @@ class Product(EntityBase):
     raw_title: Mapped[str] = mapped_column(
         Text, nullable=False, comment="수집한 원본 상품명. 고치지 않는다 — 재매칭의 기준"
     )
-    display_title: Mapped[str] = mapped_column(Text, nullable=False, comment="화면 노출용 한글 상품명")
+    display_title: Mapped[str] = mapped_column(
+        Text, nullable=False, comment="화면 노출용 한글 상품명"
+    )
     title_source: Mapped[ProductTitleSource] = mapped_column(
         _sql_enum(ProductTitleSource, length=20),
         nullable=False,
         comment="display_title의 신뢰도 구분. TRANSLATED/UNTRANSLATED는 공식명 아님",
     )
     brand: Mapped[str] = mapped_column(Text, nullable=False, comment="브랜드명")
-    maker: Mapped[str | None] = mapped_column(Text, nullable=True, comment="제조사. 소스가 안 주면 NULL")
+    maker: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="제조사. 소스가 안 주면 NULL"
+    )
     category1: Mapped[str] = mapped_column(Text, nullable=False, comment="대분류")
     category2: Mapped[str | None] = mapped_column(Text, nullable=True, comment="중분류")
     category3: Mapped[str | None] = mapped_column(Text, nullable=True, comment="소분류")
@@ -125,17 +133,23 @@ class Product(EntityBase):
         _sql_enum(ProductPriceBand, length=20), nullable=False, comment="lowest_price 기준 가격대"
     )
     volume_value: Mapped[float | None] = mapped_column(
-        Numeric, nullable=True, comment="제목에서 추출한 단일 용량. 복수/세트/미확정이면 NULL(0 아님)"
+        Numeric,
+        nullable=True,
+        comment="제목에서 추출한 단일 용량. 복수/세트/미확정이면 NULL(0 아님)",
     )
     volume_unit: Mapped[str | None] = mapped_column(Text, nullable=True, comment="예: 'ml', 'g'")
     image_url: Mapped[str] = mapped_column(Text, nullable=False, comment="원본 이미지 URL")
     local_image_path: Mapped[str] = mapped_column(
-        Text, nullable=False, comment="저장소 루트 기준 상대경로. DB만 넘기면 이미지 파일은 안 따라간다"
+        Text,
+        nullable=False,
+        comment="저장소 루트 기준 상대경로. DB만 넘기면 이미지 파일은 안 따라간다",
     )
     shopping_url: Mapped[str] = mapped_column(Text, nullable=False, comment="상품 상세 페이지 URL")
     mall_name: Mapped[str] = mapped_column(Text, nullable=False, comment="판매처명")
     product_type: Mapped[str] = mapped_column(
-        Text, nullable=False, comment="현재 관측값 'GENERAL_PRODUCT' 하나뿐이라 아직 Enum으로 좁히지 않음"
+        Text,
+        nullable=False,
+        comment="현재 관측값 'GENERAL_PRODUCT' 하나뿐이라 아직 Enum으로 좁히지 않음",
     )
     observed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, comment="이 상태를 수집한 시각(크롤러 관측 시각)"

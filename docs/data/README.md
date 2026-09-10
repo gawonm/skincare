@@ -61,13 +61,13 @@ DB에 넣는 서비스/리포지토리가 필요하면 직접 만들지 말고
   있다. `cf_clearance` 쿠키를 httpx로 재사용해도 403이 난다 — 브라우저의 실제 JS 실행
   컨텍스트에서 나온 `fetch`만 통과시키기 때문(Playwright의 `APIRequestContext`로 같은 쿠키를
   써도 막힘, 직접 확인함). 그래서 검색은 Playwright로 연 페이지 안에서 `page.evaluate`로
-  실행한다(`scripts/oliveyoung_global_client.py`).
+  실행한다(`data/scripts/oliveyoung_global_client.py`).
 - `global.oliveyoung.com`의 상품 상세(`product/detail-data`), 전성분(`product/description-info`),
   **카테고리 목록(`display/category/product-data/`)**은 쿠키 없이 일반 httpx로 호출된다. 새
   엔드포인트를 추가할 때 "올리브영이니까 Playwright가 필요하다"고 넘겨짚지 말고, 호스트가
   `global.oliveyoung.com`인지부터 확인한다.
 - 카테고리 목록 API(`ctgrNo`, `pageNum`, `rowsPerPage`)는 문서화된 자료가 없어 브라우저
-  네트워크 탭으로 직접 조사해서 찾았다(`scripts/oliveyoung_global_category_client.py`). 최상위
+  네트워크 탭으로 직접 조사해서 찾았다(`data/scripts/oliveyoung_global_category_client.py`). 최상위
   카테고리 하나(`1000000008` = Skincare)가 하위 카테고리 전체의 합집합이라, 하위 카테고리를
   따로 순회하면 상품이 최대 4번 중복 처리된다 — 반드시 상위 카테고리 하나만 페이지 순회한다.
 
@@ -77,7 +77,7 @@ DB에 넣는 서비스/리포지토리가 필요하면 직접 만들지 말고
 수집 중 Windows 환경 문제로 두 번 죽으면서 그 위험을 직접 겪었다(아래 항목). 상품 하나를
 처리할 때마다 즉시 CSV에 반영하도록 고친 뒤로는 중단돼도 그 시점까지 결과가 남았고, 재실행하면
 이미 처리한 상품(출력 CSV에 이미 있는 `source_product_id`)은 건너뛰는 것만으로 재개가 됐다 —
-별도 체크포인트 파일 없이 출력 파일 자체가 진행 상태다(`scripts/oliveyoung_global_catalog_crawler.py`
+별도 체크포인트 파일 없이 출력 파일 자체가 진행 상태다(`data/scripts/oliveyoung_global_catalog_crawler.py`
 의 `on_row_collected` 콜백 참고).
 
 ### Windows 개발 환경에서 실제로 겪은 크래시 두 가지
@@ -99,13 +99,13 @@ DB에 넣는 서비스/리포지토리가 필요하면 직접 만들지 말고
 `product_candidates.csv`(5개 성분 키워드 검색, `TargetGroup` 필수)와 `catalog_products.csv`
 (카테고리 순회, 특정 성분에 안 묶임)는 별도 파일이다. 카테고리로 모은 상품을 억지로 하나의
 `TargetGroup`에 배정하지 않기 위해서다 — 대신 `ProductCandidateRow.target_group`을
-`TargetGroup | None`으로 완화했다(`scripts/product_candidate_schemas.py`). 두 CSV는
+`TargetGroup | None`으로 완화했다(`data/scripts/product_candidate_schemas.py`). 두 CSV는
 `ingest_product_ingredients.py`/`inspect_ingredient_parsing.py` 단계에서만 합쳐서 처리한다
 (전성분 적재 DB의 중복 방지 키가 `source_product_id` 기준이라 어느 CSV 출신인지와 무관하게
 동작하기 때문). 새 CSV를 추가할 일이 생기면 이 두 스크립트에 읽기 경로만 추가하면 된다 —
 파서·링커·서비스·리포지토리·DB 모델은 건드릴 필요가 없다.
 
-`scripts/ingest_product_catalog.py`(카탈로그 → `product` 테이블)도 같은 이유로 두 CSV를 합쳐
+`data/scripts/ingest_product_catalog.py`(카탈로그 → `product` 테이블)도 같은 이유로 두 CSV를 합쳐
 읽되, 같은 상품이 둘 다에 있으면 `product_candidates.csv`(성분 키워드 검색, `target_group`이
 채워짐) 쪽을 우선한다 — 순서를 반대로 하면 이미 아는 성분군 정보가 사라진다.
 

@@ -1,7 +1,7 @@
 """`Evidence`/`IngredientKnowledgeFact`/NIA Q&A를 읽어 `rag_chunk`에 적재하는 배치 진입점.
 
-`scripts/`에 두지 않는 이유: 이 파이프라인은 `agent/rag`(로더·청킹·임베딩)와
-`backend/repositories`(저장) 둘 다 필요한데, STRUCTURE.md 규칙상 `scripts/`는 `agent`,
+`data/scripts/`에 두지 않는 이유: 이 파이프라인은 `agent/rag`(로더·청킹·임베딩)와
+`backend/repositories`(저장) 둘 다 필요한데, STRUCTURE.md 규칙상 `data/scripts/`는 `agent`,
 `backend`를 import할 수 없다. `backend/services/`는 이미 그 규칙에서 `agent`와 `repositories`
 양쪽을 부를 수 있는 계층이라 여기에 둔다.
 
@@ -40,13 +40,13 @@ from backend.repositories.rag_chunk_repository import (
 )
 from core.config import settings
 from core.database import Database
+from data.scripts.evidence_schemas import MfdsImportSummary, MfdsRestrictedIngredientItem
+from data.scripts.ingredient_name_matcher import IngredientNameMatcher
+from data.scripts.ingredient_name_normalizer import IngredientNameNormalizer
+from data.scripts.mfds_client import MfdsRestrictedIngredientClient
+from data.scripts.mfds_importer import MfdsRestrictedIngredientImporter
 from models.evidence import Evidence, EvidenceSourceType
 from models.rag_chunk import RagSourceTable
-from scripts.evidence_schemas import MfdsImportSummary, MfdsRestrictedIngredientItem
-from scripts.ingredient_name_matcher import IngredientNameMatcher
-from scripts.ingredient_name_normalizer import IngredientNameNormalizer
-from scripts.mfds_client import MfdsRestrictedIngredientClient
-from scripts.mfds_importer import MfdsRestrictedIngredientImporter
 
 
 class RagIngestionService:

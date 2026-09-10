@@ -1,6 +1,6 @@
 # data → backend: 상품 카탈로그 저장
 
-data 파트(`scripts/ingest_product_catalog.py`)가 상품 카탈로그 CSV 한 행을 파싱한 뒤,
+data 파트(`data/scripts/ingest_product_catalog.py`)가 상품 카탈로그 CSV 한 행을 파싱한 뒤,
 DB에 저장하는 걸 backend 파트에 맡긴다. 저장 로직(`backend/repositories/`,
 `backend/services/`)은 [CLAUDE.md](../../CLAUDE.md) 규칙 15의 경로표상 backend 파트 소유라
 data 파트가 직접 만들지 않는다.
@@ -16,7 +16,7 @@ ProductService.ingest(row: ProductCandidateRow) -> tuple[Product, bool]
 
 ## 입력
 
-`ProductCandidateRow` — data 파트가 이미 정의해 둔 모델. `scripts/product_candidate_schemas.py`
+`ProductCandidateRow` — data 파트가 이미 정의해 둔 모델. `data/scripts/product_candidate_schemas.py`
 소유(캐주얼 변경 없음, 값이 바뀌면 이 문서를 먼저 고친다).
 
 ```python
@@ -65,20 +65,20 @@ class ProductCandidateRow(BaseModel):
 
 | 타입 | 위치 | 소유 |
 | --- | --- | --- |
-| `ProductCandidateRow` | `scripts/product_candidate_schemas.py` | data |
+| `ProductCandidateRow` | `data/scripts/product_candidate_schemas.py` | data |
 | `Product` (ORM 모델) | `models/product.py` | data |
 | `ProductService`, `ProductRepository` | `backend/services/`, `backend/repositories/` | backend |
 
 ## 실패했을 때
 
 현재 명시적으로 잡는 예외 없음. `ingredient_id` FK 위반이나 NOT NULL 위반 등은 SQLAlchemy
-예외가 그대로 올라간다. 이 계약을 부르는 `scripts/ingest_product_catalog.py`는 개별 행 실패를
+예외가 그대로 올라간다. 이 계약을 부르는 `data/scripts/ingest_product_catalog.py`는 개별 행 실패를
 잡지 않고 전체 배치가 실패하게 둔다 — 필요하면 이 부분을 backend와 협의해 바꾼다(미정).
 
 ## 아직 안 정한 것
 
 - **commit 시점**: 기존 `ProductIngredientService` 관례를 따르면 `ProductService`는 flush만
-  하고 `commit`은 호출부(`scripts/`)가 한다. backend 파트가 다르게 정하고 싶으면 여기에 먼저
+  하고 `commit`은 호출부(`data/scripts/`)가 한다. backend 파트가 다르게 정하고 싶으면 여기에 먼저
   적고 협의한다.
 - 개별 행 실패 시 계속 진행할지(skip) 전체 중단할지.
 
@@ -220,7 +220,7 @@ class ProductRepository:
 <summary><code>backend/services/product_service.py</code></summary>
 
 ```python
-"""`scripts/product_candidate_schemas.py`의 `ProductCandidateRow`를 받아 `product`
+"""`data/scripts/product_candidate_schemas.py`의 `ProductCandidateRow`를 받아 `product`
 테이블에 저장한다."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -233,7 +233,7 @@ from models.product import (
     ProductTargetGroup,
     ProductTitleSource,
 )
-from scripts.product_candidate_schemas import ProductCandidateRow
+from data.scripts.product_candidate_schemas import ProductCandidateRow
 
 
 class ProductService:
@@ -273,5 +273,5 @@ class ProductService:
 
 </details>
 
-이 두 파일로 `uv run python -m scripts.ingest_product_catalog` 실행 → 1,838개 상품 적재,
+이 두 파일로 `uv run python -m data.scripts.ingest_product_catalog` 실행 → 1,838개 상품 적재,
 재실행 시 중복 없이 갱신만 발생하는 것까지 확인했다.

@@ -16,8 +16,8 @@
 확인하고, 이 세션(RAG)은 그 파싱 결과를 표준 성분(`IngredientMaster`)과 매칭해 저장하는
 쪽을 새로 만들었다. 순서대로:
 
-1. 처음엔 내가 직접 파서 프로토타입(`scripts/product_ingredient_schemas.py`,
-   `scripts/product_ingredient_tokenizer.py`)을 만들어 실제 94개 상품 원문으로 검증했다
+1. 처음엔 내가 직접 파서 프로토타입(`data/scripts/product_ingredient_schemas.py`,
+   `data/scripts/product_ingredient_tokenizer.py`)을 만들어 실제 94개 상품 원문으로 검증했다
    (`needs_review` 17→9까지 줄임). 그런데 올리브영 세션이 이미 더 나은 파서(옵션 구간을
    실제 판매 옵션 `gds_cd`까지 연결하고, `,`/`@` 구분자를 등장 빈도로 자동 판정)를 만들어
    둔 걸 확인하고 **내 프로토타입은 통째로 삭제**했다. 지금은 올리브영 세션의 파서만 쓴다.
@@ -26,7 +26,7 @@
    완료 확인함). `ProductIngredientSnapshot`(원문 스냅샷) + `ProductIngredient`(토큰 하나 +
    매칭 결과) 두 테이블.
 3. `IngredientNameMatcher`는 수정하지 않고, 호출부에서만 자동 확정 범위를 좁히는
-   `scripts/product_ingredient_match_acceptance_policy.py`를 만들었다(영문 정규화 일치
+   `data/scripts/product_ingredient_match_acceptance_policy.py`를 만들었다(영문 정규화 일치
    두 방법만 자동 `CONFIRMED`, 나머지는 전부 `NEEDS_REVIEW`).
 4. `backend/repositories/product_ingredient_repository.py` +
    `backend/services/product_ingredient_service.py`까지 만들었다. 스냅샷은
@@ -39,7 +39,7 @@
 
 **추가로 한 일 (커밋 `67ea65e`) — 진입점 추가 + 실제 실행 확인 ✅**
 
-- [x] 파이프라인 진입점 `scripts/ingest_product_ingredients.py` 추가: `product_candidates.csv`를
+- [x] 파이프라인 진입점 `data/scripts/ingest_product_ingredients.py` 추가: `product_candidates.csv`를
   읽어 올리브영 파서(`ProductIngredientTextParser` + `ProductIngredientOptionLinker`)로 파싱하고
   `ProductIngredientService.ingest()`로 저장까지 연결하는 CLI.
 - [x] 실제 91개 고유 상품으로 실행 확인: 5,152 토큰 중 **confirmed 4,885 / needs_review 138 /
@@ -181,7 +181,7 @@ skincare-rag-pipeline/
 │   ├── ingredient_knowledge.py   IngredientKnowledgeFact: 성분 지식
 │   ├── evidence.py               Evidence: 근거·규제·조건
 │   └── rag_chunk.py              RagChunk: 검색용 텍스트·벡터·출처
-├── scripts/                      원본 수집·정제 작업
+├── data/scripts/                      원본 수집·정제 작업
 │   ├── import_kcia_ingredients.py / kcia_pdf_parser.py
 │   ├── import_knowledgedata.py / knowledgedata_parser.py
 │   ├── import_mfds_restricted_ingredients.py / mfds_client.py
@@ -405,17 +405,17 @@ NIA 레코드 수는 ZIP 파일 수나 JSONL 파일 수로 대신하지 않고 �
 
 ```bash
 # 새 환경의 표준 성분 사전
-uv run python -m scripts.import_kcia_ingredients "data/별첨1. 표준화명칭목록_260831.pdf"
+uv run python -m data.scripts.import_kcia_ingredients "data/별첨1. 표준화명칭목록_260831.pdf"
 
 # 지식·근거 소스 적재
-uv run python -m scripts.import_knowledgedata data/Knowledgedata.xlsx
-uv run python -m scripts.import_mfds_restricted_ingredients
+uv run python -m data.scripts.import_knowledgedata data/Knowledgedata.xlsx
+uv run python -m data.scripts.import_mfds_restricted_ingredients
 
 # 위 소스와 NIA를 검색 청크로 적재
 uv run python -m backend.services.rag_ingestion_service --nia-qa-zip "data/nia_qa/*.zip"
 
 # 올리브영 후보 재수집: 기존 동일 소스 CSV를 교체함
-uv run python -m scripts.collect_oliveyoung_global_candidates
+uv run python -m data.scripts.collect_oliveyoung_global_candidates
 ```
 
 네이버 명령은 현재 실행 대상에 포함하지 않는다. 질의용 단일 CLI나 HTTP 경로는 이번 확인에서 없었으므로 임의의 실행 명령을 제시하지 않는다. 질의 연결은 5-C의 실제 부품 호출 순서를 참고한다.
