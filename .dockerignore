@@ -14,7 +14,11 @@ config.yaml
 .env
 
 # 용량이 크고 런타임에 필요 없다.
-data/
+data/*
+!data/__init__.py
+!data/scripts/
+data/scripts/*
+!data/scripts/*.py
 docs/
 tests/
 *.faiss

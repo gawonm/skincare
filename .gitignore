@@ -35,6 +35,8 @@ htmlcov/
 Thumbs.db
 Desktop.ini
 ehthumbs.db
+.DS_Store
+.Rhistory
 
 # 로컬에서만 쓰는 파일
 *.log
@@ -51,6 +53,13 @@ frontend/.next/
 
 # RAG 관련 로컬 데이터. 용량이 크고 다시 만들 수 있으므로 커밋하지 않는다.
 data/
+# 데이터 처리 코드만 추적하고 대용량 원본·산출물은 계속 제외한다.
+!/data/
+/data/*
+!/data/__init__.py
+!/data/scripts/
+/data/scripts/*
+!/data/scripts/*.py
 uploads/
 models_cache/
 *.faiss
