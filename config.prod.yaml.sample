@@ -1,0 +1,36 @@
+# 배포용 config.yaml 예시. config.yaml 으로 복사한 뒤 실제 값을 넣는다.
+# 이 파일은 저장소에 커밋되므로 실제 비밀값을 적지 않는다. config.yaml 은 .gitignore 대상이다.
+#
+# 로컬 개발용은 config.yaml.sample 을 쓴다. 둘의 차이는 호스트 이름과 쿠키 설정뿐이다.
+# 컨테이너 안에서 localhost 는 자기 자신이라 DB 에 닿지 않는다. compose 서비스 이름을 쓴다.
+
+database:
+  # localhost 가 아니라 서비스 이름 postgres. 포트는 컨테이너 내부 포트인 5432 고정이다.
+  # 호스트에 매핑한 POSTGRES_PORT 와는 무관하다.
+  url: postgresql+asyncpg://app:app@postgres:5432/app
+
+  model_modules:
+    - models.evidence
+    - models.ingredient
+    - models.ingredient_knowledge
+    - models.user
+
+redis:
+  # 마찬가지로 서비스 이름 redis.
+  url: redis://redis:6379/0
+  max_connections: 20
+  decode_responses: true
+
+app:
+  title: skincare
+
+auth:
+  session_ttl_seconds: 1209600
+  cookie_name: session_id
+  # HTTPS 뒤에 두면 반드시 true 로 바꾼다. http 로 그대로 노출한다면 false 여야 쿠키가 붙는다.
+  cookie_secure: false
+  cookie_samesite: lax
+  cookie_domain: null
+
+# 배포 컨테이너는 MFDS 수집 스크립트를 실행하지 않으므로 mfds 블록이 없어도 된다.
+# 컨테이너 안에서 그 스크립트를 돌릴 일이 생기면 그때 추가한다.

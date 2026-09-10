@@ -1,11 +1,8 @@
 [project]
-name = "alembic-singledb"
+name = "skincare"
 version = "0.1.0"
 description = "RAG backend on a single PostgreSQL database managed by Alembic"
 readme = "README.md"
-authors = [
-    { name = "421079a", email = "421079a@gmail.com" }
-]
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.19.2",
