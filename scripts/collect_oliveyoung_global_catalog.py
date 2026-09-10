@@ -13,6 +13,7 @@
 """
 
 import argparse
+import time
 from pathlib import Path
 
 from scripts.catalog_eligibility_policy import CatalogEligibilityPolicy
@@ -27,6 +28,12 @@ from scripts.product_title_translator import ProductTitleTranslator
 from scripts.product_volume_parser import ProductVolumeParser
 
 _OUTPUT_PATH = Path("data/processed/catalog_products.csv")
+# 매 상품마다 CSV 전체를 다시 쓰다 보니 Windows에서 백신/색인 프로그램이 그 순간 파일을
+# 잠가 PermissionError가 실제로 발생했다(3700개 중 672번째 처리 중 확인). 몇 초 뒤엔
+# 대개 풀리는 일시적 문제라 판단해 재시도한다 — 계속 실패하면 그때는 진짜 문제이므로
+# 그대로 실패시킨다(에러를 숨기지 않는다).
+_WRITE_RETRY_ATTEMPTS = 5
+_WRITE_RETRY_DELAY_SECONDS = 3.0
 
 
 def _parse_max_new_products() -> int | None:
@@ -55,7 +62,15 @@ def main() -> None:
 
     def _persist_incrementally(row) -> None:
         collected_rows.append(row)
-        writer.write(list(existing_rows) + collected_rows, _OUTPUT_PATH)
+        for attempt in range(1, _WRITE_RETRY_ATTEMPTS + 1):
+            try:
+                writer.write(list(existing_rows) + collected_rows, _OUTPUT_PATH)
+                return
+            except PermissionError as error:
+                if attempt == _WRITE_RETRY_ATTEMPTS:
+                    raise
+                print(f"CSV 쓰기 실패(일시적 잠금 추정), {attempt}번째 재시도 전 대기: {error}")
+                time.sleep(_WRITE_RETRY_DELAY_SECONDS)
 
     category_client = OliveYoungGlobalCategoryClient()
     product_client = OliveYoungGlobalClient()
