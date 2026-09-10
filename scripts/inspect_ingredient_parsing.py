@@ -8,6 +8,7 @@ DB에 아무것도 쓰지 않는다. `ProductIngredientTextParser`/`ProductIngre
 """
 
 import csv
+import sys
 from pathlib import Path
 
 from scripts.oliveyoung_global_client import OliveYoungGlobalClient
@@ -144,4 +145,7 @@ class IngredientParsingInspector:
 
 
 if __name__ == "__main__":
+    # 상품명·구간 라벨에 Windows 콘솔 기본 인코딩(cp949)으로 못 쓰는 문자가 섞여 있으면
+    # print() 자체가 죽는다(collect_oliveyoung_global_catalog.py에서도 실제로 겪음).
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     IngredientParsingInspector().run()
