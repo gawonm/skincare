@@ -9,12 +9,41 @@ uvicorn CLI 인자로 넘긴다. 설정이 config.yaml 과 CLI 두 군데로 갈
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from http import HTTPStatus
+from pathlib import Path
 
 from fastapi import FastAPI
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.staticfiles import StaticFiles
+from starlette.types import Scope
 
 from core.config import settings
 from core.database import Database
 from core.redis import RedisClient
+
+# 빌드된 프론트가 놓이는 자리. Dockerfile 이 1단계 산출물을 이 경로로 복사한다.
+# 저장소 루트 기준이므로 backend/ 의 두 단계 위를 잡는다.
+FRONTEND_DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+FRONTEND_INDEX_FILENAME = "index.html"
+
+
+class SpaStaticFiles(StaticFiles):
+    """빌드된 SPA 를 서빙한다.
+
+    react-router 가 만드는 `/login` 같은 주소는 서버에 실제 파일이 없다. 그대로 404 를
+    내면 새로고침이나 주소창 직접 입력에서 화면이 깨지므로, 없는 경로는 index.html 로
+    돌려주고 라우팅은 브라우저가 하게 둔다.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as e:
+            # 404 만 index.html 로 대체한다. 권한 오류 등을 함께 삼키면 원인을 못 찾는다.
+            if e.status_code != HTTPStatus.NOT_FOUND:
+                raise
+            return await super().get_response(FRONTEND_INDEX_FILENAME, scope)
 
 
 class Application:
@@ -32,6 +61,7 @@ class Application:
             lifespan=self._lifespan,
         )
         self._register_routers()
+        self._mount_frontend()
 
     @property
     def app(self) -> FastAPI:
@@ -56,6 +86,22 @@ class Application:
         from backend.api.auth import router as auth_router
 
         self._app.include_router(auth_router)
+
+    def _mount_frontend(self) -> None:
+        """빌드된 프론트를 루트에 붙인다.
+
+        라우터를 등록한 뒤에 마운트해야 `/auth` 같은 API 경로를 정적 파일이 가리지 않는다.
+        dist 가 없으면(빌드 전 로컬 개발) 마운트하지 않는다. 개발에서는 Vite 개발 서버가
+        프론트를 띄우고 이 앱은 API 만 담당하기 때문이다.
+        """
+        if not (FRONTEND_DIST_DIR / FRONTEND_INDEX_FILENAME).is_file():
+            return
+
+        self._app.mount(
+            "/",
+            SpaStaticFiles(directory=FRONTEND_DIST_DIR, html=True),
+            name="frontend",
+        )
 
     @asynccontextmanager
     async def _lifespan(self, app: FastAPI) -> AsyncIterator[None]:
