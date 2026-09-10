@@ -167,7 +167,7 @@ uv run python -m data.scripts.collect_oliveyoung_global_candidates
    `raw_ingredients_text` 파싱(구간 분리·토큰화)과 옵션 연결은 10절에 정리된 대로 이
    세션(올리브영)이 담당해 완료했다. `IngredientMaster`(KCIA 표준 성분코드)와의 매칭,
    DB 저장(`ProductIngredientSnapshot`/`ProductIngredient`), RAG 근거 연결은 RAG
-   세션(`docs/rag_pipeline_handoff.md`) 담당 — 10절 참고.
+   세션(`docs/data/rag_pipeline_handoff.md`) 담당 — 10절 참고.
 2. **다이어그램(챗봇 플로우) 요구사항 미충족.** 사용자가 제시한 서비스 플로우(성분 확인·
    상품 추천·루틴 만들기)는 파싱된 전성분+근거 연결+피부타입 데이터가 있어야 동작하는데,
    지금 데이터는 `docs/data.md` 가 정의한 "검증 전 후보" 단계에 머물러 있다. 96행 전부

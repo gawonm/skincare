@@ -122,5 +122,5 @@ DB에 넣는 서비스/리포지토리가 필요하면 직접 만들지 말고
 - 전체 스키마·품질 기준·담당 범위: [data.md](data.md)
 - DB 스키마 ERD: [docs/erd/app.md](../erd/app.md)
 - `product` 저장 계약(backend 파트에 넘긴 인터페이스): [docs/contracts/data-to-backend.md](../contracts/data-to-backend.md)
-- 올리브영 글로벌 키워드 검색 파이프라인 인수인계: `docs/oliveyoung_global_pipeline_handoff.md`
-- 전성분 파싱·매칭·RAG 인수인계: `docs/SKINCARE_DATA_RAG_HANDOFF.md`
+- 올리브영 글로벌 키워드 검색 파이프라인 인수인계: [oliveyoung_global_pipeline_handoff.md](oliveyoung_global_pipeline_handoff.md)
+- 전성분 파싱·매칭·RAG 인수인계: [SKINCARE_DATA_RAG_HANDOFF.md](SKINCARE_DATA_RAG_HANDOFF.md)
