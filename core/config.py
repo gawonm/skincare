@@ -7,6 +7,7 @@
 바꿨다면 `config.yaml`의 URL도 같이 고쳐야 한다.
 """
 
+from enum import StrEnum
 from typing import Annotated
 
 from pydantic import BaseModel as PydanticBaseModel
@@ -19,6 +20,35 @@ from pydantic_settings import (
 
 from core.database import DatabaseConfig
 from core.redis import RedisConfig
+
+
+class CookieSameSite(StrEnum):
+    """세션 쿠키의 SameSite 정책. Starlette 응답 API가 받는 소문자 리터럴과 값을 맞춘다."""
+
+    LAX = "lax"
+    STRICT = "strict"
+    NONE = "none"
+
+
+class AuthConfig(PydanticBaseModel):
+    """`config.yaml`의 `auth` 블록. 로그인 세션과 세션 쿠키 설정.
+
+    세션 자체는 Redis에 저장하고 여기서는 만료 시간과 쿠키 속성만 다룬다. JWT를 쓰지
+    않으므로 서명 비밀키가 필요 없다. 블록이 없으면 아래 기본값이 그대로 쓰인다.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # 세션 만료 시간(초). 기본 14일.
+    session_ttl_seconds: Annotated[int, Field(gt=0)] = 60 * 60 * 24 * 14
+    # 세션 ID를 담는 쿠키 이름.
+    cookie_name: Annotated[str, Field(min_length=1)] = "session_id"
+    # HTTPS 연결에서만 쿠키를 전송할지. 로컬 http 개발은 False, 배포는 True.
+    cookie_secure: bool = False
+    # 크로스 사이트 요청에 쿠키를 붙일지. NONE은 브라우저가 cookie_secure=True를 요구한다.
+    cookie_samesite: CookieSameSite = CookieSameSite.LAX
+    # 쿠키를 공유할 도메인. None이면 요청 호스트에만 한정된다.
+    cookie_domain: str | None = None
 
 
 class MfdsConfig(PydanticBaseModel):
@@ -61,6 +91,8 @@ class Settings(BaseSettings):
     redis: RedisConfig = RedisConfig()
     # `app` 블록이 없으면 기본 제목을 쓴다.
     app: AppConfig = AppConfig()
+    # `auth` 블록이 없으면 기본 세션/쿠키 설정을 쓴다.
+    auth: AuthConfig = AuthConfig()
     # `mfds` 블록이 없으면 None. MFDS 연동 스크립트를 실행할 때만 필요하다.
     mfds: MfdsConfig | None = None
 

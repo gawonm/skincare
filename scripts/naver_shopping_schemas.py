@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class TargetGroup(StrEnum):
-    """MVP 성분군 화이트리스트 단위. `docs/data.md` 의 성분 범위 표와 일치시킨다."""
+    """MVP 성분군 화이트리스트 단위. `docs/data/data.md` 의 성분 범위 표와 일치시킨다."""
 
     VITAMIN_C = "Vitamin C"
     NIACINAMIDE = "Niacinamide"
@@ -65,7 +65,7 @@ class ProductCandidateRow(BaseModel):
     """`data/processed/product_candidates.csv` 한 행.
 
     아직 전성분을 검증하지 않은 후보다. `verified_products.csv` 로 옮기기 전까지
-    추천에 사용하지 않는다 (`docs/data.md` 참고).
+    추천에 사용하지 않는다 (`docs/data/data.md` 참고).
     """
 
     model_config = ConfigDict(frozen=True)
