@@ -34,7 +34,7 @@ def test_links_section_to_option_with_unique_label_match() -> None:
 
 
 def test_leaves_ambiguous_when_label_matches_no_option() -> None:
-    # 실제로 관찰된 케이스: 옵션명 자체가 "-" (빈 placeholder)라 라벨과 매칭될 옵션이 없다.
+    # 매칭 가능한 옵션명이 없는 경우를 가정한 테스트
     text = "[Tea Tree]\nWater, Melaleuca Alternifolia (Tea Tree) Leaf Oil"
     result = ProductIngredientTextParser().parse(DataSource.OLIVEYOUNG_GLOBAL, "P1", text)
     options = (_option("1", "-"),)
@@ -44,6 +44,23 @@ def test_leaves_ambiguous_when_label_matches_no_option() -> None:
     section = linked.sections[0]
     assert section.link_status == IngredientSectionLinkStatus.AMBIGUOUS
     assert section.linked_option_gds_cd is None
+
+
+def test_links_section_when_label_and_option_differ_only_by_whitespace() -> None:
+    # 실제 관찰 케이스(GA250631728, GA250833069): 파싱 라벨은 "[Tea Tree]"인데 실제
+    # 판매 옵션명은 "Teatree Calming Hydra {N}ea" — 공백 유무만 다르다.
+    text = "[Tea Tree]\nWater, Melaleuca Alternifolia (Tea Tree) Leaf Oil"
+    result = ProductIngredientTextParser().parse(DataSource.OLIVEYOUNG_GLOBAL, "P1", text)
+    options = (
+        _option("1", "Teatree Calming Hydra 10ea"),
+        _option("2", "Vitamin C Brightening 10ea"),
+    )
+
+    linked = ProductIngredientOptionLinker().link(result, options)
+
+    section = linked.sections[0]
+    assert section.link_status == IngredientSectionLinkStatus.LINKED
+    assert section.linked_option_gds_cd == "1"
 
 
 def test_leaves_ambiguous_when_label_matches_multiple_options() -> None:

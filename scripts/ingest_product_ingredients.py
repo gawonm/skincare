@@ -24,10 +24,15 @@ from scripts.product_ingredient_option_linker import ProductIngredientOptionLink
 from scripts.product_ingredient_text_parser import PARSER_VERSION, ProductIngredientTextParser
 
 _CANDIDATES_CSV_PATH = Path("data/processed/product_candidates.csv")
+# 카테고리 전수 순회로 모은 상품(`collect_oliveyoung_global_catalog.py`). 성분 키워드
+# 검색 결과와 별개 파일이지만, 상품 식별자(source_product_id) 기준으로 같이 파싱·적재한다.
+_CATALOG_CSV_PATH = Path("data/processed/catalog_products.csv")
 
 
-def _read_rows_with_ingredients_text() -> list[dict[str, str]]:
-    with _CANDIDATES_CSV_PATH.open("r", encoding="utf-8-sig", newline="") as file:
+def _read_rows_with_ingredients_text(csv_path: Path) -> list[dict[str, str]]:
+    if not csv_path.exists():
+        return []
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
         return [
             row
@@ -56,7 +61,9 @@ async def _run() -> None:
     linker = ProductIngredientOptionLinker()
     client = OliveYoungGlobalClient()
 
-    all_rows = _read_rows_with_ingredients_text()
+    all_rows = _read_rows_with_ingredients_text(_CANDIDATES_CSV_PATH) + _read_rows_with_ingredients_text(
+        _CATALOG_CSV_PATH
+    )
     rows = _dedupe_by_product_id(all_rows)
 
     database = Database(settings.database)

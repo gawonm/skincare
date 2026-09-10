@@ -11,6 +11,13 @@
 from models.evidence import Evidence, EvidenceRegulateType, EvidenceSourceType, EvidenceTopic
 from models.ingredient import IngredientMaster
 from models.ingredient_knowledge import IngredientKnowledgeFact, RegulatoryConfidence
+from models.product import (
+    Product,
+    ProductMatchStatus,
+    ProductPriceBand,
+    ProductTargetGroup,
+    ProductTitleSource,
+)
 from models.product_ingredient import (
     IngredientMatchAcceptance,
     ProductIngredient,
@@ -36,10 +43,15 @@ __all__ = [
     "IngredientKnowledgeFact",
     "IngredientMaster",
     "IngredientMatchAcceptance",
+    "Product",
     "ProductIngredient",
     "ProductIngredientSectionLinkStatus",
     "ProductIngredientSnapshot",
     "ProductIngredientTokenParseStatus",
+    "ProductMatchStatus",
+    "ProductPriceBand",
+    "ProductTargetGroup",
+    "ProductTitleSource",
     "RagChunk",
     "RagChunkField",
     "RagConfidenceTier",

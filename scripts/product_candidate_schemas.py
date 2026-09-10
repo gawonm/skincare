@@ -90,6 +90,12 @@ class ReviewReason(StrEnum):
     # 대표 옵션의 가격·성분은 신뢰할 수 있고, 다만 수량 기준이 무엇인지만 검토가 필요하다.
     # `data/manual_review/review_reason_overrides.csv` 에서 수동으로 붙인다.
     OPTION_QUANTITY_VARIANT_ONLY = "option_quantity_variant_only"
+    # 전성분 파싱기가 needs_review 로 남긴 "구분자(콤마) 누락 의심" 토큰을, 사람이
+    # 브랜드 공식 페이지 원문과 직접 대조해 실제로 콤마가 빠져 있음을 확인한 경우.
+    # 파서가 임의로 나누거나 합치지 않고 원문 그대로 보존한 판단이 맞았다는 뜻이며,
+    # 두 토큰(예: "Glycereth-26" / "1,2-Hexanediol")은 서로 다른 성분으로 남는다.
+    # `data/manual_review/review_reason_overrides.csv` 에서 수동으로 붙인다.
+    INGREDIENT_DELIMITER_MISSING_CONFIRMED = "ingredient_delimiter_missing_confirmed"
 
 
 class MatchStatus(StrEnum):
@@ -120,7 +126,9 @@ class ProductCandidateRow(BaseModel):
 
     candidate_id: str
     source: DataSource
-    target_group: TargetGroup
+    # 성분 키워드 검색으로 모은 행만 채운다. 카테고리 전수 순회로 모은 행은 특정 성분에
+    # 억지로 배정하지 않으므로 None — `search_query`에 카테고리 출처를 대신 남긴다.
+    target_group: TargetGroup | None = None
     search_query: str
     source_product_id: str
     # 수집한 원본 상품명. 절대 고치지 않는다 — 출처 추적과 재매칭의 기준이 된다.

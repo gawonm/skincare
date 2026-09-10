@@ -12,6 +12,7 @@ database:
     - models.evidence
     - models.ingredient
     - models.ingredient_knowledge
+    - models.product
     - models.product_ingredient
     - models.rag_chunk
     - models.user

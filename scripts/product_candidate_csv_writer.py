@@ -42,7 +42,7 @@ _FIELDNAMES = [
 
 # CSV 에 빈 문자열로 저장되는 필드 중, 모델에서는 `None` 이 정답인 필드.
 # 나머지 필드(예: `maker`)는 빈 문자열 자체가 유효한 값이라 이 목록에 넣지 않는다.
-_NULLABLE_FIELD_NAMES = ("volume_value", "volume_unit", "raw_ingredients_text")
+_NULLABLE_FIELD_NAMES = ("target_group", "volume_value", "volume_unit", "raw_ingredients_text")
 
 # `review_reasons` 는 리스트라 다른 manual_review CSV(`review_candidate_ids` 등)와
 # 같은 관례로 "|" 구분 문자열로 저장한다.
@@ -54,7 +54,7 @@ class ProductCandidateCsvWriter:
         current_sources: set[DataSource] = {row.source for row in rows}
         preserved_rows = [
             existing_row
-            for existing_row in self._read_existing_rows(output_path)
+            for existing_row in self.read_existing_rows(output_path)
             if existing_row.source not in current_sources
         ]
         combined_rows = preserved_rows + rows
@@ -66,7 +66,7 @@ class ProductCandidateCsvWriter:
             for row in combined_rows:
                 writer.writerow(self._to_csv_dict(row))
 
-    def _read_existing_rows(self, output_path: Path) -> list[ProductCandidateRow]:
+    def read_existing_rows(self, output_path: Path) -> list[ProductCandidateRow]:
         if not output_path.exists():
             return []
 

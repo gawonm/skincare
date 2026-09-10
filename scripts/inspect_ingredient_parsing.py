@@ -1,13 +1,14 @@
 """전성분 원문 파싱·옵션 연결 결과를 사람이 검토할 수 있게 요약한다.
 
 DB에 아무것도 쓰지 않는다. `ProductIngredientTextParser`/`ProductIngredientOptionLinker`
-가 실제 수집 데이터(`data/processed/product_candidates.csv`)에서 얼마나 잘 동작하는지
-확인하고, `needs_review`/`AMBIGUOUS` 로 남은 항목을 사람이 훑어볼 수 있는 리포트 파일로
-만드는 용도다. 저장 모델(`ProductIngredientSnapshot`/`ProductIngredient`)은 이 리포트로
-파서를 검증한 뒤에 확정한다(docs/oliveyoung_global_pipeline_handoff.md 참고).
+가 실제 수집 데이터(`data/processed/product_candidates.csv` + `catalog_products.csv`)에서
+얼마나 잘 동작하는지 확인하고, `needs_review`/`AMBIGUOUS` 로 남은 항목을 사람이 훑어볼 수
+있는 리포트 파일로 만드는 용도다. `ingest_product_ingredients.py`로 실제 DB에 적재하기
+전에 반드시 이 리포트로 먼저 검증한다(docs/oliveyoung_global_pipeline_handoff.md 참고).
 """
 
 import csv
+import sys
 from pathlib import Path
 
 from scripts.oliveyoung_global_client import OliveYoungGlobalClient
@@ -21,6 +22,9 @@ from scripts.product_ingredient_parse_schemas import (
 from scripts.product_ingredient_text_parser import ProductIngredientTextParser
 
 _CANDIDATES_CSV_PATH = Path("data/processed/product_candidates.csv")
+# 카테고리 전수 순회로 모은 상품(`collect_oliveyoung_global_catalog.py`). ingest 스크립트와
+# 같은 이유로 같이 검증한다 — 파서는 원문 CSV가 아니라 source_product_id로 식별한다.
+_CATALOG_CSV_PATH = Path("data/processed/catalog_products.csv")
 _REPORT_PATH = Path("data/manual_review/ingredient_parse_sample_report.txt")
 
 
@@ -31,7 +35,9 @@ class IngredientParsingInspector:
         self._client = OliveYoungGlobalClient()
 
     def run(self) -> None:
-        all_rows = self._read_rows_with_ingredients_text()
+        all_rows = self._read_rows_with_ingredients_text(
+            _CANDIDATES_CSV_PATH
+        ) + self._read_rows_with_ingredients_text(_CATALOG_CSV_PATH)
         rows = self._dedupe_by_product_id(all_rows)
         duplicate_row_count = len(all_rows) - len(rows)
 
@@ -91,8 +97,10 @@ class IngredientParsingInspector:
         print(summary)
         print(f"\n상세 리포트: {_REPORT_PATH}")
 
-    def _read_rows_with_ingredients_text(self) -> list[dict[str, str]]:
-        with _CANDIDATES_CSV_PATH.open("r", encoding="utf-8-sig", newline="") as file:
+    def _read_rows_with_ingredients_text(self, csv_path: Path) -> list[dict[str, str]]:
+        if not csv_path.exists():
+            return []
+        with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
             reader = csv.DictReader(file)
             return [
                 row
@@ -137,4 +145,7 @@ class IngredientParsingInspector:
 
 
 if __name__ == "__main__":
+    # 상품명·구간 라벨에 Windows 콘솔 기본 인코딩(cp949)으로 못 쓰는 문자가 섞여 있으면
+    # print() 자체가 죽는다(collect_oliveyoung_global_catalog.py에서도 실제로 겪음).
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     IngredientParsingInspector().run()
