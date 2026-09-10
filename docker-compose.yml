@@ -1,11 +1,11 @@
-name: alembic-singledb
+name: skincare
 
 services:
   postgres:
     # ParadeDB = PostgreSQL + pg_search(BM25) + pgvector(벡터).
     # 태그를 고정한다. 확장 버전이 올라가면 마이그레이션이 필요하기 때문이다.
     image: paradedb/paradedb:0.18.6-pg17
-    container_name: alembic-singledb-postgres
+    container_name: skincare-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
@@ -44,7 +44,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    container_name: alembic-singledb-redis
+    container_name: skincare-redis
     restart: unless-stopped
     command:
       - redis-server
