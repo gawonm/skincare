@@ -51,8 +51,11 @@ class Application:
         return self._redis
 
     def _register_routers(self) -> None:
-        # 라우터가 생기면 여기서 include_router 한다. 아직 엔드포인트가 없다.
-        return
+        # 라우터 모듈은 여기서만 import 한다. import 시점에 settings 를 읽으므로
+        # 앱을 만들 때 한 번만 로드되게 한다.
+        from backend.api.auth import router as auth_router
+
+        self._app.include_router(auth_router)
 
     @asynccontextmanager
     async def _lifespan(self, app: FastAPI) -> AsyncIterator[None]:
