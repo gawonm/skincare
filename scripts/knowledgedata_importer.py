@@ -1,7 +1,7 @@
 """`KnowledgedataRow` 목록을 `IngredientMaster`에 매칭해 `IngredientKnowledgeFact`로 적재한다.
 
 매칭에 실패한 행(`IngredientMatchMethod.MANUAL_REVIEW`)은 DB에 넣지 않고 CSV 검토 큐로
-내보낸다. `docs/data.md`가 정한 `data/manual_review/` 관례를 따른다.
+내보낸다. `docs/data/data.md`가 정한 `data/manual_review/` 관례를 따른다.
 """
 
 import csv

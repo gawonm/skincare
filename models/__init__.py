@@ -25,6 +25,7 @@ from models.rag_chunk import (
     RagConfidenceTier,
     RagSourceTable,
 )
+from models.user import User
 
 __all__ = [
     "EMBEDDING_DIMENSION",
@@ -44,4 +45,5 @@ __all__ = [
     "RagConfidenceTier",
     "RagSourceTable",
     "RegulatoryConfidence",
+    "User",
 ]
