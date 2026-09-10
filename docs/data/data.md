@@ -46,8 +46,12 @@
 - **지식성분데이터.xlsx**: `data/Knowledgedata.xlsx`와 byte 단위로 동일한 파일(2,465행 diff 0건).
   이미 `IngredientKnowledgeFact`로 적재 중인 그 파일이 이 데이터셋의 원천데이터③이었다.
 - **Q-CoT-A 라벨링데이터(JSONL)**: 약 9,000건(Train 8,000 + Val 1,000), 8개 피부고민 카테고리별.
-  질문(페르소나+상황) → 3~7단계 추론(CoT) → 답변, 그리고 `evidence_sources`(PMID/DOI 실제
-  논문 인용)로 구성된다.
+  질문(페르소나+상황) → 3~7단계 추론(CoT) → 답변, 그리고 `evidence_sources`(PMID/DOI 형식
+  인용 식별자)로 구성된다. **정정(2026-09-10, Training 8,000건 전수 재확인)**: "실제 논문
+  인용"이라는 이전 서술은 틀렸다. `PMID:12345678`이 2,961건(37%)에서 그대로 반복되고,
+  `DOI:10.xxxx/xxxxx` 2,780건, `DOI:10.1234/example` 164건이 placeholder로 확인됐다. 형식이
+  정상인 나머지 식별자도 실제 문헌 대응을 확인한 것은 아니다 — 식별자 형식 검사와 인용 내용
+  검증은 별개 축이다(`docs/NIA_SEMANTIC_LABELING_SPEC.md` 4절 "독립된 검증 상태" 참고).
 - **원천 설문·이미지**: 실제 IRB 승인(Q70110786) 피험자 10,000명의 설문+비식별화 얼굴 이미지.
   이 RAG 파이프라인은 Q-CoT-A 텍스트만 쓰고 이미지는 쓰지 않는다.
 
@@ -58,6 +62,14 @@
 결과다(유사도 0.85↑, KEA 0.96↑ 품질지표). 이 프로젝트의 **실서비스 사용자 데이터와 혼동해서는
 안 된다** - RAG 신뢰도 티어(`RagConfidenceTier.AI_GENERATED_REVIEWED`)로 MFDS 공식 근거,
 사람이 구조화한 Knowledgedata와 구분해 저장한다.
+
+**아카이브명과 `info.target_concern` 불일치(2026-09-10 Training 전수 확인)**: ZIP 파일명
+(예: `TL_과각질_악건성.zip`)과 그 안 레코드의 `info.target_concern`이 다른 경우가 8,000건 중
+**5,772건(72%)** 이다. 심하면 `COT_SAG_F_O50_00006`처럼 본문 전체가 아카이브 주제와 무관한
+경우도 있다(`TL_여드름_뾰루지.zip` 소속인데 내용은 전부 피부처짐/탄력저하 상담). 아카이브명은
+분류 필터로 신뢰할 수 없고, `info.target_concern`과 `meta.skin_concerns`(다중 라벨)를 각각
+그대로 보존해야 한다. `NiaQaRecord`는 이미 아카이브명이 아니라 `info.target_concern`만 쓰고
+있어 이 문제의 영향을 받지 않는다.
 
 **라이선스**: AI Hub 공식 이용약관은 기본적으로 비영리 연구개발(R&D) 목적 한정이며, 상업적
 이용은 운영기관(㈜카이로스랩, david@kailoslab.com)과 별도 협의가 필요하다. 제3자 재배포 금지,
@@ -413,7 +425,7 @@ CIR 안전성 근거는 2단계 접근이다. 1단계(위 `cites_cir` 태깅)는
 
 ## 관련 문서
 
-- 성분 근거 RAG의 문서 로딩·청킹·임베딩·검색 구현은 [docs/agent.md](agent.md)를 따른다. (미작성 시
-  작성 전 사용자에게 먼저 확인한다.)
+- 성분 근거 RAG의 문서 로딩·청킹·임베딩·검색 구현은 [docs/agent/README.md](../agent/README.md)를
+  따른다.
 - 폴더 구조와 import 방향은 [STRUCTURE.md](../STRUCTURE.md).
 - 설치·실행 명령과 모델 추가 시 마이그레이션 절차는 [SETUP.md](../SETUP.md).
