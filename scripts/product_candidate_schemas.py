@@ -126,7 +126,9 @@ class ProductCandidateRow(BaseModel):
 
     candidate_id: str
     source: DataSource
-    target_group: TargetGroup
+    # 성분 키워드 검색으로 모은 행만 채운다. 카테고리 전수 순회로 모은 행은 특정 성분에
+    # 억지로 배정하지 않으므로 None — `search_query`에 카테고리 출처를 대신 남긴다.
+    target_group: TargetGroup | None = None
     search_query: str
     source_product_id: str
     # 수집한 원본 상품명. 절대 고치지 않는다 — 출처 추적과 재매칭의 기준이 된다.
