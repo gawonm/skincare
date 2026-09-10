@@ -34,7 +34,7 @@ def test_links_section_to_option_with_unique_label_match() -> None:
 
 
 def test_leaves_ambiguous_when_label_matches_no_option() -> None:
-    # 실제로 관찰된 케이스: 옵션명 자체가 "-" (빈 placeholder)라 라벨과 매칭될 옵션이 없다.
+    # 매칭 가능한 옵션명이 없는 경우를 가정한 테스트
     text = "[Tea Tree]\nWater, Melaleuca Alternifolia (Tea Tree) Leaf Oil"
     result = ProductIngredientTextParser().parse(DataSource.OLIVEYOUNG_GLOBAL, "P1", text)
     options = (_option("1", "-"),)
