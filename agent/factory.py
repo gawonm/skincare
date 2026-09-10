@@ -22,6 +22,7 @@ from agent.adapters import (
     FixtureEvidenceRetriever,
     FixtureIngredientRepository,
     FixtureProductRepository,
+    FixtureProductTaxonomy,
     FixtureRoutinePlanner,
     InMemoryChatHistoryRepository,
 )
@@ -39,6 +40,7 @@ from agent.prompts import PromptCatalog
 from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.pipeline import EvidenceApplicabilityEvaluator, EvidencePipeline
 from agent.rag.ports import EvidenceRetriever
+from agent.rag.schemas import ProductTaxonomy
 from agent.schemas import AgentModel, ContextLimits, ExecutionLimits
 from agent.service import ChatService, RequestIdentityFactory
 
@@ -65,6 +67,7 @@ class AgentDependencies(AgentModel):
     llm: LlmClient
     history: ChatHistoryRepository
     products: ProductRepository
+    product_taxonomy: ProductTaxonomy
     ingredients: IngredientRepository
     routine_planner: RoutinePlanner
     evidence_pipeline: EvidencePipeline
@@ -86,6 +89,7 @@ class AgentFactory:
             routine_planner=dependencies.routine_planner,
             context_builder=ContextBuilder(ConversationSummarizer()),
             prompt_catalog=PromptCatalog(),
+            product_taxonomy=dependencies.product_taxonomy,
         )
         graph = AgentGraphFactory(
             nodes=nodes,
@@ -124,6 +128,8 @@ class DevelopmentAgentFactory:
         ingredient_repository: IngredientRepository | None = None,
         evidence_retriever: EvidenceRetriever | None = None,
         answer_generator: AnswerGenerator | None = None,
+        product_repository: ProductRepository | None = None,
+        product_taxonomy: ProductTaxonomy | None = None,
     ) -> None:
         self._execution_limits = execution_limits or ExecutionLimits()
         self._context_limits = context_limits or ContextLimits()
@@ -132,6 +138,10 @@ class DevelopmentAgentFactory:
         self._ingredient_repository = ingredient_repository
         self._evidence_retriever = evidence_retriever
         self._answer_generator = answer_generator
+        self._product_repository = product_repository
+        self._product_taxonomy = product_taxonomy
+        if product_repository is not None and product_taxonomy is None:
+            raise ValueError("상품 조회 구현을 교체할 때 지원 분류 목록도 함께 전달해야 합니다.")
 
     def create(self) -> DevelopmentAgentApplication:
         history = self._history or InMemoryChatHistoryRepository()
@@ -146,7 +156,8 @@ class DevelopmentAgentFactory:
             AgentDependencies(
                 llm=self._llm or FakeLlmClient(),
                 history=history,
-                products=FixtureProductRepository(),
+                products=self._product_repository or FixtureProductRepository(),
+                product_taxonomy=self._product_taxonomy or FixtureProductTaxonomy().create(),
                 ingredients=self._ingredient_repository or FixtureIngredientRepository(),
                 evidence_pipeline=evidence_pipeline,
                 routine_planner=FixtureRoutinePlanner(),

@@ -18,6 +18,8 @@ from agent.rag.schemas import (
     ProductCategory,
     ProductRecord,
     ProductSearchFilters,
+    ProductSkinFeel,
+    ProductTaxonomy,
     ProductTexture,
     RagQueryResult,
     RoutinePlan,
@@ -185,6 +187,8 @@ class ParsedRequest(AgentModel):
     query: str = Field(min_length=1)
     category: ProductCategory | None = None
     texture: ProductTexture | None = None
+    skin_feel: ProductSkinFeel | None = None
+    unsupported_product_conditions: list[str] = Field(default_factory=list)
     referenced_candidate_number: int | None = Field(default=None, ge=1)
     rejected_candidate_numbers: list[int] = Field(default_factory=list)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
@@ -437,6 +441,7 @@ class UnderstandingRequest(AgentModel):
     message: str = Field(min_length=1)
     system_prompt: str = Field(min_length=1)
     context: LlmContext
+    product_taxonomy: ProductTaxonomy
 
 
 class AgentInvocation(AgentModel):

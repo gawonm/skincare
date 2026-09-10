@@ -1,8 +1,9 @@
 """RAG와 루틴 도구가 주고받는 구조화 타입."""
 
 from enum import StrEnum
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, SecretStr, model_validator
 
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_ROUTINE_FREQUENCY = 2
@@ -21,19 +22,54 @@ class LookupStatus(StrEnum):
     ERROR = "error"
 
 
-class ProductCategory(StrEnum):
-    CLEANSER = "cleanser"
-    TONER = "toner"
-    SERUM = "serum"
-    MOISTURIZER = "moisturizer"
-    SUNSCREEN = "sunscreen"
+class ProductClassification(RagModel):
+    """분류 코드는 데이터 제공자가 소유하며 표시 이름 변경과 독립적으로 유지한다."""
+
+    code: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
 
 
-class ProductTexture(StrEnum):
-    LIGHT = "light"
-    RICH = "rich"
-    GEL = "gel"
-    CREAM = "cream"
+class ProductCategory(ProductClassification):
+    """조회 어댑터가 지원하는 상품 카테고리."""
+
+
+class ProductTexture(ProductClassification):
+    """젤·크림 등 데이터에서 확인된 제형. 사용감과 별개다."""
+
+
+class ProductSkinFeel(ProductClassification):
+    """가벼움·리치함 등 데이터에서 확인된 사용감."""
+
+
+class ProductAttributeKind(StrEnum):
+    CATEGORY = "category"
+    TEXTURE = "texture"
+    SKIN_FEEL = "skin_feel"
+
+
+class ProductTaxonomy(RagModel):
+    """빈 목록은 해당 축의 필터 미지원이며 agent가 기본 분류를 보충하지 않는다."""
+
+    version: str = Field(min_length=1)
+    categories: list[ProductCategory] = Field(default_factory=list)
+    textures: list[ProductTexture] = Field(default_factory=list)
+    skin_feels: list[ProductSkinFeel] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_unique_codes(self) -> Self:
+        for kind in ProductAttributeKind:
+            codes = [item.code for item in self.options(kind)]
+            if len(codes) != len(set(codes)):
+                raise ValueError(f"상품 분류 코드가 중복되었습니다: {kind.value}")
+        return self
+
+    def options(self, kind: ProductAttributeKind) -> list[ProductClassification]:
+        if kind is ProductAttributeKind.CATEGORY:
+            return list(self.categories)
+        if kind is ProductAttributeKind.TEXTURE:
+            return list(self.textures)
+        return list(self.skin_feels)
 
 
 class EvidenceReviewStatus(StrEnum):
@@ -125,12 +161,13 @@ class IngredientResolveResult(RagModel):
 
 class ProductRecord(RagModel):
     product_id: str = Field(min_length=1)
-    version: str = Field(min_length=1)
+    version: str | None = Field(default=None, min_length=1)
     name: str = Field(min_length=1)
-    category: ProductCategory
-    texture: ProductTexture
+    category: ProductCategory | None = None
+    texture: ProductTexture | None = None
+    skin_feel: ProductSkinFeel | None = None
     ingredient_ids: list[str] = Field(default_factory=list)
-    directions: str = Field(min_length=1)
+    directions: str | None = Field(default=None, min_length=1)
     source_id: str = Field(min_length=1)
     checked_at: str = Field(min_length=1)
     is_demo: bool = True
@@ -139,6 +176,7 @@ class ProductRecord(RagModel):
 class ProductSearchFilters(RagModel):
     category: ProductCategory | None = None
     texture: ProductTexture | None = None
+    skin_feel: ProductSkinFeel | None = None
     ingredient_ids: list[str] = Field(default_factory=list)
 
 

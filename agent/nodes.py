@@ -7,6 +7,7 @@ from agent.context import ContextBuilder
 from agent.ports import IngredientRepository, LlmClient, ProductRepository, RoutinePlanner
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.rag.pipeline import EvidencePipeline
+from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.schemas import (
     ApplicabilityStatus,
     EvidenceBundle,
@@ -17,12 +18,11 @@ from agent.rag.schemas import (
     LookupStatus,
     ProductCandidate,
     ProductCandidateSet,
-    ProductCategory,
     ProductGetRequest,
     ProductRecord,
     ProductSearchFilters,
     ProductSearchRequest,
-    ProductTexture,
+    ProductTaxonomy,
     RoutinePlan,
     RoutinePlanRequest,
     RoutineValidationRequest,
@@ -62,7 +62,7 @@ CANDIDATE_REFERENCE_QUESTION = (
     "참조한 후보 번호를 현재 목록에서 찾을 수 없습니다. 번호를 다시 알려주세요."
 )
 ROUTINE_REFERENCE_QUESTION = "참조한 루틴 버전을 현재 방에서 찾을 수 없습니다. 다시 선택해 주세요."
-NO_RESULT_MESSAGE = "조건을 만족하는 개발용 제품 fixture를 찾지 못했습니다."
+NO_RESULT_MESSAGE = "현재 상품 데이터에서 조건을 만족하는 제품을 찾지 못했습니다."
 NO_EVIDENCE_MESSAGE = "현재 연결된 검색 자료에서 관련 근거를 찾지 못했습니다."
 
 
@@ -80,6 +80,7 @@ class AgentNodes:
         routine_planner: RoutinePlanner,
         context_builder: ContextBuilder,
         prompt_catalog: PromptCatalog,
+        product_taxonomy: ProductTaxonomy,
     ) -> None:
         self._llm = llm
         self._product_repository = product_repository
@@ -88,6 +89,8 @@ class AgentNodes:
         self._routine_planner = routine_planner
         self._context_builder = context_builder
         self._prompt_catalog = prompt_catalog
+        self._product_taxonomy = product_taxonomy.model_copy(deep=True)
+        self._product_filters = ProductFilterValidator(self._product_taxonomy)
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
         self._require_turn_fields(state)
@@ -158,6 +161,7 @@ class AgentNodes:
                 message=turn.message,
                 system_prompt=prompt.system_message,
                 context=context,
+                product_taxonomy=self._product_taxonomy.model_copy(deep=True),
             )
         )
         parsed = state.parsed_request
@@ -170,6 +174,13 @@ class AgentNodes:
                     "intents": original.intents,
                     "category": parsed.category or original.category,
                     "texture": parsed.texture or original.texture,
+                    "skin_feel": parsed.skin_feel or original.skin_feel,
+                    "unsupported_product_conditions": list(
+                        dict.fromkeys(
+                            original.unsupported_product_conditions
+                            + parsed.unsupported_product_conditions
+                        )
+                    ),
                     "ingredient_mentions": list(
                         dict.fromkeys(
                             (
@@ -205,9 +216,23 @@ class AgentNodes:
                 filters = state.task_context.search_filters
                 parsed.category = parsed.category or filters.category
                 parsed.texture = parsed.texture or filters.texture
+                parsed.skin_feel = parsed.skin_feel or filters.skin_feel
             else:
                 state.task_context.search_filters = ProductSearchFilters()
                 state.task_context.rejected_product_ids = []
+        validated_filters = self._product_filters.normalize(
+            ProductSearchFilters(
+                category=parsed.category, texture=parsed.texture, skin_feel=parsed.skin_feel
+            )
+        )
+        parsed.category = validated_filters.filters.category
+        parsed.texture = validated_filters.filters.texture
+        parsed.skin_feel = validated_filters.filters.skin_feel
+        parsed.unsupported_product_conditions = list(
+            dict.fromkeys(
+                parsed.unsupported_product_conditions + validated_filters.unsupported_conditions
+            )
+        )
         state.parsed_request = parsed
         state.task_context.excluded_weekdays = list(
             dict.fromkeys(state.task_context.excluded_weekdays + parsed.excluded_weekdays)
@@ -260,7 +285,11 @@ class AgentNodes:
             Intent.EVIDENCE_QA in parsed.intents
             and ("제품" in parsed.query or parsed.category is not None)
         )
-        if needs_products and self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):
+        if (
+            needs_products
+            and not parsed.unsupported_product_conditions
+            and self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES)
+        ):
             effective_category = parsed.category
             if effective_category is None and parsed.referenced_candidate_number is not None:
                 referenced = self._candidate_by_rank(
@@ -268,6 +297,22 @@ class AgentNodes:
                     parsed.referenced_candidate_number,
                 )
                 effective_category = referenced.product.category if referenced else None
+            reference_filters = self._product_filters.normalize(
+                ProductSearchFilters(
+                    category=effective_category, texture=parsed.texture, skin_feel=parsed.skin_feel
+                )
+            )
+            if reference_filters.unsupported_conditions:
+                # 이전 후보에서 가져온 분류도 현재 목록에서 폐기되었을 수 있다.
+                parsed.unsupported_product_conditions.extend(
+                    reference_filters.unsupported_conditions
+                )
+                state.resolved_entities = ResolvedEntities(
+                    ingredient_ids=list(dict.fromkeys(ingredient_ids)),
+                    unresolved_names=unresolved_names,
+                )
+                return state
+            effective_category = reference_filters.filters.category
             if Intent.PRODUCT_DISCOVERY in parsed.intents:
                 previous_ids = state.task_context.search_filters.ingredient_ids
                 if not ingredient_ids and (parsed.is_modification or parsed.pending_answer):
@@ -275,6 +320,7 @@ class AgentNodes:
                 state.task_context.search_filters = ProductSearchFilters(
                     category=effective_category,
                     texture=parsed.texture,
+                    skin_feel=parsed.skin_feel,
                     ingredient_ids=ingredient_ids,
                 )
             product_result = await self._product_repository.search(
@@ -284,6 +330,7 @@ class AgentNodes:
                     filters=ProductSearchFilters(
                         category=effective_category,
                         texture=parsed.texture,
+                        skin_feel=parsed.skin_feel,
                         ingredient_ids=ingredient_ids,
                     ),
                 )
@@ -291,14 +338,28 @@ class AgentNodes:
             if product_result.status is LookupStatus.ERROR:
                 self._add_tool_failure(state, product_result.error_message)
             elif product_result.status is LookupStatus.UNSUPPORTED:
+                state.status = ChatStatus.PARTIAL
                 state.unresolved.extend(
                     UnresolvedItem(
                         kind=UnresolvedKind.UNSUPPORTED_CONDITION,
                         detail=condition,
                     )
                     for condition in product_result.unsupported_conditions
+                    or [
+                        product_result.error_message
+                        or "현재 상품 조회기가 이 조건을 지원하지 않습니다."
+                    ]
                 )
-            products = product_result.products
+            # 실패·미지원 응답의 후보를 성공 결과로 섞지 않는다.
+            products = (
+                product_result.products if product_result.status is LookupStatus.SUCCESS else []
+            )
+            if Intent.PRODUCT_DISCOVERY in parsed.intents:
+                products = [
+                    product
+                    for product in products
+                    if self._product_filters.matches(product, state.task_context.search_filters)
+                ]
 
         state.resolved_entities = ResolvedEntities(
             products=products,
@@ -533,6 +594,14 @@ class AgentNodes:
 
     async def _process_product_discovery(self, state: AgentState) -> None:
         parsed = self._require_parsed(state)
+        if parsed.unsupported_product_conditions:
+            state.status = ChatStatus.PARTIAL
+            state.unresolved.extend(
+                UnresolvedItem(kind=UnresolvedKind.UNSUPPORTED_CONDITION, detail=condition)
+                for condition in parsed.unsupported_product_conditions
+            )
+            state.response_parts.append("요청한 상품 조건을 현재 지원 목록으로 처리할 수 없습니다.")
+            return
         rejected_product_ids = {
             candidate.product.product_id
             for rank in parsed.rejected_candidate_numbers
@@ -558,20 +627,25 @@ class AgentNodes:
             ProductCandidate(
                 rank=rank,
                 product=product,
-                reasons=self._candidate_reasons(parsed.category, parsed.texture),
-                unresolved=["실제 제품 데이터와 효능 근거는 아직 연결되지 않음"],
+                reasons=self._candidate_reasons(state.task_context.search_filters),
+                unresolved=(
+                    ["개발용 상품 데이터이며 실제 제품 검증 결과가 아님"] if product.is_demo else []
+                )
+                + (["제품 사용법 미상"] if product.directions is None else [])
+                + (["제품 버전 미상"] if product.version is None else []),
             )
             for rank, product in enumerate(products, start=1)
         ]
         candidate_set = ProductCandidateSet(
             candidate_set_id=self._stable_id(state, "candidates"),
             candidates=candidates,
-            is_demo=True,
+            is_demo=any(product.is_demo for product in products),
         )
         state.candidate_set = candidate_set
         state.artifacts.append(candidate_set)
         lines = [f"{candidate.rank}번. {candidate.product.name}" for candidate in candidates]
-        state.response_parts.append("개발용 제품 후보:\n" + "\n".join(lines))
+        title = "개발용 제품 후보:" if candidate_set.is_demo else "조건에 맞는 제품 후보:"
+        state.response_parts.append(title + "\n" + "\n".join(lines))
 
     async def _process_routine(self, state: AgentState) -> None:
         parsed = self._require_parsed(state)
@@ -619,8 +693,9 @@ class AgentNodes:
             f"{placement.weekday.value} {placement.period.value}: {placement.product_name}"
             for placement in plan.placements
         ]
-        state.response_parts.append("개발용 루틴 초안:\n" + "\n".join(schedule))
-        if any("retinol" in product.product_id for product in products):
+        title = "개발용 루틴 초안:" if plan.is_demo else "루틴 초안:"
+        state.response_parts.append(title + "\n" + "\n".join(schedule))
+        if any(product.is_demo and "retinol" in product.product_id for product in products):
             state.unresolved.append(
                 UnresolvedItem(
                     kind=UnresolvedKind.MISSING_INFORMATION,
@@ -941,14 +1016,15 @@ class AgentNodes:
 
     def _candidate_reasons(
         self,
-        category: ProductCategory | None,
-        texture: ProductTexture | None,
+        filters: ProductSearchFilters,
     ) -> list[str]:
-        reasons = ["개발용 제품 fixture의 구조화 조건과 일치"]
-        if category is not None:
+        reasons = ["현재 상품 조회 결과에서 선택"]
+        if filters.category is not None:
             reasons.append("요청한 제품 카테고리와 일치")
-        if texture is not None:
+        if filters.texture is not None:
             reasons.append("요청한 제형 조건과 일치")
+        if filters.skin_feel is not None:
+            reasons.append("요청한 사용감 조건과 일치")
         return reasons
 
     def _citation(self, record: EvidenceRecord) -> Citation:

@@ -3,6 +3,7 @@
 import asyncio
 import re
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import ClassVar
 from uuid import NAMESPACE_URL, uuid5
 
@@ -20,6 +21,7 @@ from agent.ports import (
 )
 from agent.rag.ports import EvidenceRetriever
 from agent.rag.retrieval.ingredient_mention_resolver import IngredientMentionResolver
+from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.schemas import (
     ConstraintSource,
     DayPeriod,
@@ -35,11 +37,14 @@ from agent.rag.schemas import (
     LookupStatus,
     ProductCandidateSet,
     ProductCategory,
+    ProductClassification,
     ProductGetRequest,
     ProductGetResult,
     ProductRecord,
     ProductSearchRequest,
     ProductSearchResult,
+    ProductSkinFeel,
+    ProductTaxonomy,
     ProductTexture,
     RoutineConstraint,
     RoutinePlacement,
@@ -84,6 +89,49 @@ from agent.schemas import (
 
 FIXTURE_VERSION = "demo-v1"
 FIXTURE_CHECKED_AT = "2026-09-09"
+
+
+class FixtureCategoryCode(StrEnum):
+    CLEANSER = "demo:cleanser"
+    TONER = "demo:toner"
+    SERUM = "demo:serum"
+    MOISTURIZER = "demo:moisturizer"
+    SUNSCREEN = "demo:sunscreen"
+
+
+class FixtureProductTaxonomy:
+    """데모 분류를 운영의 공통 분류로 고정하지 않도록 개발 조립에서만 제공한다."""
+
+    CREAM: ClassVar[ProductTexture] = ProductTexture(code="demo:cream", name="크림")
+    GEL: ClassVar[ProductTexture] = ProductTexture(code="demo:gel", name="젤")
+    SERUM: ClassVar[ProductTexture] = ProductTexture(code="demo:serum", name="세럼")
+    LIGHT: ClassVar[ProductSkinFeel] = ProductSkinFeel(
+        code="demo:light", name="가벼운", aliases=["가벼", "산뜻"]
+    )
+    RICH: ClassVar[ProductSkinFeel] = ProductSkinFeel(
+        code="demo:rich", name="리치", aliases=["꾸덕"]
+    )
+
+    def create(self) -> ProductTaxonomy:
+        return ProductTaxonomy(
+            version=FIXTURE_VERSION,
+            categories=[
+                ProductCategory(
+                    code=FixtureCategoryCode.SUNSCREEN, name="선크림", aliases=["자외선"]
+                ),
+                ProductCategory(code=FixtureCategoryCode.CLEANSER, name="클렌저", aliases=["세안"]),
+                ProductCategory(code=FixtureCategoryCode.TONER, name="토너"),
+                ProductCategory(code=FixtureCategoryCode.SERUM, name="세럼"),
+                ProductCategory(
+                    code=FixtureCategoryCode.MOISTURIZER, name="보습", aliases=["크림"]
+                ),
+            ],
+            textures=[self.CREAM, self.GEL, self.SERUM],
+            skin_feels=[self.LIGHT, self.RICH],
+        ).model_copy(deep=True)
+
+    def category(self, code: FixtureCategoryCode) -> ProductCategory:
+        return next(item for item in self.create().categories if item.code == code)
 
 
 class InMemoryTurnRecord(AgentModel):
@@ -135,6 +183,9 @@ class FakeLlmClient(LlmClient):
 
     async def understand(self, request: UnderstandingRequest) -> ParsedRequest:
         message = request.message.strip()
+        category = self._match_classification(message, request.product_taxonomy.categories)
+        texture = self._match_classification(message, request.product_taxonomy.textures)
+        skin_feel = self._match_classification(message, request.product_taxonomy.skin_feels)
         pending = request.context.pending_question
         explicit = self._extract_intents(message, [])
         # 제품명만 답한 경우와 명시적으로 다른 작업을 요청한 경우를 구분한다.
@@ -144,8 +195,7 @@ class FakeLlmClient(LlmClient):
             if request.context.routine and self._contains(message, self._MODIFICATION_KEYWORDS):
                 intents = [Intent.ROUTINE_PLANNING]
             elif request.context.candidate_set and (
-                self._extract_texture(message)
-                or self._contains(message, self._MODIFICATION_KEYWORDS)
+                texture or skin_feel or self._contains(message, self._MODIFICATION_KEYWORDS)
             ):
                 intents = [Intent.PRODUCT_DISCOVERY]
         if pending and explicit == pending.original_intents:
@@ -155,8 +205,9 @@ class FakeLlmClient(LlmClient):
         return ParsedRequest(
             intents=intents,
             query=message,
-            category=self._extract_category(message),
-            texture=self._extract_texture(message),
+            category=category,
+            texture=texture,
+            skin_feel=skin_feel,
             referenced_candidate_number=candidate_number,
             rejected_candidate_numbers=rejected_numbers,
             excluded_weekdays=self._extract_excluded_weekdays(message),
@@ -199,25 +250,20 @@ class FakeLlmClient(LlmClient):
             return [candidate_number]
         return []
 
-    def _extract_category(self, message: str) -> ProductCategory | None:
-        if "선크림" in message or "자외선" in message:
-            return ProductCategory.SUNSCREEN
-        if "클렌저" in message or "세안" in message:
-            return ProductCategory.CLEANSER
-        if "토너" in message:
-            return ProductCategory.TONER
-        if "세럼" in message:
-            return ProductCategory.SERUM
-        if "크림" in message or "보습" in message:
-            return ProductCategory.MOISTURIZER
-        return None
-
-    def _extract_texture(self, message: str) -> ProductTexture | None:
-        if "가벼" in message or "산뜻" in message or "젤" in message:
-            return ProductTexture.LIGHT
-        if "리치" in message or "꾸덕" in message:
-            return ProductTexture.RICH
-        return None
+    def _match_classification[T: ProductClassification](
+        self, message: str, options: list[T]
+    ) -> T | None:
+        ranked = sorted(
+            (
+                (len(alias), item)
+                for item in options
+                for alias in [item.name, *item.aliases]
+                if alias and alias.casefold() in message.casefold()
+            ),
+            key=lambda match: match[0],
+            reverse=True,
+        )
+        return ranked[0][1].model_copy(deep=True) if ranked else None
 
     def _extract_excluded_weekdays(self, message: str) -> list[Weekday]:
         if "빼" not in message and "제외" not in message:
@@ -290,6 +336,7 @@ class FixtureProductRepository(ProductRepository):
 
     def __init__(self) -> None:
         self._products = self._build_products()
+        self._filter_validator = ProductFilterValidator(FixtureProductTaxonomy().create())
 
     async def search(self, request: ProductSearchRequest) -> ProductSearchResult:
         query = request.query.casefold()
@@ -305,6 +352,7 @@ class FixtureProductRepository(ProductRepository):
             (
                 request.filters.category is not None,
                 request.filters.texture is not None,
+                request.filters.skin_feel is not None,
                 bool(request.filters.ingredient_ids),
             )
         )
@@ -332,14 +380,7 @@ class FixtureProductRepository(ProductRepository):
         return ProductGetResult(status=LookupStatus.NO_RESULTS)
 
     def _matches_filters(self, product: ProductRecord, request: ProductSearchRequest) -> bool:
-        filters = request.filters
-        if filters.category is not None and product.category is not filters.category:
-            return False
-        if filters.texture is not None and product.texture is not filters.texture:
-            return False
-        return not filters.ingredient_ids or set(filters.ingredient_ids).issubset(
-            product.ingredient_ids
-        )
+        return self._filter_validator.matches(product, request.filters)
 
     def _build_products(self) -> list[ProductRecord]:
         return [
@@ -347,8 +388,9 @@ class FixtureProductRepository(ProductRepository):
                 product_id="product:ceramide-cream",
                 version=FIXTURE_VERSION,
                 name="데모 세라마이드 크림",
-                category=ProductCategory.MOISTURIZER,
-                texture=ProductTexture.RICH,
+                category=FixtureProductTaxonomy().category(FixtureCategoryCode.MOISTURIZER),
+                texture=FixtureProductTaxonomy.CREAM,
+                skin_feel=FixtureProductTaxonomy.RICH,
                 ingredient_ids=["ingredient:ceramide", "ingredient:glycerin"],
                 directions="개발 fixture: 저녁 보습 단계에 사용",
                 source_id="demo-product-catalog",
@@ -358,8 +400,9 @@ class FixtureProductRepository(ProductRepository):
                 product_id="product:panthenol-gel",
                 version=FIXTURE_VERSION,
                 name="데모 판테놀 젤 크림",
-                category=ProductCategory.MOISTURIZER,
-                texture=ProductTexture.LIGHT,
+                category=FixtureProductTaxonomy().category(FixtureCategoryCode.MOISTURIZER),
+                texture=FixtureProductTaxonomy.CREAM,
+                skin_feel=FixtureProductTaxonomy.LIGHT,
                 ingredient_ids=["ingredient:panthenol", "ingredient:glycerin"],
                 directions="개발 fixture: 아침 또는 저녁 보습 단계에 사용",
                 source_id="demo-product-catalog",
@@ -369,8 +412,9 @@ class FixtureProductRepository(ProductRepository):
                 product_id="product:niacinamide-serum",
                 version=FIXTURE_VERSION,
                 name="데모 나이아신아마이드 세럼",
-                category=ProductCategory.SERUM,
-                texture=ProductTexture.LIGHT,
+                category=FixtureProductTaxonomy().category(FixtureCategoryCode.SERUM),
+                texture=FixtureProductTaxonomy.SERUM,
+                skin_feel=FixtureProductTaxonomy.LIGHT,
                 ingredient_ids=["ingredient:niacinamide"],
                 directions="개발 fixture: 저녁 세럼 단계에 사용",
                 source_id="demo-product-catalog",
@@ -380,8 +424,9 @@ class FixtureProductRepository(ProductRepository):
                 product_id="product:retinol-serum",
                 version=FIXTURE_VERSION,
                 name="데모 레티놀 세럼",
-                category=ProductCategory.SERUM,
-                texture=ProductTexture.LIGHT,
+                category=FixtureProductTaxonomy().category(FixtureCategoryCode.SERUM),
+                texture=FixtureProductTaxonomy.SERUM,
+                skin_feel=FixtureProductTaxonomy.LIGHT,
                 ingredient_ids=["ingredient:retinol"],
                 directions="개발 fixture: 저녁에만 사용하며 실제 사용 빈도는 별도 확인 필요",
                 source_id="demo-product-catalog",
@@ -547,6 +592,7 @@ class FixtureRoutinePlanner(RoutinePlanner):
                 source_id=product.source_id,
             )
             for product in request.products
+            if product.directions is not None
         )
         constraints.extend(
             RoutineConstraint(
