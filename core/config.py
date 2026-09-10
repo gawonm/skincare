@@ -76,7 +76,7 @@ class AppConfig(PydanticBaseModel):
     model_config = ConfigDict(frozen=True)
 
     # OpenAPI 문서와 `/docs` 상단에 표시되는 이름.
-    title: Annotated[str, Field(min_length=1)] = "alembic-singledb"
+    title: Annotated[str, Field(min_length=1)] = "skincare"
 
 
 class Settings(BaseSettings):
