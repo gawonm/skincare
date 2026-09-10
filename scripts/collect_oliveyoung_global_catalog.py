@@ -13,6 +13,7 @@
 """
 
 import argparse
+import sys
 import time
 from pathlib import Path
 
@@ -48,6 +49,13 @@ def _parse_max_new_products() -> int | None:
 
 
 def main() -> None:
+    # 실제로 1268번째 상품에서 Windows 콘솔 기본 인코딩(cp949)로 못 쓰는 문자(억양 부호
+    # 등)가 상품명에 섞여 나와 진행 로그 print()가 죽었다. 해외 브랜드명은 이런 문자가
+    # 흔히 섞이므로 표준출력을 UTF-8로 강제하고, 그래도 안 되는 문자는 버리지 않고
+    # 대체 문자로 바꿔서라도 로그가 실행을 막지 않게 한다.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     max_new_products = _parse_max_new_products()
 
     writer = ProductCandidateCsvWriter()
