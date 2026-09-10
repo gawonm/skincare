@@ -48,6 +48,9 @@ node_modules/
 frontend/dist/
 frontend/build/
 frontend/.next/
+# Vite 의존성 최적화 캐시, TS 증분 컴파일 캐시. 둘 다 빌드 시 다시 생성된다.
+frontend/.vite/
+*.tsbuildinfo
 
 # RAG 관련 로컬 데이터. 용량이 크고 다시 만들 수 있으므로 커밋하지 않는다.
 data/
