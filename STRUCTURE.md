@@ -1,7 +1,7 @@
 # 폴더 구조
 
 ```
-alembic-singledb/
+skincare/
 ├── core/                  # 공용 인프라. 설정, DB 연결, Redis
 │   ├── config.py
 │   ├── database.py

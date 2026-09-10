@@ -28,7 +28,7 @@ redis:
 # 블록 전체를 지우면 아래 기본값이 그대로 쓰인다.
 app:
   # OpenAPI 문서와 /docs 상단에 표시되는 이름.
-  title: alembic-singledb
+  title: skincare
 
 # 로그인 세션 설정. 블록 전체를 지우면 아래 기본값이 그대로 쓰인다.
 auth:
