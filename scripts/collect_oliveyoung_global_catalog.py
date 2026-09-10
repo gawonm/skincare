@@ -49,6 +49,14 @@ def main() -> None:
         row.source_product_id for row in existing_rows if row.source == DataSource.OLIVEYOUNG_GLOBAL
     }
 
+    # 실행이 수십 분~수 시간 걸릴 수 있어, 끝까지 기다렸다 한 번에 쓰지 않고 상품을
+    # 하나 처리할 때마다 즉시 CSV에 반영한다 — 중간에 죽어도 그때까지 결과는 남는다.
+    collected_rows: list = []
+
+    def _persist_incrementally(row) -> None:
+        collected_rows.append(row)
+        writer.write(list(existing_rows) + collected_rows, _OUTPUT_PATH)
+
     category_client = OliveYoungGlobalCategoryClient()
     product_client = OliveYoungGlobalClient()
     image_downloader = ImageDownloader()
@@ -63,6 +71,7 @@ def main() -> None:
             volume_parser=ProductVolumeParser(),
             existing_product_ids=existing_product_ids,
             max_new_products=max_new_products,
+            on_row_collected=_persist_incrementally,
         )
         new_rows, report = crawler.run()
     finally:
@@ -70,6 +79,8 @@ def main() -> None:
         product_client.close()
         image_downloader.close()
 
+    # 크롤러가 끝까지 정상 완료됐을 때만 이 최종 write가 의미 있다 - 중간에 죽었다면
+    # 위 _persist_incrementally가 이미 마지막으로 처리한 상품까지 저장해 뒀다.
     writer.write(list(existing_rows) + new_rows, _OUTPUT_PATH)
 
     print(f"신규 {len(new_rows)}개 저장 (기존 {len(existing_rows)}개 유지): {_OUTPUT_PATH}")

@@ -14,6 +14,7 @@
 import html
 import time
 from collections import Counter
+from collections.abc import Callable
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
@@ -78,6 +79,7 @@ class OliveYoungGlobalCatalogCrawler:
         volume_parser: ProductVolumeParser,
         existing_product_ids: set[str],
         max_new_products: int | None = None,
+        on_row_collected: Callable[[ProductCandidateRow], None] | None = None,
     ) -> None:
         self._category_client = category_client
         self._product_client = product_client
@@ -88,6 +90,11 @@ class OliveYoungGlobalCatalogCrawler:
         self._volume_parser = volume_parser
         self._existing_product_ids = existing_product_ids
         self._max_new_products = max_new_products
+        # 실행 시간이 길어(수천 건) 끝날 때까지 기다렸다 한 번에 쓰면, 중간에 죽었을 때
+        # 이미 처리한 결과를 전부 잃는다. 행 하나가 완성될 때마다 즉시 저장하도록 호출자가
+        # 넘긴다(`collect_oliveyoung_global_catalog.py`) — 별도 체크포인트 파일 대신
+        # 출력 CSV 자체가 매번 최신 상태를 반영한다.
+        self._on_row_collected = on_row_collected
         self._row_sequence = 0
 
     def run(self) -> tuple[list[ProductCandidateRow], CatalogCrawlReport]:
@@ -145,6 +152,13 @@ class OliveYoungGlobalCatalogCrawler:
 
                 rows.append(row)
                 self._existing_product_ids.add(fields.prdt_no)
+                if self._on_row_collected is not None:
+                    self._on_row_collected(row)
+                print(
+                    f"진행: 수집 {len(rows)} / 발견 {total_found} "
+                    f"(기존 {skipped_existing}건 건너뜀, 제외 {sum(excluded_by_reason.values())}건, "
+                    f"실패 {len(failed_product_ids)}건) - {row.source_product_id} {row.raw_title[:40]}"
+                )
                 time.sleep(self._INTER_REQUEST_DELAY_SECONDS)
 
             if self._max_new_products is not None and len(rows) >= self._max_new_products:
