@@ -1,6 +1,6 @@
 """`lowest_price` 를 `PriceBand` 로 분류한다.
 
-경계값은 `docs/data.md` 의 가격대 표와 동일하게 유지한다. 여기서 바꾸면 문서도 같이 고친다.
+경계값은 `docs/data/data.md` 의 가격대 표와 동일하게 유지한다. 여기서 바꾸면 문서도 같이 고친다.
 """
 
 from scripts.product_candidate_schemas import PriceBand

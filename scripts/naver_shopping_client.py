@@ -1,6 +1,6 @@
 """네이버 쇼핑 검색 API 호출.
 
-인증 정보는 환경변수로만 관리한다 (`docs/data.md` 참고). `.env` 파일은 docker-compose
+인증 정보는 환경변수로만 관리한다 (`docs/data/data.md` 참고). `.env` 파일은 docker-compose
 전용이라 애플리케이션이 자동으로 읽지 않으므로, 이 스크립트를 실행하는 셸에
 `NAVER_CLIENT_ID`/`NAVER_CLIENT_SECRET` 을 직접 export 해야 한다.
 """
