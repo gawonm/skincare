@@ -57,3 +57,8 @@ data/
 uploads/
 models_cache/
 *.faiss
+
+# docs/ 아래 문서는 언제나 커밋한다.
+# 위의 data/ 규칙이 경로와 무관하게 docs/data/ 까지 잡아서 문서가 빠지는 사고가 있었다.
+!docs/
+!docs/**
