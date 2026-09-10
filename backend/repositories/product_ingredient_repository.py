@@ -8,7 +8,7 @@
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.product_ingredient import (
@@ -135,6 +135,14 @@ class ProductIngredientRepository:
             unchanged=unchanged,
             deleted=len(to_delete),
         )
+
+    async def count_by_match_acceptance(self) -> dict[IngredientMatchAcceptance, int]:
+        """현재 `product_ingredient` 전체를 `match_acceptance`별로 집계한다(진행 상황 확인용)."""
+        statement = select(ProductIngredient.match_acceptance, func.count()).group_by(
+            ProductIngredient.match_acceptance
+        )
+        result = await self._session.execute(statement)
+        return dict(result.all())
 
     async def _existing_by_position(
         self, snapshot_id: UUID
