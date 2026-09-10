@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+/*
+ * AI 채팅 화면(시안 04A/04B/04C)에서 쓰는 색 토큰.
+ *
+ * 기존 auth 화면은 Tailwind 기본 `slate` 팔레트만 썼는데, 채팅 시안은 세이지 계열
+ * 브랜드색을 쓴다. 아래 값은 초안 목업에서 눈으로 추출한 근사값이며, 확정 디자인
+ * 토큰이 나오면 이 블록만 교체하면 컴포넌트는 건드릴 필요가 없다.
+ */
+@theme {
+  --color-sage-50: #f2f6f0;
+  --color-sage-100: #e6ede2;
+  --color-sage-500: #6d8c68;
+  --color-sage-600: #5f7d5f; /* 사용자 말풍선 · 대화 중 전송 버튼 · 활성 탭 */
+  --color-sage-700: #4f6a4f; /* 전송 버튼 hover */
+
+  --color-brand-ink: #3f6b63; /* 04A 인사 heading · "SKINCARE ASSISTANT" 라벨 */
+
+  --color-ai-surface: #edf0ea; /* AI 말풍선 배경 */
+  --color-ai-ink: #3c453c; /* AI 말풍선 본문 */
+
+  --color-warn-surface: #f9dcdc; /* 경고 박스 배경 */
+  --color-warn-ink: #bf574f; /* 경고 박스 글자·아이콘 */
+
+  --color-canvas: #fbfbf8; /* 화면 배경 */
+
+  --color-accent-progress: #35b9c6; /* 04C 진행 다이아몬드 */
+  --color-accent-stop: #5b52a8; /* 04C 정지 버튼 */
+}
