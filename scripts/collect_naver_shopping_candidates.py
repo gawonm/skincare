@@ -8,7 +8,7 @@
 전용이라 자동으로 읽지 않으므로, 실행 전 셸에 직접 export 한다.
 
 여기서 만드는 CSV 는 아직 전성분을 검증하지 않은 후보다. 성분군별로 사람이 직접 확인해
-`verified_products.csv` 로 옮기기 전까지는 추천에 사용하지 않는다 (`docs/data.md` 참고).
+`verified_products.csv` 로 옮기기 전까지는 추천에 사용하지 않는다 (`docs/data/data.md` 참고).
 """
 
 from pathlib import Path
