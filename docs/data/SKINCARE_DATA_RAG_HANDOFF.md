@@ -49,7 +49,7 @@
 
 **아직 안 한 것 — 다음 세션은 여기부터**
 
-- [ ] 위 실행 결과(confirmed/needs_review/unmatched 건수)를 `docs/rag_coverage_mvp.md`에도
+- [ ] 위 실행 결과(confirmed/needs_review/unmatched 건수)를 `docs/data/rag_coverage_mvp.md`에도
   반영할지 확인 필요 — 아직 그 문서에는 기록 안 함.
 - [ ] needs_review 138건 / unmatched 129건을 어떻게 처리할지 미정(수동 검토, 재매칭 규칙 보강 등) —
   임의로 판단하지 말고 담당자에게 확인.
@@ -107,7 +107,7 @@ RAG는 ‘질문에 맞는 자료를 먼저 찾고, 찾은 자료를 바탕으�
 | 질문 관련성·문장별 인용 | 현재 티어 필터와 출처 목록 반환 수준 | 코드 확인, 개선은 계획 |
 | 올리브영 상품 | 번역·용량 추출·검토 사유 기록 코드 구현 | 코드 확인 |
 | 네이버 상품 | API 사용 불가, 현재 파이프라인에서 제외 | 사용자 확정. 이 경로 보완은 현재 범위 밖 |
-| 테스트·품질 보고 | `tests/`, `data/reports/`, `docs/rag_coverage_mvp.md` 미존재 | 이번 파일 확인 기준 |
+| 테스트·품질 보고 | `tests/`, `data/reports/`, `docs/data/rag_coverage_mvp.md` 미존재 | 이번 파일 확인 기준 |
 | 서비스 연결 | FastAPI 기본 틀만 있으며 사용자용 API·화면 미구현 | 코드 확인 |
 
 ### 데이터 수량: 서로 다른 단위를 섞지 않기
