@@ -29,6 +29,7 @@ config.yaml
 htmlcov/
 
 # 에디터, 운영체제
+.DS_Store
 .vscode/
 .idea/
 *.swp

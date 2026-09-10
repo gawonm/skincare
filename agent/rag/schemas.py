@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, SecretStr
 
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_ROUTINE_FREQUENCY = 2
@@ -207,12 +207,163 @@ class EvidenceSearchRequest(RagModel):
     query: str = Field(min_length=1)
     target_ids: list[str] = Field(default_factory=list)
     limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
+    # 제품과 전성분을 한 집합으로 합치면 병용 대상 두 개를 복원할 수 없다.
+    combination_target_ids: list[str] = Field(default_factory=list)
+
+
+class QuestionIntent(StrEnum):
+    EFFICACY = "efficacy"
+    SKIN_TYPE = "skin_type"
+    CONCENTRATION = "concentration"
+    PRECAUTION = "precaution"
+    REGULATION = "regulation"
+    USAGE_FREQUENCY = "usage_frequency"
+    COMBINATION = "combination"
+
+
+class RagConfidenceTier(StrEnum):
+    UNKNOWN = "unknown"
+    OFFICIAL_REGULATORY = "official_regulatory"
+    STRUCTURED_KNOWLEDGE = "structured_knowledge"
+    AI_GENERATED_REVIEWED = "ai_generated_reviewed"
+
+
+class UnverifiableReason(StrEnum):
+    NO_EVIDENCE_FOUND = "no_evidence_found"
+    UNREVIEWED_EVIDENCE = "unreviewed_evidence"
+    NOT_RELEVANT_TO_QUESTION = "not_relevant_to_question"
+    MISSING_COMBINATION_EVIDENCE = "missing_combination_evidence"
+    CITATION_VALIDATION_FAILED = "citation_validation_failed"
+
+
+class RagDocumentField(RagModel):
+    field_id: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    intents: list[QuestionIntent] = Field(default_factory=list)
+
+
+class RagDocument(RagModel):
+    # 영속 테이블을 가정하지 않고 기존 조회 DTO의 출처·원문 조건을 함께 운반한다.
+    evidence: EvidenceRecord
+    fields: list[RagDocumentField] = Field(min_length=1)
+    confidence_tier: RagConfidenceTier = RagConfidenceTier.UNKNOWN
+
+
+class RagChunkDraft(RagModel):
+    chunk_id: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    evidence: EvidenceRecord
+    intents: list[QuestionIntent] = Field(default_factory=list)
+    confidence_tier: RagConfidenceTier = RagConfidenceTier.UNKNOWN
+
+
+class EmbeddingVector(RagModel):
+    values: list[FiniteFloat] = Field(min_length=1)
+
+
+class EmbeddingRequest(RagModel):
+    texts: list[str] = Field(min_length=1)
+
+
+class EmbeddingResult(RagModel):
+    vectors: list[EmbeddingVector]
+    model: str = Field(min_length=1)
+
+
+class EmbeddedChunk(RagModel):
+    draft: RagChunkDraft
+    vector: EmbeddingVector
+    embedding_model: str = Field(min_length=1)
+
+
+class RetrievedChunk(RagModel):
+    chunk: RagChunkDraft
+    vector_similarity: float | None = Field(default=None, ge=-1, le=1, allow_inf_nan=False)
+    bm25_relevance: float | None = Field(default=None, allow_inf_nan=False)
+    fused_score: float = Field(default=0, ge=0, allow_inf_nan=False)
+
+
+class HybridSearchRequest(RagModel):
+    request: EvidenceSearchRequest
+    vector: EmbeddingVector
+    embedding_model: str
+
+
+class HybridSearchResult(RagModel):
+    status: LookupStatus
+    vector_results: list[RetrievedChunk] = Field(default_factory=list)
+    bm25_results: list[RetrievedChunk] = Field(default_factory=list)
+    error_message: str | None = None
+
+
+class HybridFusionRequest(RagModel):
+    results: HybridSearchResult
+    limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
+
+
+class RagRetrievalPolicy(RagModel):
+    # 새 브랜치의 특정 데이터셋에서 고른 임계값을 미확정 검색기에 강제하지 않는다.
+    free_text_min_vector_similarity: float = Field(ge=-1, le=1)
+    rrf_k: int = Field(default=60, gt=0)
+
+
+class OpenAiModelConfig(RagModel):
+    api_key: SecretStr
+    model: str = Field(min_length=1)
+    timeout_seconds: float = Field(default=30, gt=0)
+    max_retries: int = Field(default=1, ge=0)
+
+
+class GeneratedClaim(RagModel):
+    sentence: str = Field(min_length=1)
+    evidence_ids: list[str] = Field(min_length=1)
+
+
+class GeneratedClaims(RagModel):
+    claims: list[GeneratedClaim] = Field(default_factory=list)
+
+
+class ClaimGenerationRequest(RagModel):
+    question: str = Field(min_length=1)
+    records: list[EvidenceRecord] = Field(min_length=1)
+    known_conditions: EvidenceConditions
+    is_combination: bool = False
+
+
+class AnsweredClaim(RagModel):
+    sentence: str = Field(min_length=1)
+    sources: list[EvidenceRecord] = Field(min_length=1)
+
+
+class IngredientVerificationResult(RagModel):
+    claims: list[AnsweredClaim] = Field(default_factory=list)
+    unverifiable_reason: UnverifiableReason | None = None
+
+    @property
+    def has_verifiable_evidence(self) -> bool:
+        return bool(self.claims) and self.unverifiable_reason is None
+
+    @property
+    def answer(self) -> str:
+        return " ".join(claim.sentence for claim in self.claims)
+
+
+class PerTargetResult(RagModel):
+    target_id: str
+    result: IngredientVerificationResult
+
+
+class RagQueryResult(RagModel):
+    per_target: list[PerTargetResult] = Field(default_factory=list)
+    combination: IngredientVerificationResult | None = None
+    free_text: IngredientVerificationResult | None = None
 
 
 class EvidenceSearchResult(RagModel):
     status: LookupStatus
     records: list[EvidenceRecord] = Field(default_factory=list)
     error_message: str | None = None
+    chunks: list[RetrievedChunk] = Field(default_factory=list)
 
 
 class ApplicabilityRequest(RagModel):
@@ -229,6 +380,7 @@ class ApplicabilityAssessment(RagModel):
 class EvidenceBundle(RagModel):
     search: EvidenceSearchResult
     assessments: list[ApplicabilityAssessment] = Field(default_factory=list)
+    generated: RagQueryResult | None = None
 
 
 class ProductCandidate(RagModel):

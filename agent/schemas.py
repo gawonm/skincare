@@ -19,6 +19,7 @@ from agent.rag.schemas import (
     ProductRecord,
     ProductSearchFilters,
     ProductTexture,
+    RagQueryResult,
     RoutinePlan,
     Weekday,
 )
@@ -200,6 +201,9 @@ class TaskContext(AgentModel):
     search_filters: ProductSearchFilters = Field(default_factory=ProductSearchFilters)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
     rejected_product_ids: list[str] = Field(default_factory=list)
+    evidence_target_ids: list[str] = Field(default_factory=list)
+    evidence_combination_target_ids: list[str] = Field(default_factory=list)
+    evidence_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions)
 
 
 class ResolvedEntities(AgentModel):
@@ -229,6 +233,7 @@ class EvidenceAnswer(AgentModel):
     evidence_ids: list[str] = Field(default_factory=list)
     is_demo: bool = True
     assessments: list[ApplicabilityAssessment] = Field(default_factory=list)
+    generated: RagQueryResult | None = None
 
 
 class RoutineSaveHandoff(AgentModel):

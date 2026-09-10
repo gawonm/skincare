@@ -19,6 +19,7 @@ from agent.ports import (
     TurnStorageError,
 )
 from agent.rag.ports import EvidenceRetriever
+from agent.rag.retrieval.ingredient_mention_resolver import IngredientMentionResolver
 from agent.rag.schemas import (
     ConstraintSource,
     DayPeriod,
@@ -387,6 +388,16 @@ class FixtureProductRepository(ProductRepository):
                 checked_at=FIXTURE_CHECKED_AT,
             ),
         ]
+
+
+class CatalogIngredientRepository(IngredientRepository):
+    """DB가 정해지기 전에도 주입된 성분 DTO 사전으로 요청 해석을 검증한다."""
+
+    def __init__(self, ingredients: list[IngredientRecord]) -> None:
+        self._resolver = IngredientMentionResolver(ingredients)
+
+    async def resolve(self, request: IngredientResolveRequest) -> IngredientResolveResult:
+        return self._resolver.resolve(request)
 
 
 class FixtureEvidenceRetriever(EvidenceRetriever):

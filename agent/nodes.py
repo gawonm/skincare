@@ -9,6 +9,7 @@ from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.rag.pipeline import EvidencePipeline
 from agent.rag.schemas import (
     ApplicabilityStatus,
+    EvidenceBundle,
     EvidenceConditions,
     EvidenceRecord,
     EvidenceSearchRequest,
@@ -25,6 +26,7 @@ from agent.rag.schemas import (
     RoutinePlan,
     RoutinePlanRequest,
     RoutineValidationRequest,
+    UnverifiableReason,
     Weekday,
 )
 from agent.schemas import (
@@ -61,11 +63,13 @@ CANDIDATE_REFERENCE_QUESTION = (
 )
 ROUTINE_REFERENCE_QUESTION = "참조한 루틴 버전을 현재 방에서 찾을 수 없습니다. 다시 선택해 주세요."
 NO_RESULT_MESSAGE = "조건을 만족하는 개발용 제품 fixture를 찾지 못했습니다."
-NO_EVIDENCE_MESSAGE = "현재 개발용 근거 fixture에서 관련 자료를 찾지 못했습니다."
+NO_EVIDENCE_MESSAGE = "현재 연결된 검색 자료에서 관련 근거를 찾지 못했습니다."
 
 
 class AgentNodes:
     """주입된 포트만 사용해 그래프 노드를 실행한다."""
+
+    _EVIDENCE_REFERENCES = ("이 성분", "그 성분", "해당 성분", "이 제품", "그 제품")
 
     def __init__(
         self,
@@ -246,6 +250,8 @@ class AgentNodes:
                 unresolved_names.append(mention)
             elif ingredient_result.ingredient:
                 ingredient_ids.append(ingredient_result.ingredient.ingredient_id)
+            elif parsed.ingredient_mentions:
+                unresolved_names.append(mention)
 
         needs_products = any(
             intent in parsed.intents
@@ -314,7 +320,7 @@ class AgentNodes:
             target_field = "intent"
             reason = "질문 목적을 추측해서 다른 작업을 실행하지 않습니다."
         elif state.resolved_entities.unresolved_names:
-            question = "성분명이 여러 후보와 일치합니다. 정확한 표시 명칭을 알려주세요."
+            question = "성분명을 하나의 후보로 식별하지 못했습니다. 정확한 표시 명칭을 알려주세요."
             target_field = "ingredient_name"
             reason = "모호한 후보들을 서로 다른 확정 성분으로 취급하면 안 됩니다."
 
@@ -354,7 +360,7 @@ class AgentNodes:
                 target_field = "routine_products"
                 reason = "제품이 식별되지 않으면 제품별 사용 계획을 만들 수 없습니다."
 
-        demonstrative_query = "이 성분" in parsed.query or "이 제품" in parsed.query
+        demonstrative_query = any(word in parsed.query for word in self._EVIDENCE_REFERENCES)
         if (
             question is None
             and Intent.EVIDENCE_QA in parsed.intents
@@ -362,6 +368,7 @@ class AgentNodes:
             and not state.resolved_entities.ingredient_ids
             and not state.resolved_entities.products
             and parsed.referenced_candidate_number is None
+            and not state.task_context.evidence_target_ids
         ):
             question = EVIDENCE_TARGET_QUESTION
             target_field = "evidence_subject"
@@ -637,11 +644,34 @@ class AgentNodes:
                 + [ingredient for product in products for ingredient in product.ingredient_ids]
             )
         )
+        combination_target_ids = (
+            [product.product_id for product in products]
+            if products
+            else list(state.resolved_entities.ingredient_ids)
+        )
+        known_conditions = parsed.known_conditions
+        if (
+            not target_ids
+            and not parsed.ingredient_mentions
+            and any(word in parsed.query for word in self._EVIDENCE_REFERENCES)
+        ):
+            target_ids = list(state.task_context.evidence_target_ids)
+            combination_target_ids = list(state.task_context.evidence_combination_target_ids)
+            known_conditions = state.task_context.evidence_conditions.model_copy(deep=True)
+            for field in EvidenceConditions.model_fields:
+                value = getattr(parsed.known_conditions, field)
+                if value is not None:
+                    setattr(known_conditions, field, value)
+        # 자료가 없더라도 최근에 명확히 식별한 대상을 유지해야 이전 주제로 되돌아가지 않는다.
+        state.task_context.evidence_target_ids = target_ids
+        state.task_context.evidence_combination_target_ids = combination_target_ids
+        state.task_context.evidence_conditions = known_conditions.model_copy(deep=True)
         bundle = await self._evidence_pipeline.run(
             EvidenceSearchRequest(
                 query=parsed.query,
                 target_ids=target_ids,
-                known_conditions=parsed.known_conditions,
+                known_conditions=known_conditions,
+                combination_target_ids=combination_target_ids,
             )
         )
         if bundle.search.status is LookupStatus.ERROR:
@@ -665,6 +695,9 @@ class AgentNodes:
                 UnresolvedItem(kind=UnresolvedKind.UNSUPPORTED_CONDITION, detail=detail)
             )
             state.response_parts.append(detail)
+            return
+        if bundle.generated is not None:
+            self._append_generated_evidence(state, bundle)
             return
         excluded_ids = {
             item.evidence_id
@@ -726,6 +759,63 @@ class AgentNodes:
                     )
                     for reason in assessment.reasons
                 )
+
+    def _append_generated_evidence(self, state: AgentState, bundle: EvidenceBundle) -> None:
+        generated = bundle.generated
+        if generated is None:
+            raise ValueError("생성된 RAG 결과가 없습니다.")
+        results = [
+            (f"대상 {index}", item.result)
+            for index, item in enumerate(generated.per_target, start=1)
+        ]
+        if generated.combination is not None:
+            results.append(("병용 근거", generated.combination))
+        if generated.free_text is not None:
+            results.append(("질문에 대한 근거", generated.free_text))
+        messages: list[str] = []
+        records: dict[str, EvidenceRecord] = {}
+        for label, result in results:
+            if result.has_verifiable_evidence:
+                messages.append(f"{label}: {result.answer}")
+                for claim in result.claims:
+                    for record in claim.sources:
+                        records[record.evidence_id] = record
+            else:
+                reason = result.unverifiable_reason or UnverifiableReason.NO_EVIDENCE_FOUND
+                detail = self._unverifiable_message(reason)
+                messages.append(f"{label}: {detail}")
+                state.status = ChatStatus.PARTIAL
+                state.unresolved.append(
+                    UnresolvedItem(kind=UnresolvedKind.NO_EVIDENCE, detail=detail)
+                )
+        for item in bundle.assessments:
+            if item.evidence_id in records and item.status is not ApplicabilityStatus.APPLICABLE:
+                messages.append("적용 한계: " + "; ".join(item.reasons))
+        summary = "\n".join(messages) or NO_EVIDENCE_MESSAGE
+        state.evidence.extend(records.values())
+        state.citations.extend(self._citation(record) for record in records.values())
+        state.artifacts.append(
+            EvidenceAnswer(
+                answer_id=self._stable_id(state, "evidence-answer"),
+                subject=self._require_parsed(state).query,
+                summary=summary,
+                evidence_ids=list(records),
+                assessments=bundle.assessments,
+                is_demo=any(record.is_demo for record in records.values()),
+                generated=generated,
+            )
+        )
+        state.response_parts.append(summary)
+
+    def _unverifiable_message(self, reason: UnverifiableReason) -> str:
+        messages = {
+            UnverifiableReason.NO_EVIDENCE_FOUND: "확인할 근거를 찾지 못했습니다.",
+            UnverifiableReason.UNREVIEWED_EVIDENCE: "검수된 근거가 없어 답변을 보류합니다.",
+            UnverifiableReason.NOT_RELEVANT_TO_QUESTION: "질문이 묻는 항목을 뒷받침할 근거가 부족합니다.",
+            UnverifiableReason.MISSING_COMBINATION_EVIDENCE: "질문의 대상들을 함께 다루는 병용 근거가 없습니다.",
+            UnverifiableReason.CITATION_VALIDATION_FAILED: "출처 또는 적용 조건 검증을 통과한 답변이 없습니다.",
+        }
+        return messages[reason]
 
     async def _routine_products(self, state: AgentState) -> list[ProductRecord]:
         parsed = self._require_parsed(state)
