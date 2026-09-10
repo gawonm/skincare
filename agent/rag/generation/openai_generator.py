@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from agent.rag.ports import ClaimGenerator
-from agent.rag.schemas import ClaimGenerationRequest, GeneratedClaims, OpenAiModelConfig
+from agent.rag.schemas import ClaimGenerationRequest, GeneratedClaims, OpenAiChatConfig
 
 
 class OpenAiClaimGenerator(ClaimGenerator):
@@ -17,7 +17,7 @@ class OpenAiClaimGenerator(ClaimGenerator):
         "병용 여부를 답하지 마세요. 확인 불가능하면 claims를 빈 목록으로 반환하세요."
     )
 
-    def __init__(self, config: OpenAiModelConfig) -> None:
+    def __init__(self, config: OpenAiChatConfig) -> None:
         self._client = ChatOpenAI(
             api_key=config.api_key.get_secret_value(),
             model=config.model,

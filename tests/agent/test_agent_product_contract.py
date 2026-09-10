@@ -22,7 +22,7 @@ from agent.rag.schemas import (
     ProductTexture,
 )
 from agent.schemas import ChatStatus, ParsedRequest, RegisterRoomRequest, UnderstandingRequest
-from tests.test_agent_chat import AgentTestFactory
+from tests.agent.test_agent_chat import AgentTestFactory
 
 
 class ProviderCatalog:

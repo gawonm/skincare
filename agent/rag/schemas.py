@@ -7,6 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, SecretStr, model
 
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_ROUTINE_FREQUENCY = 2
+DEFAULT_EMBEDDING_BATCH_SIZE = 16
+DEFAULT_RERANKER_BATCH_SIZE = 8
+DEFAULT_RERANKER_MAX_LENGTH = 512
+DEFAULT_RERANK_CANDIDATE_LIMIT = 30
 
 
 class RagModel(BaseModel):
@@ -259,6 +263,24 @@ class QuestionIntent(StrEnum):
     COMBINATION = "combination"
 
 
+class OpenAiChatModel(StrEnum):
+    GPT_4O_MINI = "gpt-4o-mini"
+
+
+class LocalEmbeddingModel(StrEnum):
+    BGE_M3 = "BAAI/bge-m3"
+
+
+class LocalRerankerModel(StrEnum):
+    BGE_RERANKER_V2_M3 = "BAAI/bge-reranker-v2-m3"
+
+
+class LocalModelDevice(StrEnum):
+    CPU = "cpu"
+    CUDA = "cuda"
+    MPS = "mps"
+
+
 class RagConfidenceTier(StrEnum):
     UNKNOWN = "unknown"
     OFFICIAL_REGULATORY = "official_regulatory"
@@ -319,6 +341,7 @@ class RetrievedChunk(RagModel):
     vector_similarity: float | None = Field(default=None, ge=-1, le=1, allow_inf_nan=False)
     bm25_relevance: float | None = Field(default=None, allow_inf_nan=False)
     fused_score: float = Field(default=0, ge=0, allow_inf_nan=False)
+    reranker_score: float | None = Field(default=None, allow_inf_nan=False)
 
 
 class HybridSearchRequest(RagModel):
@@ -339,17 +362,47 @@ class HybridFusionRequest(RagModel):
     limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
 
 
+class RerankRequest(RagModel):
+    query: str = Field(min_length=1)
+    candidates: list[RetrievedChunk] = Field(min_length=1)
+    limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
+
+
+class RerankResult(RagModel):
+    model: str = Field(min_length=1)
+    chunks: list[RetrievedChunk] = Field(min_length=1)
+
+
 class RagRetrievalPolicy(RagModel):
     # 새 브랜치의 특정 데이터셋에서 고른 임계값을 미확정 검색기에 강제하지 않는다.
     free_text_min_vector_similarity: float = Field(ge=-1, le=1)
     rrf_k: int = Field(default=60, gt=0)
+    # 교차 인코더는 전체 말뭉치가 아니라 1차 검색 후보만 읽어 지연시간을 제한한다.
+    rerank_candidate_limit: int = Field(default=DEFAULT_RERANK_CANDIDATE_LIMIT, ge=1)
 
 
-class OpenAiModelConfig(RagModel):
+class OpenAiChatConfig(RagModel):
     api_key: SecretStr
-    model: str = Field(min_length=1)
+    model: OpenAiChatModel = OpenAiChatModel.GPT_4O_MINI
     timeout_seconds: float = Field(default=30, gt=0)
     max_retries: int = Field(default=1, ge=0)
+
+
+class LocalEmbeddingConfig(RagModel):
+    model: LocalEmbeddingModel = LocalEmbeddingModel.BGE_M3
+    device: LocalModelDevice | None = None
+    batch_size: int = Field(default=DEFAULT_EMBEDDING_BATCH_SIZE, ge=1)
+    cache_folder: str | None = Field(default=None, min_length=1)
+    local_files_only: bool = False
+
+
+class LocalRerankerConfig(RagModel):
+    model: LocalRerankerModel = LocalRerankerModel.BGE_RERANKER_V2_M3
+    device: LocalModelDevice | None = None
+    batch_size: int = Field(default=DEFAULT_RERANKER_BATCH_SIZE, ge=1)
+    max_length: int = Field(default=DEFAULT_RERANKER_MAX_LENGTH, ge=1)
+    cache_folder: str | None = Field(default=None, min_length=1)
+    local_files_only: bool = False
 
 
 class GeneratedClaim(RagModel):
@@ -402,6 +455,7 @@ class EvidenceSearchResult(RagModel):
     records: list[EvidenceRecord] = Field(default_factory=list)
     error_message: str | None = None
     chunks: list[RetrievedChunk] = Field(default_factory=list)
+    reranker_model: str | None = Field(default=None, min_length=1)
 
 
 class ApplicabilityRequest(RagModel):

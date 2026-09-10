@@ -11,6 +11,8 @@ from agent.rag.schemas import (
     GeneratedClaims,
     HybridSearchRequest,
     HybridSearchResult,
+    RerankRequest,
+    RerankResult,
 )
 
 
@@ -35,6 +37,12 @@ class HybridSearchBackend(ABC):
 
     @abstractmethod
     async def search(self, request: HybridSearchRequest) -> HybridSearchResult:
+        raise NotImplementedError
+
+
+class EvidenceReranker(ABC):
+    @abstractmethod
+    async def rerank(self, request: RerankRequest) -> RerankResult:
         raise NotImplementedError
 
 

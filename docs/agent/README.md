@@ -24,8 +24,8 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 | `agent/rag/schemas.py`, `agent/rag/ports.py` | RAG·상품 조회 DTO와 검색·임베딩·생성 계약 |
 | `agent/rag/loaders/data_records.py` | 주입받은 데이터 DTO를 성분·근거 DTO로 변환 |
 | `agent/rag/chunking/field_chunker.py` | 입력 문서의 필드 단위 청킹 및 조건 보존 |
-| `agent/rag/embedding/openai_embedder.py` | 설정을 주입받는 비동기 임베딩 호출 |
-| `agent/rag/retrieval/` | 성분명 해석, 질문 의도 분류, 하이브리드 검색 결과 통합 |
+| `agent/rag/embedding/local_embedder.py` | BGE-M3 로컬 임베딩 비동기 추론 어댑터 |
+| `agent/rag/retrieval/` | 성분명 해석, 의도 분류, 하이브리드 검색 통합 및 BGE 리랭커 |
 | `agent/rag/generation/` | 문장별 인용과 조건 검사, 생성 모델 어댑터 |
 | `agent/rag/pipeline.py` | 적재용 청킹·임베딩과 질의용 검색·적용성·생성 조립 |
 

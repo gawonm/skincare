@@ -1,9 +1,7 @@
-"""저장소를 선택하지 않는 에이전트 조립과 DB 없는 개발용 조립.
+"""저장소를 선택하지 않는 운영 조립과 DB 없는 개발용 조립.
 
-새 RAG(50ca083)의 검색·생성은 현재 EvidencePipeline 계약으로 연결한다.
-HybridEvidenceRetriever(backend, embedder, policy)와 AnswerGenerator(claim_client)를
-EvidencePipeline에 전달하고 AgentDependencies로 주입하면 동일한 멀티턴 그래프를 쓴다.
-검색 정책의 관련성 임계값과 모델명은 호출자가 결정한다. 설정 파일은 읽지 않는다.
+운영 조립은 GPT-4o mini 기반 Intent·답변 생성과 로컬 BGE 검색 모델을 연결한다.
+검색 임계값과 API 키는 호출자가 구조화 설정으로 전달하며 이 모듈은 설정 파일을 읽지 않는다.
 외부 체크포인터에는 CheckpointSerializerFactory의 직렬화 허용 타입을 적용해야 한다.
 """
 
@@ -13,7 +11,7 @@ from types import ModuleType
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 import agent.rag.schemas as rag_schemas
 import agent.schemas as agent_schemas
@@ -28,6 +26,7 @@ from agent.adapters import (
 )
 from agent.context import ContextBuilder, ConversationSummarizer
 from agent.graph import AgentGraphFactory, AgentGraphRouter
+from agent.llm import OpenAiLlmClient
 from agent.nodes import AgentNodes
 from agent.ports import (
     ChatHistoryRepository,
@@ -37,10 +36,20 @@ from agent.ports import (
     RoutinePlanner,
 )
 from agent.prompts import PromptCatalog
+from agent.rag.embedding.local_embedder import LocalBgeM3Embedder
 from agent.rag.generation.answer_generator import AnswerGenerator
+from agent.rag.generation.openai_generator import OpenAiClaimGenerator
 from agent.rag.pipeline import EvidenceApplicabilityEvaluator, EvidencePipeline
-from agent.rag.ports import EvidenceRetriever
-from agent.rag.schemas import ProductTaxonomy
+from agent.rag.ports import EvidenceReranker, EvidenceRetriever, HybridSearchBackend, TextEmbedder
+from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
+from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
+from agent.rag.schemas import (
+    LocalEmbeddingConfig,
+    LocalRerankerConfig,
+    OpenAiChatConfig,
+    ProductTaxonomy,
+    RagRetrievalPolicy,
+)
 from agent.schemas import AgentModel, ContextLimits, ExecutionLimits
 from agent.service import ChatService, RequestIdentityFactory
 
@@ -102,6 +111,85 @@ class AgentFactory:
             identity_factory=RequestIdentityFactory(),
             execution_limits=execution_limits or ExecutionLimits(),
             context_limits=context_limits or ContextLimits(),
+        )
+
+
+class ProductionAgentConfig(AgentModel):
+    """운영 모델 선택과 검색 정책. OpenAI 키는 SecretStr 상태로만 전달한다."""
+
+    openai: OpenAiChatConfig
+    embedding: LocalEmbeddingConfig = Field(default_factory=LocalEmbeddingConfig)
+    reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
+    retrieval_policy: RagRetrievalPolicy
+
+
+class ProductionAgentDependencies(AgentModel):
+    """운영 조립이 소유하지 않는 저장소·검색 백엔드·체크포인터 계약."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
+    history: ChatHistoryRepository
+    products: ProductRepository
+    product_taxonomy: ProductTaxonomy
+    ingredients: IngredientRepository
+    routine_planner: RoutinePlanner
+    search_backend: HybridSearchBackend
+    checkpointer: BaseCheckpointSaver
+
+
+class ProductionAgentApplication(AgentModel):
+    """운영 상태 점검과 임베딩 적재에서 같은 모델 인스턴스를 재사용하는 조립 결과."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
+    service: ChatService
+    embedder: TextEmbedder
+    reranker: EvidenceReranker
+    evidence_retriever: EvidenceRetriever
+
+
+class ProductionAgentFactory:
+    """GPT 호출과 로컬 검색 모델을 한 지점에서 명시적으로 조립한다."""
+
+    def create(
+        self,
+        dependencies: ProductionAgentDependencies,
+        config: ProductionAgentConfig,
+        execution_limits: ExecutionLimits | None = None,
+        context_limits: ContextLimits | None = None,
+    ) -> ProductionAgentApplication:
+        embedder = LocalBgeM3Embedder(config.embedding)
+        reranker = LocalBgeRerankerV2M3(config.reranker)
+        evidence_retriever = HybridEvidenceRetriever(
+            backend=dependencies.search_backend,
+            embedder=embedder,
+            policy=config.retrieval_policy,
+            reranker=reranker,
+        )
+        evidence_pipeline = EvidencePipeline(
+            retriever=evidence_retriever,
+            evaluator=EvidenceApplicabilityEvaluator(),
+            generator=AnswerGenerator(OpenAiClaimGenerator(config.openai)),
+        )
+        service = AgentFactory().create(
+            AgentDependencies(
+                llm=OpenAiLlmClient(config.openai),
+                history=dependencies.history,
+                products=dependencies.products,
+                product_taxonomy=dependencies.product_taxonomy,
+                ingredients=dependencies.ingredients,
+                routine_planner=dependencies.routine_planner,
+                evidence_pipeline=evidence_pipeline,
+                checkpointer=dependencies.checkpointer,
+            ),
+            execution_limits=execution_limits,
+            context_limits=context_limits,
+        )
+        return ProductionAgentApplication(
+            service=service,
+            embedder=embedder,
+            reranker=reranker,
+            evidence_retriever=evidence_retriever,
         )
 
 

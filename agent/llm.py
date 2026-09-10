@@ -4,12 +4,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from agent.ports import LlmClient
-from agent.rag.schemas import OpenAiModelConfig
+from agent.rag.schemas import OpenAiChatConfig
 from agent.schemas import ParsedRequest, UnderstandingRequest
 
 
 class OpenAiLlmClient(LlmClient):
-    def __init__(self, config: OpenAiModelConfig) -> None:
+    def __init__(self, config: OpenAiChatConfig) -> None:
         self._client = ChatOpenAI(
             api_key=config.api_key.get_secret_value(),
             model=config.model,

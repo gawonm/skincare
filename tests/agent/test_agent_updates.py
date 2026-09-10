@@ -57,7 +57,7 @@ from agent.schemas import (
     SessionContextResult,
     UnderstandingRequest,
 )
-from tests.test_agent_chat import AgentTestFactory
+from tests.agent.test_agent_chat import AgentTestFactory
 
 
 class SlowOnceLlm(FakeLlmClient):
