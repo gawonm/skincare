@@ -37,15 +37,22 @@
    추가, `linked` 샘플 대조, 회귀 테스트 45개 통과, `PARSER_VERSION="1.1.0"`)까지 확인
    완료 — 올리브영 세션이 cross-session 메시지로 확인해줬다.
 
-**아직 안 한 것 — 내일 여기부터**
+**추가로 한 일 (커밋 `67ea65e`) — 진입점 추가 + 실제 실행 확인 ✅**
 
-- [ ] 실제 파이프라인 진입점을 아직 안 만들었다: `product_candidates.csv`를 읽어서
-  올리브영 파서(`ProductIngredientTextParser` + `ProductIngredientOptionLinker`)로
-  파싱하고, `ProductIngredientService.ingest()`로 저장까지 잇는 스크립트가 없다.
-  `backend/services/rag_ingestion_service.py`의 CLI 진입점 패턴을 참고해서 만들 것.
-- [ ] 위 진입점을 실제 91개 고유 상품으로 돌려서 confirmed/needs_review/unmatched
-  건수를 확인하고, 이 문서와 `docs/rag_coverage_mvp.md`에 결과를 기록해야 한다(아직 실행
-  안 해봄 — "코드 작성 완료"일 뿐 "실제 실행 확인"은 아직 아니다).
+- [x] 파이프라인 진입점 `scripts/ingest_product_ingredients.py` 추가: `product_candidates.csv`를
+  읽어 올리브영 파서(`ProductIngredientTextParser` + `ProductIngredientOptionLinker`)로 파싱하고
+  `ProductIngredientService.ingest()`로 저장까지 연결하는 CLI.
+- [x] 실제 91개 고유 상품으로 실행 확인: 5,152 토큰 중 **confirmed 4,885 / needs_review 138 /
+  unmatched 129**. 진행 상황 집계용 `ProductIngredientRepository.count_by_match_acceptance` 추가.
+- [x] 재실행 시 새 스냅샷 0개, 토큰 수 불변 확인(idempotent) — 원문이 그대로면 재실행해도
+  중복 적재 안 됨.
+
+**아직 안 한 것 — 다음 세션은 여기부터**
+
+- [ ] 위 실행 결과(confirmed/needs_review/unmatched 건수)를 `docs/rag_coverage_mvp.md`에도
+  반영할지 확인 필요 — 아직 그 문서에는 기록 안 함.
+- [ ] needs_review 138건 / unmatched 129건을 어떻게 처리할지 미정(수동 검토, 재매칭 규칙 보강 등) —
+  임의로 판단하지 말고 담당자에게 확인.
 - [ ] 그 외 원래 계획(9절 "남은 작업과 완료 기준")의 1~10번 항목 중 아직 검증 안 된 것들도
   남아 있다 — 이번 세션은 상품 전성분 매칭·저장만 새로 진행했고 9절 항목은 손대지 않았다.
 
