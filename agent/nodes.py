@@ -9,7 +9,7 @@ from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.rag.pipeline import EvidencePipeline
 from agent.rag.schemas import (
     ApplicabilityStatus,
-    ConstraintSource,
+    EvidenceConditions,
     EvidenceRecord,
     EvidenceSearchRequest,
     IngredientResolveRequest,
@@ -22,6 +22,7 @@ from agent.rag.schemas import (
     ProductSearchFilters,
     ProductSearchRequest,
     ProductTexture,
+    RoutinePlan,
     RoutinePlanRequest,
     RoutineValidationRequest,
     Weekday,
@@ -43,6 +44,8 @@ from agent.schemas import (
     ParsedRequest,
     PendingQuestion,
     ResolvedEntities,
+    RoutineSaveHandoff,
+    SessionSnapshot,
     SourcedValue,
     UnderstandingRequest,
     UnresolvedItem,
@@ -84,23 +87,21 @@ class AgentNodes:
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
         self._require_turn_fields(state)
-        snapshot = state.restored_snapshot
-        if snapshot is not None:
-            # 히스토리의 완료 스냅샷을 기준으로 삼아 실패한 실행의 체크포인트가
-            # 다음 요청 상태를 앞질러 가지 못하게 한다.
-            state.messages = [message.model_copy(deep=True) for message in snapshot.messages]
-            state.profile = snapshot.profile.model_copy(deep=True)
-            state.pending_question = (
-                snapshot.pending_question.model_copy(deep=True)
-                if snapshot.pending_question
-                else None
-            )
-            state.candidate_set = (
-                snapshot.candidate_set.model_copy(deep=True) if snapshot.candidate_set else None
-            )
-            state.routine = snapshot.routine.model_copy(deep=True) if snapshot.routine else None
-            state.evidence = [record.model_copy(deep=True) for record in snapshot.evidence]
-            state.summary = snapshot.summary.model_copy(deep=True) if snapshot.summary else None
+        snapshot = state.restored_snapshot or SessionSnapshot()
+        # 히스토리의 완료 스냅샷을 기준으로 삼아 실패한 실행의 체크포인트가
+        # 다음 요청 상태를 앞질러 가지 못하게 한다.
+        state.messages = [message.model_copy(deep=True) for message in snapshot.messages]
+        state.profile = snapshot.profile.model_copy(deep=True)
+        state.task_context = snapshot.task_context.model_copy(deep=True)
+        state.pending_question = (
+            snapshot.pending_question.model_copy(deep=True) if snapshot.pending_question else None
+        )
+        state.candidate_set = (
+            snapshot.candidate_set.model_copy(deep=True) if snapshot.candidate_set else None
+        )
+        state.routine = snapshot.routine.model_copy(deep=True) if snapshot.routine else None
+        state.evidence = []
+        state.summary = snapshot.summary.model_copy(deep=True) if snapshot.summary else None
         # 복구용 스냅샷을 상태 안에 다시 중첩 저장하면 체크포인트 크기만 커진다.
         state.restored_snapshot = None
 
@@ -122,6 +123,7 @@ class AgentNodes:
         state.started_at = datetime.now(UTC)
         state.events = []
         state.output = None
+        state.save_handoff = None
 
         identifiers = state.identifiers
         turn = state.turn_input
@@ -129,7 +131,9 @@ class AgentNodes:
             raise RuntimeError("그래프 호출에 요청 식별자 또는 사용자 입력이 없습니다.")
         if not any(message.message_id == identifiers.user_message_id for message in state.messages):
             state.messages.append(
-                ChatMessage(
+                state.user_message.model_copy(deep=True)
+                if state.user_message
+                else ChatMessage(
                     message_id=identifiers.user_message_id,
                     request_id=turn.request_id,
                     role=MessageRole.USER,
@@ -152,6 +156,58 @@ class AgentNodes:
                 context=context,
             )
         )
+        parsed = state.parsed_request
+        pending = state.pending_question
+        if parsed.pending_answer and pending and pending.original_request:
+            original = pending.original_request
+            parsed = parsed.model_copy(
+                update={
+                    "query": original.query + "\n" + parsed.query,
+                    "intents": original.intents,
+                    "category": parsed.category or original.category,
+                    "texture": parsed.texture or original.texture,
+                    "ingredient_mentions": list(
+                        dict.fromkeys(
+                            (
+                                original.ingredient_mentions
+                                if pending.target_field != "ingredient_name"
+                                else []
+                            )
+                            + (
+                                parsed.ingredient_mentions
+                                or (
+                                    [parsed.query]
+                                    if pending.target_field == "ingredient_name"
+                                    else []
+                                )
+                            )
+                        )
+                    ),
+                    "known_conditions": EvidenceConditions.model_validate(
+                        {
+                            **original.known_conditions.model_dump(exclude_none=True),
+                            **parsed.known_conditions.model_dump(exclude_none=True),
+                        }
+                    ),
+                    "excluded_weekdays": list(
+                        dict.fromkeys(original.excluded_weekdays + parsed.excluded_weekdays)
+                    ),
+                }
+            )
+        elif not parsed.pending_answer:
+            state.pending_question = None
+        if Intent.PRODUCT_DISCOVERY in parsed.intents:
+            if parsed.is_modification or parsed.pending_answer:
+                filters = state.task_context.search_filters
+                parsed.category = parsed.category or filters.category
+                parsed.texture = parsed.texture or filters.texture
+            else:
+                state.task_context.search_filters = ProductSearchFilters()
+                state.task_context.rejected_product_ids = []
+        state.parsed_request = parsed
+        state.task_context.excluded_weekdays = list(
+            dict.fromkeys(state.task_context.excluded_weekdays + parsed.excluded_weekdays)
+        )
         known_experiences = {experience.value for experience in state.profile.experiences}
         state.profile.experiences.extend(
             SourcedValue(value=experience, origin=ValueOrigin.USER)
@@ -167,19 +223,36 @@ class AgentNodes:
         ingredient_ids: list[str] = []
         products: list[ProductRecord] = []
 
-        if self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):
+        if not any(
+            intent in parsed.intents
+            for intent in (
+                Intent.PRODUCT_DISCOVERY,
+                Intent.ROUTINE_PLANNING,
+                Intent.EVIDENCE_QA,
+            )
+        ):
+            return state
+
+        unresolved_names: list[str] = []
+        for mention in parsed.ingredient_mentions or [parsed.query]:
+            if not self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):
+                break
             ingredient_result = await self._ingredient_repository.resolve(
-                self._ingredient_request(parsed.query)
+                self._ingredient_request(mention)
             )
-            if ingredient_result.ingredient:
+            if ingredient_result.status is LookupStatus.ERROR:
+                self._add_tool_failure(state, ingredient_result.error_message)
+            elif ingredient_result.ambiguous_candidates:
+                unresolved_names.append(mention)
+            elif ingredient_result.ingredient:
                 ingredient_ids.append(ingredient_result.ingredient.ingredient_id)
-            ingredient_ids.extend(
-                ingredient.ingredient_id for ingredient in ingredient_result.ambiguous_candidates
-            )
 
         needs_products = any(
             intent in parsed.intents
             for intent in (Intent.PRODUCT_DISCOVERY, Intent.ROUTINE_PLANNING)
+        ) or (
+            Intent.EVIDENCE_QA in parsed.intents
+            and ("제품" in parsed.query or parsed.category is not None)
         )
         if needs_products and self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):
             effective_category = parsed.category
@@ -189,9 +262,19 @@ class AgentNodes:
                     parsed.referenced_candidate_number,
                 )
                 effective_category = referenced.product.category if referenced else None
+            if Intent.PRODUCT_DISCOVERY in parsed.intents:
+                previous_ids = state.task_context.search_filters.ingredient_ids
+                if not ingredient_ids and (parsed.is_modification or parsed.pending_answer):
+                    ingredient_ids = list(previous_ids)
+                state.task_context.search_filters = ProductSearchFilters(
+                    category=effective_category,
+                    texture=parsed.texture,
+                    ingredient_ids=ingredient_ids,
+                )
             product_result = await self._product_repository.search(
                 ProductSearchRequest(
                     query=parsed.query,
+                    allow_discovery=Intent.PRODUCT_DISCOVERY in parsed.intents,
                     filters=ProductSearchFilters(
                         category=effective_category,
                         texture=parsed.texture,
@@ -214,6 +297,7 @@ class AgentNodes:
         state.resolved_entities = ResolvedEntities(
             products=products,
             ingredient_ids=list(dict.fromkeys(ingredient_ids)),
+            unresolved_names=unresolved_names,
         )
         self._record_event(state, GraphNode.RESOLVE_ENTITIES, "성분과 제품 식별을 마쳤습니다.")
         return state
@@ -224,6 +308,15 @@ class AgentNodes:
         target_field: str | None = None
         reason: str | None = None
         turn = self._require_turn(state)
+
+        if Intent.CLARIFICATION in parsed.intents:
+            question = "성분 확인, 상품 추천, 루틴 만들기 중 어떤 도움이 필요한가요?"
+            target_field = "intent"
+            reason = "질문 목적을 추측해서 다른 작업을 실행하지 않습니다."
+        elif state.resolved_entities.unresolved_names:
+            question = "성분명이 여러 후보와 일치합니다. 정확한 표시 명칭을 알려주세요."
+            target_field = "ingredient_name"
+            reason = "모호한 후보들을 서로 다른 확정 성분으로 취급하면 안 됩니다."
 
         if turn.candidate_set_id is not None and (
             state.candidate_set is None
@@ -251,7 +344,10 @@ class AgentNodes:
 
         if question is None and Intent.ROUTINE_PLANNING in parsed.intents:
             has_products = bool(state.resolved_entities.products)
-            has_reference = parsed.referenced_candidate_number is not None
+            has_reference = (
+                parsed.referenced_candidate_number is not None
+                and parsed.referenced_candidate_number not in parsed.rejected_candidate_numbers
+            )
             has_current_routine = state.routine is not None
             if not has_products and not has_reference and not has_current_routine:
                 question = PRODUCT_TARGET_QUESTION
@@ -265,6 +361,7 @@ class AgentNodes:
             and demonstrative_query
             and not state.resolved_entities.ingredient_ids
             and not state.resolved_entities.products
+            and parsed.referenced_candidate_number is None
         ):
             question = EVIDENCE_TARGET_QUESTION
             target_field = "evidence_subject"
@@ -278,6 +375,7 @@ class AgentNodes:
                 target_field=target_field,
                 reason=reason,
                 original_intents=parsed.intents,
+                original_request=parsed.model_copy(deep=True),
             )
         elif parsed.pending_answer:
             state.pending_question = None
@@ -312,6 +410,38 @@ class AgentNodes:
             await self._process_routine(state)
         elif intent is Intent.EVIDENCE_QA:
             await self._process_evidence(state)
+        elif intent is Intent.GENERAL_CHAT:
+            state.response_parts.append(
+                "현재 결과를 유지합니다. 성분 확인·상품 검색·루틴 구성을 도와드릴 수 있어요."
+            )
+        elif intent is Intent.OUT_OF_SCOPE:
+            state.response_parts.append(
+                "기초화장품의 성분 확인, 상품 검색, 사용 루틴에 관한 질문을 해주세요."
+            )
+        elif intent is Intent.ROUTINE_SAVE:
+            parsed = self._require_parsed(state)
+            if Intent.ROUTINE_PLANNING in parsed.intents and not any(
+                isinstance(artifact, RoutinePlan) for artifact in state.artifacts
+            ):
+                state.status = ChatStatus.PARTIAL
+                state.response_parts.append(
+                    "루틴 변경을 검증하지 못해 저장 요청을 만들지 않았습니다."
+                )
+            elif state.routine is None:
+                state.status = ChatStatus.NEEDS_INPUT
+                state.follow_up_question = (
+                    "저장할 루틴이 없습니다. 먼저 사용할 제품으로 루틴을 만들어 주세요."
+                )
+                state.response_parts.append(state.follow_up_question)
+            else:
+                state.save_handoff = RoutineSaveHandoff(
+                    routine_id=state.routine.routine_id,
+                    version=state.routine.version,
+                    is_demo=state.routine.is_demo,
+                )
+                state.response_parts.append(
+                    "현재 루틴 버전의 저장 요청을 준비했습니다. 실제 저장은 로그인·권한 확인 후 백엔드에서 처리해야 합니다."
+                )
         else:
             raise RuntimeError("실행할 Intent가 지정되지 않았습니다.")
         state.current_intent = None
@@ -356,7 +486,10 @@ class AgentNodes:
             raise RuntimeError("최종 응답에 assistant 메시지 식별자가 없습니다.")
 
         parts = list(state.response_parts)
-        if state.artifacts and DEMO_RESULT_NOTICE not in parts:
+        if (
+            any(artifact.is_demo for artifact in state.artifacts)
+            and DEMO_RESULT_NOTICE not in parts
+        ):
             parts.append(DEMO_RESULT_NOTICE)
         message = "\n\n".join(parts)
         output = ChatTurnOutput(
@@ -372,6 +505,7 @@ class AgentNodes:
             unresolved=state.unresolved,
             error_code=state.error_code,
             retryable=state.retryable,
+            save_handoff=state.save_handoff,
         )
         state.output = output
         if not any(
@@ -386,6 +520,7 @@ class AgentNodes:
                     sequence=self._next_sequence(state),
                 )
             )
+        self._context_builder.compact(state)
         self._record_event(state, GraphNode.FINALIZE_RESPONSE, "구조화된 응답을 만들었습니다.")
         return state
 
@@ -396,10 +531,13 @@ class AgentNodes:
             for rank in parsed.rejected_candidate_numbers
             if (candidate := self._candidate_by_rank(state, rank)) is not None
         }
+        state.task_context.rejected_product_ids = list(
+            dict.fromkeys(state.task_context.rejected_product_ids + list(rejected_product_ids))
+        )
         products = [
             product
             for product in state.resolved_entities.products
-            if product.product_id not in rejected_product_ids
+            if product.product_id not in state.task_context.rejected_product_ids
         ]
         if not products:
             state.status = ChatStatus.PARTIAL
@@ -487,10 +625,23 @@ class AgentNodes:
         parsed = self._require_parsed(state)
         if not self._reserve_tool_call(state, GraphNode.PROCESS_TASK):
             return
+        products = list(state.resolved_entities.products)
+        if parsed.referenced_candidate_number is not None:
+            candidate = self._candidate_by_rank(state, parsed.referenced_candidate_number)
+            if candidate:
+                products.append(candidate.product)
+        target_ids = list(
+            dict.fromkeys(
+                state.resolved_entities.ingredient_ids
+                + [product.product_id for product in products]
+                + [ingredient for product in products for ingredient in product.ingredient_ids]
+            )
+        )
         bundle = await self._evidence_pipeline.run(
             EvidenceSearchRequest(
                 query=parsed.query,
-                target_ids=state.resolved_entities.ingredient_ids,
+                target_ids=target_ids,
+                known_conditions=parsed.known_conditions,
             )
         )
         if bundle.search.status is LookupStatus.ERROR:
@@ -505,19 +656,60 @@ class AgentNodes:
             state.response_parts.append(NO_EVIDENCE_MESSAGE)
             return
 
-        records = bundle.search.records
+        if bundle.search.status is LookupStatus.UNSUPPORTED:
+            state.status = ChatStatus.PARTIAL
+            detail = (
+                bundle.search.error_message or "현재 검색기가 이 근거 요청을 지원하지 않습니다."
+            )
+            state.unresolved.append(
+                UnresolvedItem(kind=UnresolvedKind.UNSUPPORTED_CONDITION, detail=detail)
+            )
+            state.response_parts.append(detail)
+            return
+        excluded_ids = {
+            item.evidence_id
+            for item in bundle.assessments
+            if item.status is ApplicabilityStatus.NOT_APPLICABLE
+        }
+        records = [
+            record for record in bundle.search.records if record.evidence_id not in excluded_ids
+        ]
+        if not records:
+            state.status = ChatStatus.PARTIAL
+            state.response_parts.append("검색된 근거를 현재 조건에 적용할 수 없습니다.")
+            state.unresolved.extend(
+                UnresolvedItem(kind=UnresolvedKind.UNSUPPORTED_CONDITION, detail=reason)
+                for item in bundle.assessments
+                for reason in item.reasons
+            )
+            return
         known_ids = {record.evidence_id for record in state.evidence}
         state.evidence.extend(record for record in records if record.evidence_id not in known_ids)
         state.citations.extend(self._citation(record) for record in records)
         answer = EvidenceAnswer(
             answer_id=self._stable_id(state, "evidence-answer"),
             subject=parsed.query,
-            summary=" ".join(record.text for record in records),
+            summary="\n".join(f"[{record.source_title}] {record.text}" for record in records),
             evidence_ids=[record.evidence_id for record in records],
-            is_demo=True,
+            assessments=bundle.assessments,
+            is_demo=any(record.is_demo for record in records),
         )
         state.artifacts.append(answer)
         state.response_parts.append(answer.summary)
+        limitations = list(
+            dict.fromkeys(
+                reason
+                for item in bundle.assessments
+                for reason in item.reasons
+                if item.status is not ApplicabilityStatus.APPLICABLE
+            )
+        )
+        if limitations:
+            state.response_parts.append("적용 한계: " + "; ".join(limitations))
+        if any(word in parsed.query for word in ("병용", "같이", "괜찮")):
+            state.response_parts.append(
+                "개별 성분 자료만으로 두 완제품의 병용 안전성을 확정할 수 없습니다."
+            )
         if "농도" in parsed.query or "ph" in parsed.query.casefold():
             state.unresolved.append(
                 UnresolvedItem(
@@ -526,7 +718,7 @@ class AgentNodes:
                 )
             )
         for assessment in bundle.assessments:
-            if assessment.status is ApplicabilityStatus.LIMITED:
+            if assessment.status is not ApplicabilityStatus.APPLICABLE:
                 state.unresolved.extend(
                     UnresolvedItem(
                         kind=UnresolvedKind.MISSING_INFORMATION,
@@ -537,11 +729,28 @@ class AgentNodes:
 
     async def _routine_products(self, state: AgentState) -> list[ProductRecord]:
         parsed = self._require_parsed(state)
-        if parsed.referenced_candidate_number is not None:
+        rejected_ids = set(state.task_context.rejected_product_ids)
+        rejected_ids.update(
+            candidate.product.product_id
+            for rank in parsed.rejected_candidate_numbers
+            if (candidate := self._candidate_by_rank(state, rank)) is not None
+        )
+        state.task_context.rejected_product_ids = sorted(rejected_ids)
+        if parsed.referenced_candidate_number is not None and (
+            parsed.referenced_candidate_number not in parsed.rejected_candidate_numbers
+        ):
             candidate = self._candidate_by_rank(state, parsed.referenced_candidate_number)
-            return [candidate.product] if candidate else []
+            return (
+                [candidate.product]
+                if candidate and candidate.product.product_id not in rejected_ids
+                else []
+            )
         if state.resolved_entities.products:
-            return state.resolved_entities.products
+            return [
+                product
+                for product in state.resolved_entities.products
+                if product.product_id not in rejected_ids
+            ]
         if state.routine is None:
             return []
 
@@ -550,11 +759,17 @@ class AgentNodes:
             dict.fromkeys(placement.product_id for placement in state.routine.placements)
         )
         for product_id in product_ids:
+            if product_id in rejected_ids:
+                continue
             if not self._reserve_tool_call(state, GraphNode.PROCESS_TASK):
                 return products
             result = await self._product_repository.get(ProductGetRequest(product_id=product_id))
-            if result.product:
-                products.append(result.product)
+            if result.status is LookupStatus.ERROR:
+                self._add_tool_failure(state, result.error_message)
+                return []
+            if result.product is None:
+                return []
+            products.append(result.product)
         return products
 
     def _merged_excluded_weekdays(
@@ -562,15 +777,7 @@ class AgentNodes:
         state: AgentState,
         current_exclusions: list[Weekday],
     ) -> list[Weekday]:
-        exclusions = list(current_exclusions)
-        if state.routine:
-            for constraint in state.routine.constraints:
-                if constraint.source is not ConstraintSource.USER:
-                    continue
-                for weekday in Weekday:
-                    if constraint.description.startswith(weekday.value):
-                        exclusions.append(weekday)
-        return list(dict.fromkeys(exclusions))
+        return list(dict.fromkeys(state.task_context.excluded_weekdays + current_exclusions))
 
     def _execution_limit_reached(self, state: AgentState) -> bool:
         elapsed = (datetime.now(UTC) - state.started_at).total_seconds()
@@ -656,6 +863,10 @@ class AgentNodes:
 
     def _citation(self, record: EvidenceRecord) -> Citation:
         return Citation(
+            source_type=record.source_type,
+            text_kind=record.text_kind,
+            scope=record.scope,
+            jurisdiction=record.jurisdiction,
             evidence_id=record.evidence_id,
             source_id=record.source_id,
             locator=record.locator,

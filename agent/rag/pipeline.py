@@ -1,4 +1,4 @@
-"""검색 결과와 적용 조건 평가를 하나의 RAG 진입점으로 조립한다."""
+"""검색 결과의 관련도와 사용자 조건에 대한 적용성을 분리한다."""
 
 from agent.rag.ports import EvidenceRetriever
 from agent.rag.schemas import (
@@ -7,63 +7,81 @@ from agent.rag.schemas import (
     ApplicabilityStatus,
     EvidenceBundle,
     EvidenceConditions,
+    EvidenceReviewStatus,
     EvidenceSearchRequest,
+    LookupStatus,
 )
+
+CONDITION_FIELDS = tuple(EvidenceConditions.model_fields)
+NORMALIZED_ROUTES = frozenset(("topical", "oral", "intravenous"))
 
 
 class EvidenceApplicabilityEvaluator:
-    """미상 조건을 안전 확정으로 바꾸지 않는 최소 적용성 평가기."""
+    """명확한 조건 불일치만 배제하고 미검수·자유문 조건은 검토 대상으로 남긴다."""
 
     def assess(self, request: ApplicabilityRequest) -> ApplicabilityAssessment:
-        evidence_conditions = request.evidence.conditions
-        known_conditions = request.known_conditions
-        missing_fields = self._find_missing_fields(evidence_conditions, known_conditions)
-        if missing_fields:
-            return ApplicabilityAssessment(
-                evidence_id=request.evidence.evidence_id,
-                status=ApplicabilityStatus.LIMITED,
-                reasons=[f"적용 조건 미상: {field}" for field in missing_fields],
-            )
+        record = request.evidence
+        known = request.known_conditions
+        reasons: list[str] = []
+        status = ApplicabilityStatus.APPLICABLE
+        for field in CONDITION_FIELDS:
+            required = getattr(record.conditions, field)
+            if field == "jurisdiction":
+                required = record.jurisdiction or required
+            actual = getattr(known, field)
+            if required is None:
+                continue
+            if actual is None:
+                reasons.append(f"적용 조건 미상: {field}")
+            elif required.strip().casefold() != actual.strip().casefold():
+                # 농도 범위·동의어·제형의 의미 비교를 문자열 불일치로 확정하지 않는다.
+                reasons.append(f"적용 조건 일치 확인 필요: {field} ({required} / {actual})")
+                if field == "route" and {required, actual}.issubset(NORMALIZED_ROUTES):
+                    status = ApplicabilityStatus.NOT_APPLICABLE
+            if reasons and status is not ApplicabilityStatus.NOT_APPLICABLE:
+                status = ApplicabilityStatus.LIMITED
+        if record.raw_conditions:
+            reasons.append(f"원문 조건의 별도 검토 필요: {record.raw_conditions}")
+            if status is ApplicabilityStatus.APPLICABLE:
+                status = ApplicabilityStatus.LIMITED
+        if record.review_status is not EvidenceReviewStatus.VERIFIED or record.is_demo:
+            reasons.append("미검수 자료 또는 개발 fixture이므로 실제 적용을 확정할 수 없음")
+            if status is ApplicabilityStatus.APPLICABLE:
+                status = ApplicabilityStatus.UNKNOWN
+        if record.document_version is None:
+            reasons.append("출처 버전 미상: 최신성 검토 필요")
+            if status is ApplicabilityStatus.APPLICABLE:
+                status = ApplicabilityStatus.LIMITED
         return ApplicabilityAssessment(
-            evidence_id=request.evidence.evidence_id,
-            status=ApplicabilityStatus.APPLICABLE,
-            reasons=["fixture에 기재된 조건 범위에서만 적용 가능"],
+            evidence_id=record.evidence_id,
+            status=status,
+            reasons=reasons
+            or ["검수된 해당 근거의 명시 조건과 일치; 제품 병용 안전성 확정은 아님"],
         )
-
-    def _find_missing_fields(
-        self,
-        evidence: EvidenceConditions,
-        known: EvidenceConditions,
-    ) -> list[str]:
-        fields = (
-            "concentration",
-            "formulation",
-            "route",
-            "usage",
-            "duration",
-        )
-        return [
-            field
-            for field in fields
-            if getattr(evidence, field) is not None and getattr(known, field) is None
-        ]
 
 
 class EvidencePipeline:
-    """백엔드가 검색 세부 단계를 알지 않도록 RAG 호출을 캡슐화한다."""
+    """조회 계약을 통해 얻은 자료를 평가하며 DB나 수집 파이프라인을 소유하지 않는다."""
 
     def __init__(
-        self,
-        retriever: EvidenceRetriever,
-        evaluator: EvidenceApplicabilityEvaluator,
+        self, retriever: EvidenceRetriever, evaluator: EvidenceApplicabilityEvaluator
     ) -> None:
         self._retriever = retriever
         self._evaluator = evaluator
 
     async def run(self, request: EvidenceSearchRequest) -> EvidenceBundle:
         result = await self._retriever.search(request)
-        assessments = [
-            self._evaluator.assess(ApplicabilityRequest(evidence=record))
-            for record in result.records
-        ]
+        assessments = (
+            [
+                self._evaluator.assess(
+                    ApplicabilityRequest(
+                        evidence=record,
+                        known_conditions=request.known_conditions,
+                    )
+                )
+                for record in result.records
+            ]
+            if result.status is LookupStatus.SUCCESS
+            else []
+        )
         return EvidenceBundle(search=result, assessments=assessments)

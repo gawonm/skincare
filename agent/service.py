@@ -1,5 +1,6 @@
 """채팅 턴 등록, 그래프 실행, 결과 저장을 조정하는 비동기 진입점."""
 
+import asyncio
 from hashlib import sha256
 from uuid import NAMESPACE_URL, uuid5
 
@@ -132,23 +133,39 @@ class ChatService:
         if begin_result.status is TurnBeginStatus.STAGED:
             return await self._complete_staged_turn(request.turn, room, begin_result)
 
-        session_context = await self._history.get_session_context(SessionContextRequest(room=room))
-        invocation = AgentInvocation(
-            chat_room_id=room.chat_room_id,
-            thread_id=room.thread_id,
-            turn_input=request.turn,
-            identifiers=identifiers,
-            execution_limits=self._execution_limits,
-            context_limits=self._context_limits,
-            restored_snapshot=session_context.snapshot,
-        )
         try:
+            session_context = await self._history.get_session_context(
+                SessionContextRequest(room=room)
+            )
+            invocation = AgentInvocation(
+                chat_room_id=room.chat_room_id,
+                thread_id=room.thread_id,
+                turn_input=request.turn,
+                identifiers=identifiers,
+                execution_limits=self._execution_limits,
+                context_limits=self._context_limits,
+                restored_snapshot=session_context.snapshot,
+                user_message=begin_result.user_message,
+            )
             graph_result = await self._graph.ainvoke(
                 GraphInvocationRequest(
                     invocation=invocation,
                     recursion_limit=self._execution_limits.recursion_limit,
                 )
             )
+            if graph_result.state.output is None:
+                raise RuntimeError("그래프가 구조화된 최종 응답을 만들지 않았습니다.")
+        except asyncio.CancelledError:
+            await self._history.mark_turn_failed(
+                MarkTurnFailedRequest(
+                    room=room,
+                    request_id=request.turn.request_id,
+                    failure_code=TurnFailureCode.GRAPH,
+                    detail="요청 실행이 취소되었습니다.",
+                    retryable=True,
+                )
+            )
+            raise
         except (
             ConnectionError,
             OSError,
@@ -163,15 +180,19 @@ class ChatService:
                     room=room,
                     request_id=request.turn.request_id,
                     failure_code=TurnFailureCode.GRAPH,
-                    detail=str(error),
+                    detail=f"{type(error).__name__}: {error}",
                     retryable=True,
                 )
             )
             return self._error_output(
                 request.turn,
                 identifiers,
-                ErrorCode.GRAPH_EXECUTION_FAILED,
-                f"그래프 실행 실패: {error}",
+                (
+                    ErrorCode.EXECUTION_LIMIT_REACHED
+                    if isinstance(error, TimeoutError)
+                    else ErrorCode.GRAPH_EXECUTION_FAILED
+                ),
+                f"문맥 복원 또는 그래프 실행 실패: {type(error).__name__}: {error}",
                 retryable=True,
             )
 
@@ -192,7 +213,7 @@ class ChatService:
                     room=room,
                     request_id=request.turn.request_id,
                     failure_code=TurnFailureCode.STORAGE,
-                    detail=str(error),
+                    detail=f"{type(error).__name__}: {error}",
                     retryable=True,
                 )
             )

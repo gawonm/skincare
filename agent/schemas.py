@@ -8,10 +8,16 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent.rag.schemas import (
+    ApplicabilityAssessment,
+    EvidenceConditions,
     EvidenceRecord,
+    EvidenceScope,
+    EvidenceSourceType,
+    EvidenceTextKind,
     ProductCandidateSet,
     ProductCategory,
     ProductRecord,
+    ProductSearchFilters,
     ProductTexture,
     RoutinePlan,
     Weekday,
@@ -23,6 +29,8 @@ DEFAULT_MAX_TOOL_CALLS = 8
 DEFAULT_MAX_REVISIONS = 2
 DEFAULT_TIMEOUT_SECONDS = 10.0
 DEFAULT_RECURSION_LIMIT = 40
+DEFAULT_SUMMARY_CHAR_LIMIT = 2000
+DEFAULT_MESSAGE_CHAR_LIMIT = 2000
 
 
 class UtcClock:
@@ -43,6 +51,10 @@ class Intent(StrEnum):
     PRODUCT_DISCOVERY = "product_discovery"
     ROUTINE_PLANNING = "routine_planning"
     EVIDENCE_QA = "evidence_qa"
+    GENERAL_CHAT = "general_chat"
+    OUT_OF_SCOPE = "out_of_scope"
+    CLARIFICATION = "clarification"
+    ROUTINE_SAVE = "routine_save"
 
 
 class ChatStatus(StrEnum):
@@ -164,6 +176,7 @@ class PendingQuestion(AgentModel):
     target_field: str = Field(min_length=1)
     reason: str = Field(min_length=1)
     original_intents: list[Intent] = Field(min_length=1)
+    original_request: ParsedRequest | None = None
 
 
 class ParsedRequest(AgentModel):
@@ -177,6 +190,16 @@ class ParsedRequest(AgentModel):
     reported_experiences: list[str] = Field(default_factory=list)
     is_modification: bool = False
     pending_answer: bool = False
+    ingredient_mentions: list[str] = Field(default_factory=list)
+    known_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions)
+
+
+class TaskContext(AgentModel):
+    """요약이 잘려도 유지해야 하는 방별 명시적 작업 조건."""
+
+    search_filters: ProductSearchFilters = Field(default_factory=ProductSearchFilters)
+    excluded_weekdays: list[Weekday] = Field(default_factory=list)
+    rejected_product_ids: list[str] = Field(default_factory=list)
 
 
 class ResolvedEntities(AgentModel):
@@ -186,11 +209,15 @@ class ResolvedEntities(AgentModel):
 
 
 class Citation(AgentModel):
+    source_type: EvidenceSourceType = EvidenceSourceType.UNKNOWN
+    text_kind: EvidenceTextKind = EvidenceTextKind.SUMMARY
+    scope: EvidenceScope = EvidenceScope.INGREDIENT
+    jurisdiction: str | None = None
     evidence_id: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
     locator: str = Field(min_length=1)
     source_title: str = Field(min_length=1)
-    document_version: str = Field(min_length=1)
+    document_version: str | None = Field(default=None, min_length=1)
     url: str | None = None
     is_demo: bool = True
 
@@ -201,6 +228,15 @@ class EvidenceAnswer(AgentModel):
     summary: str = Field(min_length=1)
     evidence_ids: list[str] = Field(default_factory=list)
     is_demo: bool = True
+    assessments: list[ApplicabilityAssessment] = Field(default_factory=list)
+
+
+class RoutineSaveHandoff(AgentModel):
+    """백엔드가 권한과 버전을 검증한 뒤 저장할 대상이며 저장 영수증이 아니다."""
+
+    routine_id: str = Field(min_length=1)
+    version: int = Field(ge=1)
+    is_demo: bool
 
 
 Artifact = ProductCandidateSet | RoutinePlan | EvidenceAnswer
@@ -234,6 +270,8 @@ class ExecutionLimits(AgentModel):
 class ContextLimits(AgentModel):
     recent_message_limit: int = Field(default=DEFAULT_CONTEXT_MESSAGE_LIMIT, ge=1)
     summary_trigger: int = Field(default=DEFAULT_SUMMARY_TRIGGER, ge=2)
+    summary_char_limit: int = Field(default=DEFAULT_SUMMARY_CHAR_LIMIT, ge=1)
+    message_char_limit: int = Field(default=DEFAULT_MESSAGE_CHAR_LIMIT, ge=1)
 
 
 class ChatTurnInput(AgentModel):
@@ -267,6 +305,7 @@ class ChatTurnOutput(AgentModel):
     unresolved: list[UnresolvedItem] = Field(default_factory=list)
     error_code: ErrorCode | None = None
     retryable: bool = False
+    save_handoff: RoutineSaveHandoff | None = None
 
 
 class RoomLookupRequest(AgentModel):
@@ -301,6 +340,7 @@ class BeginTurnRequest(AgentModel):
 class SessionSnapshot(AgentModel):
     messages: list[ChatMessage] = Field(default_factory=list)
     profile: UserProfile = Field(default_factory=UserProfile)
+    task_context: TaskContext = Field(default_factory=TaskContext)
     pending_question: PendingQuestion | None = None
     candidate_set: ProductCandidateSet | None = None
     routine: RoutinePlan | None = None
@@ -315,6 +355,7 @@ class BeginTurnResult(AgentModel):
     status: TurnBeginStatus
     output: ChatTurnOutput | None = None
     snapshot: SessionSnapshot | None = None
+    user_message: ChatMessage | None = None
 
 
 class SessionContextRequest(AgentModel):
@@ -383,6 +424,8 @@ class LlmContext(AgentModel):
     pending_question: PendingQuestion | None = None
     candidate_set: ProductCandidateSet | None = None
     routine: RoutinePlan | None = None
+    profile: UserProfile = Field(default_factory=UserProfile)
+    task_context: TaskContext = Field(default_factory=TaskContext)
 
 
 class UnderstandingRequest(AgentModel):
@@ -399,6 +442,7 @@ class AgentInvocation(AgentModel):
     execution_limits: ExecutionLimits
     context_limits: ContextLimits
     restored_snapshot: SessionSnapshot | None = None
+    user_message: ChatMessage | None = None
 
 
 class AgentState(AgentModel):
@@ -409,9 +453,11 @@ class AgentState(AgentModel):
     execution_limits: ExecutionLimits = Field(default_factory=ExecutionLimits)
     context_limits: ContextLimits = Field(default_factory=ContextLimits)
     restored_snapshot: SessionSnapshot | None = None
+    user_message: ChatMessage | None = None
 
     messages: list[ChatMessage] = Field(default_factory=list)
     profile: UserProfile = Field(default_factory=UserProfile)
+    task_context: TaskContext = Field(default_factory=TaskContext)
     pending_question: PendingQuestion | None = None
     candidate_set: ProductCandidateSet | None = None
     routine: RoutinePlan | None = None
@@ -436,11 +482,13 @@ class AgentState(AgentModel):
     started_at: datetime = Field(default_factory=UtcClock.now)
     events: list[ExecutionEvent] = Field(default_factory=list)
     output: ChatTurnOutput | None = None
+    save_handoff: RoutineSaveHandoff | None = None
 
     def to_session_snapshot(self) -> SessionSnapshot:
         return SessionSnapshot(
             messages=self.messages,
             profile=self.profile,
+            task_context=self.task_context,
             pending_question=self.pending_question,
             candidate_set=self.candidate_set,
             routine=self.routine,

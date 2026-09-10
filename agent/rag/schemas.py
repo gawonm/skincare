@@ -42,6 +42,38 @@ class EvidenceReviewStatus(StrEnum):
     DEMO = "demo"
 
 
+class RegulatoryConfidence(StrEnum):
+    VERIFIED = "verified"
+    UNVERIFIED = "unverified"
+
+
+class RegulateType(StrEnum):
+    PROHIBITED = "prohibited"
+    LIMITED = "limited"
+
+
+class EvidenceSourceType(StrEnum):
+    UNKNOWN = "unknown"
+    DEMO = "demo"
+    INGREDIENT_KNOWLEDGE = "ingredient_knowledge"
+    MFDS = "mfds_restricted_ingredient"
+    CIR = "cir"
+    PAPER = "paper"
+    HETIONET = "hetionet"
+
+
+class EvidenceTextKind(StrEnum):
+    EXCERPT = "excerpt"
+    SUMMARY = "summary"
+
+
+class EvidenceScope(StrEnum):
+    INGREDIENT = "ingredient"
+    PRODUCT = "product"
+    PAIR = "pair"
+    ASSOCIATION = "association"
+
+
 class ApplicabilityStatus(StrEnum):
     APPLICABLE = "applicable"
     LIMITED = "limited"
@@ -78,6 +110,8 @@ class IngredientResolveRequest(RagModel):
 class IngredientRecord(RagModel):
     ingredient_id: str = Field(min_length=1)
     canonical_name: str = Field(min_length=1)
+    ingredient_code: int | None = None
+    source_version: str | None = None
     aliases: list[str] = Field(default_factory=list)
     is_demo: bool = True
 
@@ -109,6 +143,7 @@ class ProductSearchFilters(RagModel):
 
 
 class ProductSearchRequest(RagModel):
+    allow_discovery: bool = True
     query: str = ""
     filters: ProductSearchFilters = Field(default_factory=ProductSearchFilters)
     limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
@@ -138,13 +173,26 @@ class EvidenceConditions(RagModel):
     route: str | None = None
     usage: str | None = None
     duration: str | None = None
+    ph: str | None = None
+    jurisdiction: str | None = None
 
 
 class EvidenceRecord(RagModel):
+    source_type: EvidenceSourceType = EvidenceSourceType.UNKNOWN
+    text_kind: EvidenceTextKind = EvidenceTextKind.SUMMARY
+    scope: EvidenceScope = EvidenceScope.INGREDIENT
+    topic: str | None = None
+    jurisdiction: str | None = None
+    raw_conditions: str | None = None
+    source_reference: str | None = None
+    regulatory_confidence: RegulatoryConfidence | None = None
+    regulate_type: RegulateType | None = None
+    published_at: str | None = None
+    collected_at: str | None = None
     evidence_id: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
     source_title: str = Field(min_length=1)
-    document_version: str = Field(min_length=1)
+    document_version: str | None = Field(default=None, min_length=1)
     text: str = Field(min_length=1)
     locator: str = Field(min_length=1)
     target_ids: list[str] = Field(default_factory=list)
@@ -155,6 +203,7 @@ class EvidenceRecord(RagModel):
 
 
 class EvidenceSearchRequest(RagModel):
+    known_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions)
     query: str = Field(min_length=1)
     target_ids: list[str] = Field(default_factory=list)
     limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)

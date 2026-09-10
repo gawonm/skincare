@@ -20,6 +20,7 @@ from agent.adapters import (
 from agent.context import ContextBuilder, ConversationSummarizer
 from agent.graph import AgentGraphFactory, AgentGraphRouter
 from agent.nodes import AgentNodes
+from agent.ports import IngredientRepository, LlmClient
 from agent.prompts import PromptCatalog
 from agent.rag.pipeline import EvidenceApplicabilityEvaluator, EvidencePipeline
 from agent.schemas import AgentModel, ContextLimits, ExecutionLimits
@@ -60,10 +61,14 @@ class DevelopmentAgentFactory:
         execution_limits: ExecutionLimits | None = None,
         context_limits: ContextLimits | None = None,
         history: InMemoryChatHistoryRepository | None = None,
+        llm: LlmClient | None = None,
+        ingredient_repository: IngredientRepository | None = None,
     ) -> None:
         self._execution_limits = execution_limits or ExecutionLimits()
         self._context_limits = context_limits or ContextLimits()
         self._history = history
+        self._llm = llm
+        self._ingredient_repository = ingredient_repository
 
     def create(self) -> DevelopmentAgentApplication:
         history = self._history or InMemoryChatHistoryRepository()
@@ -74,9 +79,9 @@ class DevelopmentAgentFactory:
             evaluator=EvidenceApplicabilityEvaluator(),
         )
         nodes = AgentNodes(
-            llm=FakeLlmClient(),
+            llm=self._llm or FakeLlmClient(),
             product_repository=FixtureProductRepository(),
-            ingredient_repository=FixtureIngredientRepository(),
+            ingredient_repository=self._ingredient_repository or FixtureIngredientRepository(),
             evidence_pipeline=evidence_pipeline,
             routine_planner=FixtureRoutinePlanner(),
             context_builder=ContextBuilder(ConversationSummarizer()),

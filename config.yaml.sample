@@ -9,8 +9,9 @@ database:
   # metadata 에 올라오지 않아 마이그레이션에 나타나지 않는다.
   # models/ 에 파일을 추가할 때마다 여기에도 모듈 경로를 추가한다.
   model_modules:
-    - models.document
-    - models.chunk
+    - models.evidence
+    - models.ingredient
+    - models.ingredient_knowledge
 
 # 블록 전체를 지우면 아래 기본값이 그대로 쓰인다.
 redis:
@@ -24,3 +25,8 @@ redis:
 app:
   # OpenAPI 문서와 /docs 상단에 표시되는 이름.
   title: alembic-singledb
+
+# MFDS 연동 스크립트(scripts/import_mfds_restricted_ingredients.py)를 실행할 때만 필요하다.
+# 블록이 없으면 해당 스크립트가 명확한 에러를 내고 종료한다.
+mfds:
+  service_key: "공공데이터포털에서 발급받은 서비스키"

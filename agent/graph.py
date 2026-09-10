@@ -1,5 +1,6 @@
 """LangGraph 상태 그래프 조립과 실행 경계."""
 
+import asyncio
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -51,7 +52,9 @@ class AgentGraph:
             configurable={"thread_id": request.invocation.thread_id},
             recursion_limit=request.recursion_limit,
         )
-        result: Any = await self._compiled.ainvoke(request.invocation, config=config)
+        # 노드 사이의 경과 시간 검사만으로는 응답하지 않는 외부 호출을 중단할 수 없다.
+        async with asyncio.timeout(request.invocation.execution_limits.timeout_seconds):
+            result: Any = await self._compiled.ainvoke(request.invocation, config=config)
         return GraphInvocationResult(state=AgentState.model_validate(result))
 
 

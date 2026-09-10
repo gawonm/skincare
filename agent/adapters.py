@@ -27,6 +27,7 @@ from agent.rag.schemas import (
     EvidenceReviewStatus,
     EvidenceSearchRequest,
     EvidenceSearchResult,
+    EvidenceSourceType,
     IngredientRecord,
     IngredientResolveRequest,
     IngredientResolveResult,
@@ -93,14 +94,31 @@ class InMemoryTurnRecord(AgentModel):
     snapshot: SessionSnapshot | None = None
     failure_code: TurnFailureCode | None = None
     failure_detail: str | None = None
+    user_message: ChatMessage
 
 
 class FakeLlmClient(LlmClient):
     """정해진 한국어 시나리오만 해석하는 테스트 대체 모델."""
 
-    _PRODUCT_KEYWORDS = ("추천", "찾아", "제품", "대체", "크림", "세럼", "선크림")
+    _PRODUCT_KEYWORDS = ("추천", "찾아", "대체")
     _ROUTINE_KEYWORDS = ("루틴", "일정", "요일", "순서", "짜줘", "어떻게 써", "사용 계획")
-    _EVIDENCE_KEYWORDS = ("효능", "근거", "역할", "병용", "같이", "괜찮", "주의")
+    _EVIDENCE_KEYWORDS = (
+        "효능",
+        "근거",
+        "역할",
+        "병용",
+        "같이",
+        "괜찮",
+        "주의",
+        "성분",
+        "농도",
+        "pH",
+    )
+    _INGREDIENT_PATTERN = re.compile(
+        r"글리세린|글리세롤|세라마이드|판테놀|나이아신아마이드|레티놀|"
+        r"glycerin|ceramide|panthenol|niacinamide|retinol",
+        re.IGNORECASE,
+    )
     _MODIFICATION_KEYWORDS = ("바꿔", "빼줘", "제외", "싫어", "더 가벼운", "수정")
     _EXPERIENCE_KEYWORDS = ("따가", "가려", "붉어", "건조해", "자극")
     _CANDIDATE_PATTERN = re.compile(r"(?P<number>\d+)\s*번")
@@ -117,7 +135,20 @@ class FakeLlmClient(LlmClient):
     async def understand(self, request: UnderstandingRequest) -> ParsedRequest:
         message = request.message.strip()
         pending = request.context.pending_question
-        intents = self._extract_intents(message, pending.original_intents if pending else [])
+        explicit = self._extract_intents(message, [])
+        # 제품명만 답한 경우와 명시적으로 다른 작업을 요청한 경우를 구분한다.
+        pending_answer = pending is not None and explicit == [Intent.CLARIFICATION]
+        intents = list(pending.original_intents) if pending_answer and pending else explicit
+        if intents == [Intent.CLARIFICATION] and pending is None:
+            if request.context.routine and self._contains(message, self._MODIFICATION_KEYWORDS):
+                intents = [Intent.ROUTINE_PLANNING]
+            elif request.context.candidate_set and (
+                self._extract_texture(message)
+                or self._contains(message, self._MODIFICATION_KEYWORDS)
+            ):
+                intents = [Intent.PRODUCT_DISCOVERY]
+        if pending and explicit == pending.original_intents:
+            pending_answer = True
         candidate_number = self._extract_candidate_number(message)
         rejected_numbers = self._extract_rejected_numbers(message, candidate_number)
         return ParsedRequest(
@@ -132,13 +163,21 @@ class FakeLlmClient(LlmClient):
                 [message] if self._contains(message, self._EXPERIENCE_KEYWORDS) else []
             ),
             is_modification=self._contains(message, self._MODIFICATION_KEYWORDS),
-            pending_answer=pending is not None,
+            pending_answer=pending_answer,
+            ingredient_mentions=list(dict.fromkeys(self._INGREDIENT_PATTERN.findall(message))),
         )
 
     def _extract_intents(self, message: str, pending_intents: list[Intent]) -> list[Intent]:
-        if pending_intents:
-            return list(pending_intents)
-
+        if "저장" in message:
+            if any(word in message for word in ("저장하지", "저장 안", "저장 말")):
+                return [Intent.GENERAL_CHAT]
+            if self._contains(message, self._MODIFICATION_KEYWORDS):
+                return [Intent.ROUTINE_PLANNING, Intent.ROUTINE_SAVE]
+            return [Intent.ROUTINE_SAVE]
+        if message.rstrip(".!? ") in ("안녕", "안녕하세요", "고마워", "감사합니다"):
+            return [Intent.GENERAL_CHAT]
+        if any(word in message for word in ("날씨", "주식", "여행", "코딩")):
+            return [Intent.OUT_OF_SCOPE]
         intents: list[Intent] = []
         if self._contains(message, self._PRODUCT_KEYWORDS):
             intents.append(Intent.PRODUCT_DISCOVERY)
@@ -146,11 +185,7 @@ class FakeLlmClient(LlmClient):
             intents.append(Intent.ROUTINE_PLANNING)
         if self._contains(message, self._EVIDENCE_KEYWORDS):
             intents.append(Intent.EVIDENCE_QA)
-        if not intents and self._contains(message, self._MODIFICATION_KEYWORDS):
-            intents.append(Intent.PRODUCT_DISCOVERY)
-
-        # 명확한 목적 단어가 없는 일반 질문은 근거 설명으로 제한해 과도한 추천을 막는다.
-        return intents or [Intent.EVIDENCE_QA]
+        return intents or [Intent.CLARIFICATION]
 
     def _extract_candidate_number(self, message: str) -> int | None:
         match = self._CANDIDATE_PATTERN.search(message)
@@ -278,7 +313,11 @@ class FixtureProductRepository(ProductRepository):
                 status=LookupStatus.SUCCESS,
                 products=explicit_matches[: request.limit],
             )
-        candidates = list(self._products) if has_filters or is_discovery_query else []
+        candidates = (
+            list(self._products)
+            if request.allow_discovery and (has_filters or is_discovery_query)
+            else []
+        )
         filtered = [product for product in candidates if self._matches_filters(product, request)]
         products = filtered[: request.limit]
         status = LookupStatus.SUCCESS if products else LookupStatus.NO_RESULTS
@@ -434,6 +473,7 @@ class FixtureEvidenceRetriever(EvidenceRetriever):
         return EvidenceRecord(
             evidence_id=evidence_id,
             source_id="demo-evidence-catalog",
+            source_type=EvidenceSourceType.DEMO,
             source_title="개발용 근거 fixture (실제 임상 근거 아님)",
             document_version=FIXTURE_VERSION,
             text=text,
@@ -539,6 +579,16 @@ class InMemoryChatHistoryRepository(ChatHistoryRepository):
         self._fail_next_complete = False
 
     def register_room(self, request: RegisterRoomRequest) -> None:
+        existing = self._rooms.get(request.chat_room_id)
+        if existing and (
+            existing.actor_id != request.actor_id or existing.thread_id != request.thread_id
+        ):
+            raise TurnStorageError("이미 등록된 방의 소유자 또는 thread_id를 바꿀 수 없습니다.")
+        if any(
+            room.thread_id == request.thread_id and room.chat_room_id != request.chat_room_id
+            for room in self._rooms.values()
+        ):
+            raise TurnStorageError("다른 채팅방이 사용하는 thread_id입니다.")
         room = AuthorizedRoom(
             actor_id=request.actor_id,
             chat_room_id=request.chat_room_id,
@@ -586,11 +636,23 @@ class InMemoryChatHistoryRepository(ChatHistoryRepository):
                     )
                 if existing.status is TurnBeginStatus.IN_PROGRESS:
                     return BeginTurnResult(status=TurnBeginStatus.IN_PROGRESS)
+                active = self._active_request_ids.get(request.room.chat_room_id)
+                if active is not None and active != request.turn.request_id:
+                    return BeginTurnResult(status=TurnBeginStatus.IN_PROGRESS)
+                snapshot = self._snapshots.get(request.room.chat_room_id)
+                if snapshot and any(
+                    message.sequence > existing.user_message.sequence
+                    for message in snapshot.messages
+                ):
+                    return BeginTurnResult(status=TurnBeginStatus.CONFLICT)
                 existing.status = TurnBeginStatus.IN_PROGRESS
                 existing.failure_code = None
                 existing.failure_detail = None
                 self._active_request_ids[request.room.chat_room_id] = request.turn.request_id
-                return BeginTurnResult(status=TurnBeginStatus.NEW)
+                return BeginTurnResult(
+                    status=TurnBeginStatus.NEW,
+                    user_message=existing.user_message.model_copy(deep=True),
+                )
 
             active_request_id = self._active_request_ids.get(request.room.chat_room_id)
             if active_request_id is not None:
@@ -609,9 +671,13 @@ class InMemoryChatHistoryRepository(ChatHistoryRepository):
                 identifiers=request.identifiers,
                 input_fingerprint=request.input_fingerprint,
                 status=TurnBeginStatus.IN_PROGRESS,
+                user_message=user_message,
             )
             self._active_request_ids[request.room.chat_room_id] = request.turn.request_id
-            return BeginTurnResult(status=TurnBeginStatus.NEW)
+            return BeginTurnResult(
+                status=TurnBeginStatus.NEW,
+                user_message=user_message.model_copy(deep=True),
+            )
 
     async def get_messages(self, request: MessagePageRequest) -> MessagePage:
         messages = [
@@ -687,6 +753,12 @@ class InMemoryChatHistoryRepository(ChatHistoryRepository):
                 update={"source_revision": revision},
                 deep=True,
             )
+            snapshot.messages = [
+                assistant_message.model_copy(deep=True)
+                if message.message_id == assistant_message.message_id
+                else message
+                for message in snapshot.messages
+            ]
             self._snapshots[request.room.chat_room_id] = snapshot
             record.output = request.output.model_copy(deep=True)
             record.snapshot = snapshot.model_copy(deep=True)
