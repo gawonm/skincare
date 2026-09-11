@@ -31,6 +31,8 @@ htmlcov/
 # 에디터, 운영체제
 .vscode/
 .idea/
+# Claude Code 로컬 설정(launch.json 등). 개인 실행 환경이라 공유하지 않는다.
+.claude/
 *.swp
 Thumbs.db
 Desktop.ini
