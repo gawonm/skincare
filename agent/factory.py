@@ -118,7 +118,8 @@ class ProductionAgentConfig(AgentModel):
     """운영 모델 선택과 검색 정책. OpenAI 키는 SecretStr 상태로만 전달한다."""
 
     openai: OpenAiChatConfig
-    embedding: TextEmbeddingConfig = Field(default_factory=TextEmbeddingConfig)
+    # DB 차원과 외부 API 사용 여부가 달라지므로 운영 호출자가 명시적으로 선택해야 한다.
+    embedding: TextEmbeddingConfig
     reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
     retrieval_policy: RagRetrievalPolicy
 

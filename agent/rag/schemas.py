@@ -10,6 +10,7 @@ DEFAULT_ROUTINE_FREQUENCY = 2
 DEFAULT_EMBEDDING_BATCH_SIZE = 16
 DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE = 100
 DEFAULT_OPENAI_EMBEDDING_DIMENSIONS = 1536
+BGE_M3_EMBEDDING_DIMENSIONS = 1024
 DEFAULT_RERANKER_BATCH_SIZE = 8
 DEFAULT_RERANKER_MAX_LENGTH = 512
 DEFAULT_RERANK_CANDIDATE_LIMIT = 30
@@ -421,7 +422,7 @@ class LocalEmbeddingConfig(RagModel):
 class TextEmbeddingConfig(RagModel):
     """운영에서 선택한 임베더와 각 구현의 설정을 함께 운반한다."""
 
-    provider: EmbeddingProvider = EmbeddingProvider.LOCAL
+    provider: EmbeddingProvider
     openai: OpenAiEmbeddingConfig | None = None
     local: LocalEmbeddingConfig = Field(default_factory=LocalEmbeddingConfig)
 
@@ -430,6 +431,14 @@ class TextEmbeddingConfig(RagModel):
         if self.provider is EmbeddingProvider.OPENAI and self.openai is None:
             raise ValueError("OpenAI 임베딩을 선택하면 OpenAI 임베딩 설정이 필요합니다.")
         return self
+
+    def output_dimensions(self) -> int:
+        if self.provider is EmbeddingProvider.OPENAI:
+            if self.openai is None:
+                # 검증 이후 타입에서도 None 가능성이 남으므로 호출 경계에서 실패 원인을 보존한다.
+                raise ValueError("OpenAI 임베딩 설정이 없습니다.")
+            return self.openai.dimensions
+        return BGE_M3_EMBEDDING_DIMENSIONS
 
 
 class LocalRerankerConfig(RagModel):
