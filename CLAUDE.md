@@ -592,6 +592,38 @@ git add package-lock.json
 4. **내 제안** — 아무 안도 없이 던지지 않는다. 틀려도 되니 제안을 낸다.
 5. **상대에게 물을 것** — 답이 필요한 질문만, 번호를 붙여서. 누가 언제 반영할지도 정한다.
 
+### GitHub CLI (gh) 는 정해진 명령만 쓴다
+
+PR 은 `gh` 로 올린다. 설치와 로그인 절차는 [SETUP.md](SETUP.md) 5번에 있다.
+
+**써도 되는 것**
+
+| 무엇 | 명령 |
+| --- | --- |
+| 로그인 확인 | `gh auth status` |
+| 쓰기 권한 확인 | `gh repo view gawonm/skincare --json viewerPermission` |
+| PR 올리기 | `gh pr create` |
+| PR 보기 | `gh pr view`, `gh pr list`, `gh pr diff`, `gh pr status`, `gh pr checks` |
+| 이슈 보기 | `gh issue view`, `gh issue list` |
+| CI 결과 보기 | `gh run list`, `gh run view` |
+
+**쓰지 않는 것**
+
+`gh repo delete`, `gh repo archive`, `gh repo edit`, `gh repo rename`, `gh pr merge`,
+`gh pr close`, `gh secret set/delete`, `gh variable set/delete`, `gh release delete/edit`,
+`gh workflow run/enable/disable`, `gh run cancel/delete/rerun`,
+`gh auth logout/token/refresh`, `gh ssh-key`, `gh gpg-key`, `gh api`.
+
+지우거나 되돌릴 수 없는 것들이다. 머지는 사람이 GitHub 화면에서 Squash and merge 로 하고
+(위 참고), 비밀 값과 CI 설정은 저장소 주인이 손댄다. `gh api` 는 이 목록을 전부 우회할 수
+있어서 함께 막는다.
+
+이 목록은 `.claude/settings.json` 의 `permissions.deny` 에도 넣어 두어서 Claude Code 안에서는
+실제로 실행되지 않는다. 사람이 터미널에서 직접 치는 것까지 막지는 못하므로, 사람에게는 이
+표가 약속이다.
+
+목록에 없는 `gh` 명령을 써야 하면 직접 판단하지 말고 먼저 묻는다 (규칙 3).
+
 ### 하지 말 것
 
 - `git push --force` 를 공유 브랜치(`main`, 남이 보고 있는 feature 브랜치)에 쓰지 않는다.

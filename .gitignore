@@ -32,8 +32,10 @@ htmlcov/
 # 에디터, 운영체제
 .vscode/
 .idea/
-# Claude Code 로컬 설정(launch.json 등). 개인 실행 환경이라 공유하지 않는다.
-.claude/
+# Claude Code 설정. settings.json 은 팀 공용 규칙(gh 위험 명령 차단 등)이라 커밋하고,
+# 나머지(settings.local.json 등 개인 실행 환경)는 공유하지 않는다.
+.claude/*
+!.claude/settings.json
 *.swp
 Thumbs.db
 Desktop.ini
