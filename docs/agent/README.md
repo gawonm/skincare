@@ -3,7 +3,7 @@
 ## 구현 기준과 담당 범위
 
 `feature/llm-rag-pipeline`을 agent 구현 기준으로 사용한다. 검토 기준 커밋은
-`5457e95`, 비교한 main은 `c2769bc`다. 아래 내용은 2026-09-10 연결 검토 결과이며,
+`6f710be`, 비교한 main은 `02ed955`다. 아래 내용은 2026-09-11 연결 검토 결과이며,
 백엔드·데이터 담당자와 운영 연결까지 합의하거나 통합을 완료했다는 뜻은 아니다.
 
 agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결과 통합,
@@ -15,7 +15,7 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 | 경로 | 역할 |
 | --- | --- |
 | `agent/service.py` | 채팅 진입점, 권한·히스토리 계약 호출, 요청 중복 및 저장 재시도 조정 |
-| `agent/factory.py` | 의존성 주입, 그래프 조립, 개발용 조립과 체크포인트 직렬화 설정 |
+| `agent/factory.py` | GPT-4o mini·로컬 BGE 운영 조립, 개발용 조립과 체크포인트 직렬화 설정 |
 | `agent/schemas.py`, `agent/ports.py` | 채팅·세션 입출력 모델과 외부 조회·저장 계약 |
 | `agent/graph.py`, `agent/nodes.py` | LangGraph 상태 전이와 작업 처리 |
 | `agent/context.py` | 제한된 LLM 문맥과 대화 요약 구성 |
@@ -41,6 +41,7 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 | `RagIngestionPipeline.run` | `list[RagDocument]` | `list[EmbeddedChunk]` |
 | `EvidencePipeline.run` | `EvidenceSearchRequest` | `EvidenceBundle` |
 | `HybridSearchBackend.search` | `HybridSearchRequest` | `HybridSearchResult` |
+| `EvidenceReranker.rerank` | `RerankRequest` | `RerankResult` |
 
 위 메서드는 모두 `async`이며 호출자는 `await`해야 한다. 최상위 채팅 요청에는
 `ChatService`를 사용하고, 별도 적재 배치에는 `RagIngestionPipeline`을 사용한다.
@@ -51,6 +52,11 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 상품 분류는 코드·이름 Pydantic 모델이며 제형(`texture`)과 사용감(`skin_feel`)을 분리한다.
 미등록 코드와 미상인 속성을 요청 조건에 맞는 것으로 처리하지 않는다. `DevelopmentAgentFactory`는
 개발용 대체 구현을 사용한다. 운영 조립에서 이를 실제 DB 연결로 간주하지 않는다.
+
+`ProductionAgentFactory`는 Intent·답변 생성에 `gpt-4o-mini`, 임베딩에 `BAAI/bge-m3`,
+재정렬에 `BAAI/bge-reranker-v2-m3`를 연결한다. 모델 객체는 첫 사용 시 지연 로드한다.
+이 팩토리를 실제로 호출하는 backend 조립 코드는 아직 없으므로 클래스가 존재한다는 것만으로
+운영 경로가 전환됐다고 판단하지 않는다.
 
 ## main 통합 시 보존·제외 기준
 
@@ -71,8 +77,46 @@ main의 호출부 정리와 함께 통합해야 하며, NIA 적재 기능을 대
 - `agent/rag/loaders/nia_qa_loader.py`
 - `agent/rag/nia_labeling_schemas.py`
 
-충돌 9개 파일도 현재 브랜치를 기준으로 검토한다. 파일이 충돌하지 않았더라도
-main의 RAG 서비스·테스트가 이전 DTO를 참조하면 연결 수정 대상이다.
+최신 main을 현재 기능 브랜치에 병합하면 아래 8개 파일에서 실제 텍스트 충돌이 발생한다.
+Git은 충돌을 해결하기 전에는 병합 커밋을 완료할 수 없다. 따라서 **main을 기능 브랜치에 먼저
+병합하고 충돌을 해결한 뒤 검증하는 방향**은 가능하지만, 기능 브랜치를 main에 먼저 병합해
+깨진 상태를 후속 수정하는 방향은 허용하지 않는다.
+
+- `agent/rag/chunking/field_chunker.py`
+- `agent/rag/generation/answer_generator.py`
+- `agent/rag/generation/condition_preservation_checker.py`
+- `agent/rag/pipeline.py`
+- `agent/rag/retrieval/hybrid_retriever.py`
+- `agent/rag/retrieval/ingredient_mention_resolver.py`
+- `agent/rag/retrieval/question_intent_classifier.py`
+- `agent/rag/schemas.py`
+
+충돌하지 않은 파일도 main의 RAG 서비스·테스트가 이전 DTO를 참조하면 연결 수정 대상이다.
+한쪽 파일 전체를 선택하는 방식으로 해결하면 main의 DB 계약이나 현재 agent 계약 중 하나가
+사라지므로 각 공개 타입과 호출부를 함께 확인한다.
+
+## Backend 담당자 확인 항목
+
+main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거와 후속 항목은
+[연결 계약 검토](AGENT_INTEGRATION_REVIEW.md#7-backend-병합-확인-체크리스트)에 있다.
+
+- `ChatService.handle_turn`을 호출할 API/service와 `ProductionAgentFactory` 생성 위치를 정한다.
+- `ProductionAgentDependencies`의 히스토리·상품·성분·루틴·검색·체크포인터 구현을 주입한다.
+- main의 `RagQueryService`·`RagIngestionService`가 참조하는 이전 RAG DTO와 동기 메서드를
+  현재 비동기 포트에 맞추고, backend 시작 시 import 오류가 없는지 확인한다.
+- `HybridSearchBackend.search`에서 target 필터, vector/BM25 원점수, 상태 코드와 후보 개수
+  계약을 구현한다. 지원하지 않는 필터를 무시하고 성공으로 반환하지 않는다.
+- main의 `rag_chunk.embedding` 1536차원을 BGE-M3의 1024차원으로 바꾸려면 ERD 확인,
+  마이그레이션, 기존 청크 전체 재임베딩을 하나의 배포 절차로 합의한다.
+- OpenAI 기반으로 정한 자유 텍스트 유사도 `0.45`를 BGE-M3에 그대로 재사용하지 않고
+  별도 튜닝·검증셋으로 다시 정한다.
+- 애플리케이션 설정은 `config.yaml`만 사용한다. Backend가 OpenAI API 키와
+  `gpt-4o-mini` 모델 설정을 읽어 `ProductionAgentConfig`에 주입하고, agent는 `.env`나
+  환경변수를 직접 읽지 않는다. `.env`는 Docker Compose 변수에만 사용한다.
+- 모델 캐시의 컨테이너 경로·볼륨·최초 다운로드 정책을 정하고, 재시작 때마다 가중치를
+  다시 내려받지 않는지 확인한다.
+- 최소 병합 게이트로 backend import/기동, 전체 단위 테스트, DB 검색·적재 통합 테스트를
+  통과시킨다. 이 게이트 이후의 관측성·성능 튜닝은 후속 커밋으로 분리할 수 있다.
 
 ## 검증과 완료 범위
 
@@ -81,7 +125,7 @@ main의 RAG 서비스·테스트가 이전 DTO를 참조하면 연결 수정 대
 .venv/bin/python -m agent.demo
 ```
 
-2026-09-10 agent 테스트 50개 통과를 확인했다. 기존 34개에 동적 분류 10개와 RAG 계약 6개를
+2026-09-11 agent 테스트 50개 통과를 확인했다. 기존 34개에 동적 분류 10개와 RAG 계약 6개를
 추가했다. DB 없는 대화 흐름·방 격리·후보 참조·실패 복구·데이터 DTO 변환 외에도 신규 분류,
 제형·사용감 분리, 폐기된 코드 차단, 조건 누락 후보 제외, 실제 상품 표시, 청킹→검색 통합→
 인용·조건 검증을 검사한다. 실제 DB 검색, 임베딩 API, 운영 연결의 검증은 아니다.
@@ -93,7 +137,7 @@ main의 RAG 서비스·테스트가 이전 DTO를 참조하면 연결 수정 대
 
 ## 관련 문서
 
-- [현재 구조·연결 계약 검토](RAG_YK/AGENT_INTEGRATION_REVIEW.md)
+- [현재 구조·연결 계약 검토](AGENT_INTEGRATION_REVIEW.md)
 - [DB·히스토리 연동 요청서](RAG_YK/LLM_RAG_DB_CONTRACT.md)
 - [개발 요청서](RAG_YK/LLM_RAG_DEVELOPMENT_REQUEST.md)
 - [초기 파이프라인 설계](RAG_YK/LLM_RAG_PIPELINE.md)

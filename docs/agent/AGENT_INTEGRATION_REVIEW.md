@@ -1,7 +1,7 @@
 # agent 구조와 연결 계약 검토
 
-검토일: 2026-09-10. 변경 전 agent 기준 `5457e95`, main 기준 `c2769bc`.
-동적 분류와 후보 표시 보완은 현재 작업 트리의 후속 변경이며 아직 커밋·병합하지 않았다.
+검토일: 2026-09-11. agent 기준 `6f710be`, main 기준 `02ed955`.
+동적 분류, 후보 표시, 로컬 임베딩·리랭커와 운영 팩토리 변경을 포함한 기준이다.
 
 상태: agent 담당 범위에서 작성한 기존 코드 검토서. 구현된 시그니처와 미합의 항목을
 구분한다. 상대 담당자 승인이나 실제 main 병합·운영 연결 완료를 의미하지 않는다.
@@ -97,6 +97,7 @@ backend가 HTTP 오류 매핑·로그·재시도 정책을 정해야 한다.
 | `HybridSearchBackend.search` | `async (HybridSearchRequest) → HybridSearchResult` | backend가 DB 검색 어댑터 제공 |
 | `EvidenceRetriever.search` | `async (EvidenceSearchRequest) → EvidenceSearchResult` | 하이브리드 검색 또는 별도 구현 주입 |
 | `TextEmbedder.embed` | `async (EmbeddingRequest) → EmbeddingResult` | agent의 모델 어댑터 또는 대체 구현 |
+| `EvidenceReranker.rerank` | `async (RerankRequest) → RerankResult` | agent의 로컬 재정렬기 또는 대체 구현 |
 | `ClaimGenerator.generate` | `async (ClaimGenerationRequest) → GeneratedClaims` | agent의 생성 어댑터 또는 대체 구현 |
 
 소유: `agent/rag/ports.py`, `agent/rag/schemas.py`, `agent/rag/pipeline.py`.
@@ -137,6 +138,12 @@ backend 어댑터에 있으며 상품·성분 ID 구분 방식은 합의가 필�
 중복 청크 ID에 서로 다른 원문이 연결되거나 임베딩 수가 맞지 않으면 `ValueError`를 낸다.
 독립 적재·질의 호출자는 모델/API 장애도 처리해야 한다. agent 적재 함수는 DB를 쓰지 않으므로
 예외 시 DB 변경 취소와 최종 commit은 backend 서비스가 관리한다.
+
+운영 검색은 `BAAI/bge-m3`로 질문을 임베딩하고 vector/BM25 결과를 RRF로 합친 뒤,
+최대 `RagRetrievalPolicy.rerank_candidate_limit`개 후보를
+`BAAI/bge-reranker-v2-m3`로 재정렬한다. 기본 후보 수는 30이며 최종 반환 수는 요청의
+`limit`를 따른다. 로컬 모델은 `sentence-transformers`로 실행하고 첫 사용 시 지연 로드한다.
+Intent 해석과 근거 문장 생성만 `gpt-4o-mini`를 사용한다.
 
 `DataRecordMapper`가 반환하는 `EvidenceRecord`에서 `RagDocument.fields`를 구성하는
 정책은 아직 미합의다. 검수 상태는 공식 출처 여부와 다르며 매퍼는 자료를 자동으로
@@ -309,7 +316,125 @@ main의 `RagQueryService`는 현재 브랜치에 없는 `PerIngredientResult`와
 `IngredientMentionResolution`을 참조하고 `HybridRetriever()`의 생성 방식도 다르다.
 백엔드 담당자가 새 계약으로 연결해야 하며, agent 파일만 교체하면 import부터 깨질 수 있다.
 
-## 7. 완료 판단과 검증
+## 7. Backend 병합 확인 체크리스트
+
+### 7.1 병합 순서와 최소 게이트
+
+2026-09-11 기준 현재 기능 브랜치는 최신 main보다 47커밋 뒤이고 8커밋 앞이다.
+merge-tree 검사에서 아래 8개 agent RAG 파일에 실제 충돌 표식이 생성된다.
+
+- `chunking/field_chunker.py`
+- `generation/answer_generator.py`
+- `generation/condition_preservation_checker.py`
+- `pipeline.py`
+- `retrieval/hybrid_retriever.py`
+- `retrieval/ingredient_mention_resolver.py`
+- `retrieval/question_intent_classifier.py`
+- `schemas.py`
+
+변경 파일이 겹치지 않는다는 전제로 기능 브랜치를 main에 먼저 넣는 방식은 현재 상태와 맞지
+않는다. 최신 main을 기능 브랜치에 병합하고 위 충돌을 해결한 뒤, 아래 최소 게이트를 통과시켜
+main으로 보내는 순서를 사용한다. Git 충돌 해결과 공개 계약 호환성은 병합 커밋 전에 처리해야
+하며, 관측성·성능 조정처럼 main 기동을 깨지 않는 항목만 후속 커밋으로 미룬다.
+
+- `backend`가 import하는 모든 `agent.rag` 심볼이 존재한다.
+- 애플리케이션 시작과 API 라우터 등록이 성공한다.
+- main의 기존 단위·DB·통합 테스트와 agent 테스트가 모두 통과한다.
+- 실제 사용 경로가 OpenAI 임베더가 아니라 선택한 로컬 임베더를 호출한다.
+- DB 벡터 차원과 질의 벡터 차원이 일치한다.
+
+### 7.2 운영 조립과 호출 경로
+
+현재 `ProductionAgentFactory`는 다음 구현을 조립하지만 이를 호출하는 backend 코드는 없다.
+
+| 역할 | 운영 구현 |
+| --- | --- |
+| Intent 분석 | `OpenAiLlmClient` / `gpt-4o-mini` |
+| 근거 문장 생성 | `OpenAiClaimGenerator` / `gpt-4o-mini` |
+| 임베딩 | `LocalBgeM3Embedder` / `BAAI/bge-m3` |
+| 재정렬 | `LocalBgeRerankerV2M3` / `BAAI/bge-reranker-v2-m3` |
+
+Backend 담당자는 다음을 정해야 한다.
+
+- `ProductionAgentFactory.create`를 프로세스당 한 번 호출할 lifespan 또는 service 조립 위치
+- `ChatService.handle_turn`을 호출하는 API와 인증 컨텍스트 변환
+- `ProductionAgentDependencies`에 전달할 `ChatHistoryRepository`, `ProductRepository`,
+  `IngredientRepository`, `RoutinePlanner`, `HybridSearchBackend`, checkpointer 구현
+- 프로세스가 여러 개일 때 모델 인스턴스와 메모리가 워커 수만큼 복제되는 배포 비용
+- 시작 시 모델을 미리 준비할지 첫 요청에서 내려받을지, 다운로드 실패를 어떤 상태로 노출할지
+
+개발용 `DevelopmentAgentFactory`, fixture 저장소, `InMemorySaver`를 운영 구현으로 사용하지 않는다.
+운영 조립이 연결될 때까지 agent 테스트 통과는 backend 연동 완료를 뜻하지 않는다.
+
+### 7.3 기존 main RAG 서비스와 DB 계약
+
+main의 `RagQueryService`와 `RagIngestionService`는 `OpenAiEmbedder`, 동기 임베딩 메서드,
+기존 `RagDocument`·`RetrievedChunk` 구조를 전제로 한다. 현재 agent는 비동기 `TextEmbedder`와
+`HybridSearchBackend` 포트를 사용한다. Backend는 기존 서비스를 새 포트의 어댑터로 바꿀지,
+기존 서비스 진입점을 제거하고 `EvidencePipeline`으로 일원화할지 결정해야 한다. 두 경로를
+동시에 운영하면서 서로 다른 임베딩 모델을 같은 인덱스에 저장하지 않는다.
+
+main의 `models/rag_chunk.py`는 `text-embedding-3-small` 기준 1536차원으로 정의되어 있고,
+BGE-M3 dense 벡터는 1024차원이다. 이 변경은 agent 파일만 병합해서 해결되지 않는다.
+DB 담당자와 다음 절차를 합의해야 한다.
+
+1. `docs/erd/`의 RAG 테이블 문서에서 벡터 차원 변경을 먼저 확인한다.
+2. 모델과 마이그레이션을 1024차원으로 변경한다.
+3. 기존 1536차원 청크를 BGE-M3로 전부 다시 임베딩한다.
+4. `embedding_model`이 BGE-M3인 행만 새 질의에 사용되는지 확인한다.
+5. HNSW 인덱스 재생성과 vector/BM25 검색 통합 테스트를 실행한다.
+
+기존 자유 텍스트 관련성 임계값 `0.45`는 OpenAI 임베딩 검증셋으로 정한 값이다. BGE-M3는
+점수 분포가 다르므로 그대로 복사하지 않는다. Backend가 실제 DB 검색 결과를 제공하고 agent와
+함께 별도 튜닝셋·검증셋으로 `free_text_min_vector_similarity`를 다시 확정한다.
+
+`HybridSearchBackend.search` 구현은 다음을 보장해야 한다.
+
+- `target_ids` OR 필터와 `combination_target_ids` 관계 근거 검색을 구분한다.
+- agent가 요청한 후보 개수만큼 vector/BM25 결과를 각각 원점수 내림차순으로 반환한다.
+- DB 행을 agent 소유 `RetrievedChunk`와 `EvidenceRecord`로 변환하면서 출처·조건·검수 상태를
+  임의로 보충하지 않는다.
+- 무결과, 미지원 필터, 검색 장애를 `NO_RESULTS`, `UNSUPPORTED`, `ERROR`로 구분한다.
+- 반환한 `embedding_model`과 DB에 저장된 벡터 모델이 일치하지 않으면 검색을 실패시킨다.
+
+### 7.4 키·모델 캐시와 배포 설정
+
+애플리케이션 설정 소스는 `config.yaml` 하나로 확정한다. `.env`는 Docker Compose 변수에만
+사용하며, agent 내부에서 dotenv나 `os.environ`으로 OpenAI API 키를 직접 읽지 않는다.
+Backend가 `config.yaml`의 OpenAI API 키와 `gpt-4o-mini` 모델 설정을 읽어
+`ProductionAgentConfig`의 `OpenAiChatConfig`에 주입한다. 실제 키는 Git에 포함하지 않고,
+샘플 설정에는 자리표시자만 둔다.
+
+키 누락 시 기동 자체를 막을지 Agent 기능만 비활성화할지는 Backend 운영 정책으로 확정해야 한다.
+이 정책과 설정 필드가 바뀌면 `config.yaml.sample`, `config.prod.yaml.sample`도 함께 갱신한다.
+
+로컬 모델 캐시도 컨테이너 재생성 후 유지할 경로와 볼륨이 필요하다. `models_cache/`가 Git에서
+제외된 것만으로 배포 볼륨이 생기지는 않는다. 캐시 경로, 읽기/쓰기 권한, 최초 다운로드 네트워크,
+필요 디스크, 워커별 메모리를 확인한 뒤 `LocalEmbeddingConfig.cache_folder`와
+`LocalRerankerConfig.cache_folder`에 동일 정책을 주입한다. compose 볼륨 변경은 공용 설정이므로
+별도 승인을 거친다.
+
+### 7.5 채팅 저장·오류·운영 검증
+
+`ChatHistoryRepository` 구현에서는 권한 확인, 같은 `request_id`의 멱등성, 진행 중 요청 잠금,
+결과 staging과 commit, 실패 시 잠금 해제를 하나의 일관된 정책으로 구현한다. 체크포인터에는
+`CheckpointSerializerFactory`의 허용 타입 설정을 적용하고, 여러 backend 프로세스에서
+`InMemorySaver`를 공유 저장소로 오인하지 않는다.
+
+Backend가 최종적으로 확인할 시나리오는 다음과 같다.
+
+- 인증된 방과 다른 사용자의 방이 섞이지 않는다.
+- 동일 요청 재전송이 답변과 아티팩트를 중복 저장하지 않는다.
+- GPT 호출, 로컬 모델 로드, vector 검색, BM25 검색 각각의 실패가 구분된다.
+- 검색 후보 30개가 리랭커를 거쳐 요청한 top-k로 줄어드는지 실제 DB 결과로 확인한다.
+- 모델 변경 후 기존 세션·저장된 상품 분류 코드·후보 참조의 호환성을 확인한다.
+- API 응답의 citation이 반환 근거의 `evidence_id`, 원문 조건, 출처와 일치한다.
+
+정식 호출 계약은 이 검토서가 아니라 호출자인 backend가 작성할
+`docs/contracts/backend-to-agent.md`에서 확정한다. 이 절은 누락 방지 체크리스트이며 상대 파트의
+구현 또는 계약 합의를 대신하지 않는다.
+
+## 8. 완료 판단과 검증
 
 - 기존 인터페이스 정의와 개발용 대화 프레임은 구현되어 있다.
 - agent 테스트 50개 통과: 기존 34개 + 동적 분류 10개 + RAG 계약 6개.
