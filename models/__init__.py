@@ -32,14 +32,16 @@ from models.rag_chunk import (
     RagConfidenceTier,
     RagSourceTable,
 )
-from models.user import User
+from models.user import AgeGroup, Gender, User
 
 __all__ = [
     "EMBEDDING_DIMENSION",
+    "AgeGroup",
     "Evidence",
     "EvidenceRegulateType",
     "EvidenceSourceType",
     "EvidenceTopic",
+    "Gender",
     "IngredientKnowledgeFact",
     "IngredientMaster",
     "IngredientMatchAcceptance",
