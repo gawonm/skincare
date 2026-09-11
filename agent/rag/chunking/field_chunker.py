@@ -24,6 +24,8 @@ class FieldChunker:
                 chunk_id=str(
                     uuid5(NAMESPACE_URL, document.evidence.evidence_id + ":" + field.field_id)
                 ),
+                # Backend 저장 어댑터가 Agent DTO를 DB의 의미 필드와 안전하게 연결할 수 있어야 한다.
+                field_id=field.field_id,
                 content=field.content,
                 # 조건을 별도 청크로 분리하면 효능 검색 시 제한 문구가 누락되므로, 모든 청크에 근거 메타데이터를 복제해 보존한다
                 evidence=document.evidence.model_copy(deep=True),

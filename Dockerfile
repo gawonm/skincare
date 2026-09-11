@@ -35,6 +35,9 @@ COPY pyproject.toml uv.lock ./
 # --no-dev: pytest, ruff 같은 개발 의존성은 이미지에 넣지 않는다.
 RUN uv sync --frozen --no-dev --no-install-project
 
+# 백엔드와 RAG가 사용하는 데이터 처리 모듈만 포함한다. 원본 데이터는 제외한다.
+COPY data/__init__.py ./data/__init__.py
+COPY data/scripts/ ./data/scripts/
 COPY core/ ./core/
 COPY models/ ./models/
 COPY agent/ ./agent/

@@ -2,13 +2,13 @@
  * 로그인 화면.
  *
  * zod 로 형식을 먼저 막고, 통과하면 `useLogin` 으로 `POST /auth/login` 을 보낸다.
- * 범위가 "화면 2개"라서 성공 후 이동할 홈이 아직 없다. 그래서 이동 대신 성공 배너만
- * 띄운다(계획서의 '임의로 정한 것' 1번).
+ * 성공하면 홈(`/home`)으로 이동한다. 뒤로가기로 로그인 화면에 다시 오지 않도록
+ * `replace` 로 히스토리를 덮는다.
  */
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { FormAlert } from "../components/FormAlert";
 import { SubmitButton } from "../components/SubmitButton";
@@ -25,9 +25,12 @@ export function LoginPage() {
     formState: { errors },
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) });
   const login = useLogin();
+  const navigate = useNavigate();
 
   const onSubmit = handleSubmit((values) => {
-    login.mutate(values);
+    login.mutate(values, {
+      onSuccess: () => navigate("/home", { replace: true }),
+    });
   });
 
   return (
@@ -44,9 +47,6 @@ export function LoginPage() {
       }
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
-        {login.isSuccess ? (
-          <FormAlert tone="success" message="로그인되었습니다." />
-        ) : null}
         {login.isError ? (
           <FormAlert tone="error" message={login.error.message} />
         ) : null}

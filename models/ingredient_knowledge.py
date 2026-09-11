@@ -4,6 +4,11 @@ Knowledgedata는 PubChem·COOS·CIR 등 출처가 혼합돼 있고 국내 규제
 그래서 `compounding_regulation_text`(배합규제 원문)는 MFDS 사용제한 원료정보와
 교차검증되기 전까지 `regulatory_confidence=UNVERIFIED`로 저장하고, 국내 배합 규제에
 관한 확정적 답변의 근거로 쓰지 않는다.
+
+이 파일은 NIA AI Hub "스킨케어 성분-효능 추천 데이터"(dataset 71886)의 원천데이터③
+`지식성분데이터.xlsx`와 동일 파일로 확인됐다(2026-09-09). `copyright_resolution`(저작권
+해결방안)은 그 데이터셋이 행마다 남긴 출처별 라이선스 근거이며, RAG가 근거를 사용자에게
+보여줄 때 "공공데이터"와 "제한적 이용허락 데이터"를 구분하는 신뢰도 신호로 쓴다.
 """
 
 from enum import StrEnum
@@ -50,6 +55,15 @@ class IngredientKnowledgeFact(EntityBase):
     )
     inci_name: Mapped[str] = mapped_column(Text, nullable=False, comment="원본 '성분명(INCI)' 컬럼")
     name_ko: Mapped[str | None] = mapped_column(Text, nullable=True, comment="원본 '한글명' 컬럼")
+    chemical_properties: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="화학적물성"
+    )
+    product_characteristics: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="제품적특성"
+    )
+    solubility: Mapped[str | None] = mapped_column(Text, nullable=True, comment="용해도")
+    molecular_formula: Mapped[str | None] = mapped_column(Text, nullable=True, comment="분자식")
+    molecular_weight: Mapped[str | None] = mapped_column(Text, nullable=True, comment="분자량")
     efficacy: Mapped[str | None] = mapped_column(Text, nullable=True, comment="효능")
     recommended_skin_types: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="권장피부타입(원본 자유 텍스트)"
@@ -68,6 +82,16 @@ class IngredientKnowledgeFact(EntityBase):
     raw_material_source: Mapped[str | None] = mapped_column(Text, nullable=True, comment="원료출처")
     source_reference: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="원시 데이터 출처(참고문헌 file명)"
+    )
+    copyright_resolution: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="저작권해결방안. 행별 출처 라이선스 근거(예: 공공데이터/이용허락계약)",
+    )
+    token_count: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="토큰. 원본이 단일 숫자가 아닌 경우가 있어 문자열로 그대로 보존",
     )
     regulatory_confidence: Mapped[RegulatoryConfidence] = mapped_column(
         SqlEnum(

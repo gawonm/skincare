@@ -12,6 +12,9 @@ database:
     - models.evidence
     - models.ingredient
     - models.ingredient_knowledge
+    - models.product
+    - models.product_ingredient
+    - models.rag_chunk
     - models.user
 
 # 블록 전체를 지우면 아래 기본값이 그대로 쓰인다.
@@ -44,3 +47,32 @@ auth:
 # 블록이 없으면 해당 스크립트가 명확한 에러를 내고 종료한다.
 mfds:
   service_key: "공공데이터포털에서 발급받은 서비스키"
+
+# Intent 분석·답변 생성을 실행할 때만 필요하다. 임베딩·리랭킹에는 사용하지 않는다.
+# 블록이 없으면 Agent 조립이 명확한 에러를 내고 종료한다.
+openai:
+  api_key: "OpenAI API 키"
+  chat_model: gpt-4o-mini
+  timeout_seconds: 30
+  max_retries: 1
+
+# 임베딩과 리랭커는 로컬에서 실행한다. 모델 파일은 최초 실행 때 캐시에 내려받는다.
+agent:
+  embedding:
+    model: BAAI/bge-m3
+    device: null
+    batch_size: 16
+    cache_folder: null
+    local_files_only: false
+  reranker:
+    model: BAAI/bge-reranker-v2-m3
+    device: null
+    batch_size: 8
+    max_length: 512
+    cache_folder: null
+    local_files_only: false
+  retrieval:
+    # BGE-M3 검증셋으로 확정하기 전에는 임의 임계값을 넣지 않는다.
+    free_text_min_vector_similarity: null
+    rrf_k: 60
+    rerank_candidate_limit: 30

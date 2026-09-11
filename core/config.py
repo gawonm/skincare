@@ -66,6 +66,73 @@ class MfdsConfig(PydanticBaseModel):
     )
 
 
+class OpenAiChatModel(StrEnum):
+    GPT_4O_MINI = "gpt-4o-mini"
+
+
+class LocalEmbeddingModel(StrEnum):
+    BGE_M3 = "BAAI/bge-m3"
+
+
+class LocalRerankerModel(StrEnum):
+    BGE_RERANKER_V2_M3 = "BAAI/bge-reranker-v2-m3"
+
+
+class LocalModelDevice(StrEnum):
+    CPU = "cpu"
+    CUDA = "cuda"
+    MPS = "mps"
+
+
+class OpenAiConfig(PydanticBaseModel):
+    """Intent 분석·답변 생성에만 쓰는 OpenAI 설정."""
+
+    model_config = ConfigDict(frozen=True)
+
+    api_key: Annotated[str, Field(min_length=1)]
+    chat_model: OpenAiChatModel = OpenAiChatModel.GPT_4O_MINI
+    timeout_seconds: Annotated[float, Field(gt=0)] = 30
+    max_retries: Annotated[int, Field(ge=0)] = 1
+
+
+class LocalEmbeddingSettings(PydanticBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model: LocalEmbeddingModel = LocalEmbeddingModel.BGE_M3
+    device: LocalModelDevice | None = None
+    batch_size: Annotated[int, Field(ge=1)] = 16
+    cache_folder: Annotated[str | None, Field(min_length=1)] = None
+    local_files_only: bool = False
+
+
+class LocalRerankerSettings(PydanticBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model: LocalRerankerModel = LocalRerankerModel.BGE_RERANKER_V2_M3
+    device: LocalModelDevice | None = None
+    batch_size: Annotated[int, Field(ge=1)] = 8
+    max_length: Annotated[int, Field(ge=1)] = 512
+    cache_folder: Annotated[str | None, Field(min_length=1)] = None
+    local_files_only: bool = False
+
+
+class RagRetrievalSettings(PydanticBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    # BGE-M3 검증 전 임계값을 임의 기본값으로 적용하지 않기 위해 명시 입력을 요구한다.
+    free_text_min_vector_similarity: Annotated[float | None, Field(ge=-1, le=1)] = None
+    rrf_k: Annotated[int, Field(gt=0)] = 60
+    rerank_candidate_limit: Annotated[int, Field(ge=1)] = 30
+
+
+class AgentSettings(PydanticBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    embedding: LocalEmbeddingSettings = LocalEmbeddingSettings()
+    reranker: LocalRerankerSettings = LocalRerankerSettings()
+    retrieval: RagRetrievalSettings = RagRetrievalSettings()
+
+
 class AppConfig(PydanticBaseModel):
     """`config.yaml`의 `app` 블록.
 
@@ -95,6 +162,10 @@ class Settings(BaseSettings):
     auth: AuthConfig = AuthConfig()
     # `mfds` 블록이 없으면 None. MFDS 연동 스크립트를 실행할 때만 필요하다.
     mfds: MfdsConfig | None = None
+    # `openai` 블록이 없으면 None. Intent 분석·답변 생성을 실행할 때만 필요하다.
+    openai: OpenAiConfig | None = None
+    # 로컬 임베딩·리랭커와 검색 정책. 모델 추론에는 OpenAI 키를 사용하지 않는다.
+    agent: AgentSettings = AgentSettings()
 
     @classmethod
     def settings_customise_sources(

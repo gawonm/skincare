@@ -2,9 +2,9 @@
 
 ## 구현 기준과 담당 범위
 
-`feature/llm-rag-pipeline`을 agent 구현 기준으로 사용한다. 검토 기준 커밋은
-`6f710be`, 비교한 main은 `02ed955`다. 아래 내용은 2026-09-11 연결 검토 결과이며,
-백엔드·데이터 담당자와 운영 연결까지 합의하거나 통합을 완료했다는 뜻은 아니다.
+`feature/llm-rag-pipeline`의 `6f710be`를 Agent 구현 기준으로 사용해
+`integration/llm-rag-main`에서 main `02ed955`를 통합한다. 아래 내용은 2026-09-11
+연결 검토와 사용자 합의 결과다. DB 차원 변경과 전체 운영 저장소 조립은 아직 완료되지 않았다.
 
 agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결과 통합,
 근거 적용성·인용 검증, 답변 생성을 담당한다. DB 쿼리·트랜잭션·HTTP·인증 구현은
@@ -45,7 +45,8 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 
 위 메서드는 모두 `async`이며 호출자는 `await`해야 한다. 최상위 채팅 요청에는
 `ChatService`를 사용하고, 별도 적재 배치에는 `RagIngestionPipeline`을 사용한다.
-`HybridSearchBackend`는 실제 DB 조회 구현이 필요한 추상 계약이다.
+`HybridSearchBackend`의 SQLAlchemy 구현은
+`backend/services/rag_search_backend.py`에 있으며 실제 DB 검증은 아직 필요하다.
 
 `AgentFactory.create(AgentDependencies(...))`에 LLM, 히스토리, 상품·성분 조회,
 상품 분류 지원 목록(`ProductTaxonomy`), 계획기, 근거 파이프라인, 체크포인터를 전달한다.
@@ -55,8 +56,9 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 
 `ProductionAgentFactory`는 Intent·답변 생성에 `gpt-4o-mini`, 임베딩에 `BAAI/bge-m3`,
 재정렬에 `BAAI/bge-reranker-v2-m3`를 연결한다. 모델 객체는 첫 사용 시 지연 로드한다.
-이 팩토리를 실제로 호출하는 backend 조립 코드는 아직 없으므로 클래스가 존재한다는 것만으로
-운영 경로가 전환됐다고 판단하지 않는다.
+Backend의 `AgentConfigurationAssembler`가 `config.yaml`을 운영 설정으로 변환한다.
+다만 히스토리·상품·성분·루틴·체크포인터 구현이 모두 준비되지 않아
+`ProductionAgentFactory`를 완성된 애플리케이션 lifespan에서 호출하는 단계는 남아 있다.
 
 ## main 통합 시 보존·제외 기준
 
@@ -67,10 +69,10 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 - `backend/repositories/product_ingredient_repository.py`
 - `backend/repositories/ingredient_master_repository.py`
 
-main에만 있는 다음 5개 파일은 최종 agent 구성에서 제외하는 방향으로 정리한다.
-현재 agent 브랜치에는 원래 없으므로 이번 문서 수정으로 삭제된 파일은 없다.
-main의 호출부 정리와 함께 통합해야 하며, NIA 적재 기능을 대체 완료한 것으로 표시하지 않는다.
+main의 다음 구형 파일은 최종 Agent 구성에서 제외했다. NIA 적재 기능을 대체 완료한 것으로
+표시하지 않으며, data→agent 계약이 합의되기 전에는 되살리지 않는다.
 
+- `agent/rag/embedding/openai_embedder.py`
 - `agent/rag/generation/prompts.py`
 - `agent/rag/loaders/evidence_loader.py`
 - `agent/rag/loaders/knowledge_fact_loader.py`
@@ -102,10 +104,9 @@ main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거
 
 - `ChatService.handle_turn`을 호출할 API/service와 `ProductionAgentFactory` 생성 위치를 정한다.
 - `ProductionAgentDependencies`의 히스토리·상품·성분·루틴·검색·체크포인터 구현을 주입한다.
-- main의 `RagQueryService`·`RagIngestionService`가 참조하는 이전 RAG DTO와 동기 메서드를
-  현재 비동기 포트에 맞추고, backend 시작 시 import 오류가 없는지 확인한다.
-- `HybridSearchBackend.search`에서 target 필터, vector/BM25 원점수, 상태 코드와 후보 개수
-  계약을 구현한다. 지원하지 않는 필터를 무시하고 성공으로 반환하지 않는다.
+- 구형 `RagQueryService`는 제거했고 `RagIngestionService`는 현재 비동기 포트로 전환했다.
+- `SqlAlchemyHybridSearchBackend.search`가 target 필터, vector/BM25 원점수, 상태 코드와
+  후보 개수 계약을 구현한다. 실제 DB 통합 테스트는 아직 필요하다.
 - main의 `rag_chunk.embedding` 1536차원을 BGE-M3의 1024차원으로 바꾸려면 ERD 확인,
   마이그레이션, 기존 청크 전체 재임베딩을 하나의 배포 절차로 합의한다.
 - OpenAI 기반으로 정한 자유 텍스트 유사도 `0.45`를 BGE-M3에 그대로 재사용하지 않고
@@ -137,11 +138,10 @@ main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거
 
 ## 관련 문서
 
+- [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
 - [현재 구조·연결 계약 검토](AGENT_INTEGRATION_REVIEW.md)
 - [DB·히스토리 연동 요청서](RAG_YK/LLM_RAG_DB_CONTRACT.md)
 - [개발 요청서](RAG_YK/LLM_RAG_DEVELOPMENT_REQUEST.md)
 - [초기 파이프라인 설계](RAG_YK/LLM_RAG_PIPELINE.md)
 
-정식 `backend → agent` 계약은 호출자인 backend가 `docs/contracts/backend-to-agent.md`에
-초안을 작성하고 agent와 합의한다. 이 README와 검토서는 그 초안에 사용할 현재 구현 정보를
-제공하며 합의 자체를 대신하지 않는다.
+정식 `backend → agent` 계약은 호출자인 backend가 소유하며 위 문서의 합의 내용을 따른다.

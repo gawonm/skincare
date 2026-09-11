@@ -123,10 +123,15 @@ class DataRecordMapper:
             ("권장 피부타입", data.recommended_skin_types),
             ("주의사항", data.precautions),
             ("권장농도 원문", data.recommended_concentration),
-            ("배합규제 원문", data.compounding_regulation_text),
         ):
             if value:
                 parts.append(f"{label}: {value}")
+        if (
+            data.compounding_regulation_text
+            and data.regulatory_confidence is RegulatoryConfidence.VERIFIED
+        ):
+            # 교차 검증 전 배합규제 문구를 생성 모델 원문에 넣으면 국내 확정 규제로 오인할 수 있다.
+            parts.append(f"배합규제 원문: {data.compounding_regulation_text}")
         return EvidenceRecord(
             evidence_id=str(data.id),
             source_id=source.source_id,

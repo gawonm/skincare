@@ -310,18 +310,22 @@ backend 요청 사항은 운영 코드/이름/별칭과 목록 버전 공급, �
 | `loaders/nia_qa_loader.py` | 대체 구현 없음 | 기존 NIA 적재 호출 제거 또는 별도 요구·계약 합의 |
 | `nia_labeling_schemas.py` | 대체 구현 없음 | 라벨링 산출물 소유·필요성은 data와 합의 |
 
-main의 `RagIngestionService`는 삭제 예정 로더 import, 동기 `pipeline.run`,
-옛 `chunk.draft.ingredient_id/source_table/metadata` 필드, 원시 벡터 구조를 사용한다.
-main의 `RagQueryService`는 현재 브랜치에 없는 `PerIngredientResult`와
-`IngredientMentionResolution`을 참조하고 `HybridRetriever()`의 생성 방식도 다르다.
-백엔드 담당자가 새 계약으로 연결해야 하며, agent 파일만 교체하면 import부터 깨질 수 있다.
+병합 전 main의 `RagIngestionService`는 삭제 예정 로더 import, 동기 `pipeline.run`,
+옛 `chunk.draft.ingredient_id/source_table/metadata` 필드, 원시 벡터 구조를 사용했다.
+`integration/llm-rag-main`에서는 현재 `RagIngestionPipeline`과 `TextEmbedder` 계약으로
+전환했다. 구형 `RagQueryService`는 제거하고 `SqlAlchemyHybridSearchBackend`를 추가했다.
 
 ## 7. Backend 병합 확인 체크리스트
 
 ### 7.1 병합 순서와 최소 게이트
 
-2026-09-11 기준 현재 기능 브랜치는 최신 main보다 47커밋 뒤이고 8커밋 앞이다.
-merge-tree 검사에서 아래 8개 agent RAG 파일에 실제 충돌 표식이 생성된다.
+`integration/llm-rag-main`에서 main 병합과 8개 충돌 해결을 수행했다. 구형
+`OpenAiEmbedder`·`RagQueryService` 경로는 제거했고, 적재 서비스와 SQLAlchemy 검색
+어댑터는 현재 비동기 DTO로 전환했다. DB 벡터 차원 변경과 전체 운영 의존성 조립은 아래
+체크리스트에 따라 계속 확인해야 한다.
+
+병합 전 기능 브랜치는 최신 main보다 47커밋 뒤이고 8커밋 앞이었다.
+merge-tree 검사와 실제 병합에서 아래 8개 agent RAG 파일에 충돌이 발생했다.
 
 - `chunking/field_chunker.py`
 - `generation/answer_generator.py`
@@ -368,11 +372,11 @@ Backend 담당자는 다음을 정해야 한다.
 
 ### 7.3 기존 main RAG 서비스와 DB 계약
 
-main의 `RagQueryService`와 `RagIngestionService`는 `OpenAiEmbedder`, 동기 임베딩 메서드,
-기존 `RagDocument`·`RetrievedChunk` 구조를 전제로 한다. 현재 agent는 비동기 `TextEmbedder`와
-`HybridSearchBackend` 포트를 사용한다. Backend는 기존 서비스를 새 포트의 어댑터로 바꿀지,
-기존 서비스 진입점을 제거하고 `EvidencePipeline`으로 일원화할지 결정해야 한다. 두 경로를
-동시에 운영하면서 서로 다른 임베딩 모델을 같은 인덱스에 저장하지 않는다.
+통합 전 main의 `RagQueryService`와 `RagIngestionService`는 `OpenAiEmbedder`, 동기 임베딩
+메서드, 기존 `RagDocument`·`RetrievedChunk` 구조를 전제로 했다. 사용자 합의에 따라 독립
+질의 서비스는 제거하고 사용자 질의는 `ChatService.handle_turn`으로 일원화한다. 적재 서비스는
+트랜잭션 책임을 유지하면서 비동기 `TextEmbedder`를 사용하고, DB 검색은
+`SqlAlchemyHybridSearchBackend`가 현재 Agent DTO로 변환한다.
 
 main의 `models/rag_chunk.py`는 `text-embedding-3-small` 기준 1536차원으로 정의되어 있고,
 BGE-M3 dense 벡터는 1024차원이다. 이 변경은 agent 파일만 병합해서 해결되지 않는다.

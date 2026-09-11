@@ -214,7 +214,7 @@ SQLAlchemy 쿼리(`select`, `insert` 등)는 `backend/repositories/` 안에서�
 | `agent/` | agent | `docs/agent/README.md` |
 | `backend/` | backend | `docs/backend/README.md` |
 | `frontend/` | front | `docs/front/README.md` |
-| `models/`, `migrations/`, `scripts/` | data | `docs/data/README.md` |
+| `models/`, `migrations/`, `data/scripts/` | data | `docs/data/README.md` |
 | `core/` | 공용 | 아래 "공용 코드" 참고 |
 | `config.yaml`, `docker-compose.yml`, `justfile` 등 루트 설정 | 공용 | 아래 "공용 코드" 참고 |
 
@@ -225,7 +225,7 @@ SQLAlchemy 쿼리(`select`, `insert` 등)는 `backend/repositories/` 안에서�
 ### 여러 파트에 걸치는 요청이면 멈추고 되묻는다
 
 요청 하나가 위 표의 경로 **두 개 이상**을 건드리게 되면 (예: "데이터 수집해서 변환하고 백엔드
-API 로 내려줘" → `scripts/` + `backend/`), 그대로 진행하지 않는다. 코드를 쓰기 전에 멈추고
+API 로 내려줘" → `data/scripts/` + `backend/`), 그대로 진행하지 않는다. 코드를 쓰기 전에 멈추고
 사용자에게 다음을 묻는다.
 
 1. **지금 하려는 게 어느 파트의 개발인가?**
@@ -242,7 +242,7 @@ API 로 내려줘" → `scripts/` + `backend/`), 그대로 진행하지 않는�
 ```
 요청: "성분 데이터 수집해서 추천 API 로 내려줘"
 
-걸리는 경로: scripts/ (data 파트), backend/api/ + backend/services/ (backend 파트)
+걸리는 경로: data/scripts/ (data 파트), backend/api/ + backend/services/ (backend 파트)
 
 질문: 두 파트에 걸칩니다. 둘 중 무엇인가요?
   (1) 지금은 data 파트만 하고 API 는 backend 담당자가 따로 하나요?

@@ -1,8 +1,10 @@
-# Backend → Agent 호출 계약 (초안)
+# Backend → Agent 호출 계약
 
-> 상태: **미합의 초안**  
-> 기준: `integration/llm-rag-main`의 agent 공개 계약  
-> 이 문서가 합의되기 전에는 backend 호출부와 agent 공개 시그니처를 구현하지 않는다.
+> 상태: **통합 방향 합의 — DB 차원·운영 저장소는 후속 확인 필요**
+>
+> 기준: `integration/llm-rag-main`의 agent 공개 계약
+>
+> 2026-09-11 사용자 확인에 따라 구형 질의 경로 제거와 적재 서비스 전환을 진행한다.
 
 ## 1. 목적과 통합 원칙
 
@@ -230,6 +232,18 @@ async def RagIngestionPipeline.run(
 넘기지 않고 `agent/rag/loaders/data_records.py`의 입력 DTO와 `DataRecordMapper`를 사용해
 `EvidenceRecord`로 변환한다. 결과의 `EmbeddingVector.values`만 Backend repository 입력 DTO로
 변환한다. 재적재 도중 임베딩에 실패하면 기존 데이터 교체를 commit하지 않는다.
+
+청크의 안정적인 DB 필드 매핑을 위해 현재 `RagChunkDraft`는 `field_id`를 함께 반환한다.
+
+```python
+class RagChunkDraft(RagModel):
+    chunk_id: str = Field(min_length=1)
+    field_id: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    evidence: EvidenceRecord
+    intents: list[QuestionIntent] = Field(default_factory=list)
+    confidence_tier: RagConfidenceTier = RagConfidenceTier.UNKNOWN
+```
 
 NIA Q&A는 현재 Agent에 대응하는 변환 계약이 없다. 기존 로더를 임의로 되살리지 않고 data→agent
 계약이 합의될 때까지 적재 대상에서 제외한다.

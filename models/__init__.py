@@ -11,15 +11,51 @@
 from models.evidence import Evidence, EvidenceRegulateType, EvidenceSourceType, EvidenceTopic
 from models.ingredient import IngredientMaster
 from models.ingredient_knowledge import IngredientKnowledgeFact, RegulatoryConfidence
+from models.product import (
+    Product,
+    ProductMatchStatus,
+    ProductPriceBand,
+    ProductTargetGroup,
+    ProductTitleSource,
+)
+from models.product_ingredient import (
+    IngredientMatchAcceptance,
+    ProductIngredient,
+    ProductIngredientSectionLinkStatus,
+    ProductIngredientSnapshot,
+    ProductIngredientTokenParseStatus,
+)
+from models.rag_chunk import (
+    EMBEDDING_DIMENSION,
+    RagChunk,
+    RagChunkField,
+    RagConfidenceTier,
+    RagSourceTable,
+)
 from models.user import User
 
 __all__ = [
+    "EMBEDDING_DIMENSION",
     "Evidence",
     "EvidenceRegulateType",
     "EvidenceSourceType",
     "EvidenceTopic",
     "IngredientKnowledgeFact",
     "IngredientMaster",
+    "IngredientMatchAcceptance",
+    "Product",
+    "ProductIngredient",
+    "ProductIngredientSectionLinkStatus",
+    "ProductIngredientSnapshot",
+    "ProductIngredientTokenParseStatus",
+    "ProductMatchStatus",
+    "ProductPriceBand",
+    "ProductTargetGroup",
+    "ProductTitleSource",
+    "RagChunk",
+    "RagChunkField",
+    "RagConfidenceTier",
+    "RagSourceTable",
     "RegulatoryConfidence",
     "User",
 ]

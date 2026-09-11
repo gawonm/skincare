@@ -311,6 +311,7 @@ class RagDocument(RagModel):
 
 class RagChunkDraft(RagModel):
     chunk_id: str = Field(min_length=1)
+    field_id: str = Field(min_length=1)
     content: str = Field(min_length=1)
     evidence: EvidenceRecord
     intents: list[QuestionIntent] = Field(default_factory=list)
