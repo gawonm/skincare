@@ -18,3 +18,5 @@
 
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
 - [Agent 통합 검토](../agent/AGENT_INTEGRATION_REVIEW.md)
+- [front → backend 계약](../contracts/front-to-backend.md): AI 채팅(미정), 회원가입 확장
+  (성별·연령대·약관동의 — 확정 및 구현 완료. `models/user.py`, `backend/schemas/auth.py`)

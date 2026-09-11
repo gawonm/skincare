@@ -7,6 +7,8 @@
 "비밀번호 불일치"를 서로 다른 예외로 구분한다.
 """
 
+from datetime import UTC, datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.repositories.session import SessionRepository
@@ -66,6 +68,11 @@ class AuthService:
             email=payload.email,
             hashed_password=hashed,
             name=payload.name,
+            gender=payload.gender,
+            age_group=payload.age_group,
+            # payload.terms_agreed는 Literal[True]라 이 시점엔 항상 True다. 동의 시각을
+            # 여기서 기록한다 — 요청이 서버에 닿은 시각이 곧 동의 시각이다.
+            terms_agreed_at=datetime.now(UTC),
         )
         # 계정 INSERT를 먼저 확정한 뒤 세션을 만든다. 반대 순서면 커밋이 실패했을 때
         # Redis에 주인 없는 세션이 남는다.

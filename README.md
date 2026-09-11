@@ -38,7 +38,7 @@
 | --- | --- |
 | `Dockerfile` | 1단계에서 프론트 빌드, 2단계에서 백엔드 런타임 + `dist` 복사 |
 | `docker-compose.prod.yml` | `backend` 서비스만 정의한 오버레이. 기본 파일과 겹쳐 쓴다 |
-| `config.prod.yaml.sample` | 배포용 `config.yaml` 예시. 호스트가 `postgres`, `redis` 다 |
+| `config.prod.yaml.sample` | 배포용 `config.prod.yaml` 예시. 호스트가 `postgres`, `redis` 다 |
 | `.env.example` | Compose 전용 값(DB 계정, 포트) |
 
 `docker-compose.yml` 은 개발·배포 공용이다. `postgres` 와 `redis` 정의를 배포용에 복사해 두면
@@ -61,22 +61,26 @@ cd skincare
 ### 3. 설정 파일 두 개 만들기
 
 ```bash
-cp config.prod.yaml.sample config.yaml   # 애플리케이션 설정
-cp .env.example .env                     # Compose 전용
+cp config.prod.yaml.sample config.prod.yaml   # 애플리케이션 설정
+cp .env.example .env                          # Compose 전용
 ```
+
+배포 설정 파일 이름은 `config.yaml` 이 아니라 **`config.prod.yaml`** 이다. 개발용
+`config.yaml`(주소가 `localhost`)과 한 머신에 같이 둘 수 있어야 하기 때문이다.
+`docker-compose.prod.yml` 이 이 파일을 컨테이너 안의 `/app/config.yaml` 로 마운트한다.
 
 **반드시 바꿀 값**
 
 | 파일 | 항목 | 이유 |
 | --- | --- | --- |
 | `.env` | `POSTGRES_PASSWORD` | 기본값 `app` 그대로 두지 않는다 |
-| `config.yaml` | `database.url` 의 비밀번호 | `.env` 에서 바꾼 값과 **똑같이** 맞춘다 |
-| `config.yaml` | `auth.cookie_secure` | HTTPS 뒤에 둔다면 `true`. http 로 그대로 열면 `false` 여야 쿠키가 붙는다 |
-| `config.yaml` | `mfds.service_key` | MFDS 수집 스크립트를 서버에서 돌릴 때만 필요 |
+| `config.prod.yaml` | `database.url` 의 비밀번호 | `.env` 에서 바꾼 값과 **똑같이** 맞춘다 |
+| `config.prod.yaml` | `auth.cookie_secure` | HTTPS 뒤에 둔다면 `true`. http 로 그대로 열면 `false` 여야 쿠키가 붙는다 |
+| `config.prod.yaml` | `mfds.service_key` | MFDS 수집 스크립트를 서버에서 돌릴 때만 필요 |
 
 두 파일 모두 `.gitignore` 대상이다. **커밋하지 않는다.**
 
-`config.yaml` 의 호스트가 `localhost` 가 아니라 `postgres`, `redis` 인지 확인한다.
+`config.prod.yaml` 의 호스트가 `localhost` 가 아니라 `postgres`, `redis` 인지 확인한다.
 컨테이너 안에서 `localhost` 는 자기 자신이라 DB 에 닿지 않는다.
 
 ### 4. 기동
@@ -140,8 +144,10 @@ just prod-shell     # 백엔드 컨테이너 셸
 ## 배포 전 확인할 것
 
 - [ ] `.env` 의 `POSTGRES_PASSWORD` 를 기본값에서 바꿨다
-- [ ] `config.yaml` 의 접속 정보가 `.env` 와 일치한다
-- [ ] `config.yaml` 을 커밋하지 않았다 (`git status` 에 안 나와야 한다)
+- [ ] 배포 호스트에 `config.prod.yaml` 이 있다 — 없는 상태로 기동하면 Docker 가 같은 자리에
+      빈 디렉터리를 만들고 앱이 설정을 못 읽어 무한 재시작한다
+- [ ] `config.prod.yaml` 의 접속 정보가 `.env` 와 일치한다
+- [ ] `config.prod.yaml` 을 커밋하지 않았다 (`git status` 에 안 나와야 한다)
 - [ ] HTTPS 를 쓴다면 `auth.cookie_secure: true` 로 바꿨다
 - [ ] **5432, 6379 포트가 외부에 열려 있지 않다** — `docker-compose.yml` 이 두 포트를 호스트로
       내보내므로, 공개 서버라면 방화벽에서 막거나 해당 `ports` 항목을 지운다
@@ -151,8 +157,9 @@ just prod-shell     # 백엔드 컨테이너 셸
 
 | 증상 | 원인 | 해결 |
 | --- | --- | --- |
-| backend 컨테이너가 계속 재시작 | `config.yaml` 의 호스트가 `localhost` | `postgres`, `redis` 로 고친다 |
-| `Redis 연결 실패` 로 종료 | Redis 미기동 또는 주소 오류 | `just prod-logs`, `config.yaml` 의 `redis.url` 확인 |
+| backend 컨테이너가 계속 재시작 | `config.prod.yaml` 의 호스트가 `localhost` | `postgres`, `redis` 로 고친다 |
+| backend 컨테이너가 계속 재시작 | 호스트에 `config.prod.yaml` 이 없어 빈 디렉터리가 마운트됨 | 그 자리의 디렉터리를 지우고 `cp config.prod.yaml.sample config.prod.yaml` 후 재기동 |
+| `Redis 연결 실패` 로 종료 | Redis 미기동 또는 주소 오류 | `just prod-logs`, `config.prod.yaml` 의 `redis.url` 확인 |
 | 화면은 뜨는데 로그인이 안 풀림 | 쿠키가 안 붙음 | http 인데 `cookie_secure: true` 인지 확인 |
 | 새로고침하면 404 | 정적 서빙 문제 | `frontend/dist` 가 이미지에 들어갔는지 `just prod-shell` 로 확인 |
 | 화면이 예전 그대로 | 이미지 재빌드 누락 | `just prod-up` (`--build` 포함) |

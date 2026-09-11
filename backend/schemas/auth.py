@@ -8,10 +8,12 @@
 """
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator
+
+from models import AgeGroup, Gender
 
 # argon2id 는 bcrypt 와 달리 입력 길이 제한이 없지만, 과도하게 긴 입력으로 해시 계산을
 # 유발하는 것을 막기 위해 상한을 둔다.
@@ -40,10 +42,19 @@ class _EmailNormalizingModel(BaseModel):
 
 
 class SignupRequest(_EmailNormalizingModel):
-    """회원가입 입력. 비밀번호 복잡도는 요구하지 않고 최소 길이만 본다."""
+    """회원가입 입력. 비밀번호 복잡도는 요구하지 않고 최소 길이만 본다.
+
+    `gender`·`age_group`·`terms_agreed`는 피그마 회원가입 시안에 맞춰 추가됐다
+    (`docs/contracts/front-to-backend.md` "회원가입 확장" 절, 사용자 승인 완료).
+    """
 
     password: PasswordStr
     name: NameStr
+    gender: Gender
+    age_group: AgeGroup
+    # 체크박스를 안 누르면 프론트가 제출을 막지만, 서버도 값 자체를 믿지 않는다(규칙 7 취지).
+    # Literal[True]라 False나 누락은 이 자리에서 바로 422가 난다.
+    terms_agreed: Literal[True]
 
 
 class LoginRequest(_EmailNormalizingModel):
@@ -60,5 +71,7 @@ class UserResponse(BaseModel):
     id: UUID
     email: str
     name: str
+    gender: Gender
+    age_group: AgeGroup
     is_active: bool
     created_at: datetime
