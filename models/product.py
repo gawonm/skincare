@@ -66,6 +66,51 @@ class ProductPriceBand(StrEnum):
     OVER_50K = "5만원 이상"
 
 
+class ProductTypeNormalized(StrEnum):
+    """서비스 분류에 사용하는 제품의 정규화된 세부 유형."""
+
+    SERUM = "serum"
+    ESSENCE = "essence"
+    AMPOULE = "ampoule"
+    CREAM = "cream"
+    LOTION = "lotion"
+    EMULSION = "emulsion"
+    TONER = "toner"
+    TONER_PAD = "toner_pad"
+    CLEANSER = "cleanser"
+    CLEANSING_FOAM = "cleansing_foam"
+    CLEANSING_GEL = "cleansing_gel"
+    CLEANSING_OIL = "cleansing_oil"
+    CLEANSING_BALM = "cleansing_balm"
+    CLEANSING_WATER = "cleansing_water"
+    SHEET_MASK = "sheet_mask"
+    WASH_OFF_MASK = "wash_off_mask"
+    SLEEPING_MASK = "sleeping_mask"
+    MASK = "mask"
+    PATCH = "patch"
+    SUNSCREEN = "sunscreen"
+    MIST = "mist"
+    FACIAL_OIL = "facial_oil"
+    BALM = "balm"
+    SPOT_TREATMENT = "spot_treatment"
+    BOOSTER = "booster"
+    PEELING = "peeling"
+    ALL_IN_ONE = "all_in_one"
+
+
+class ProductServiceCategory(StrEnum):
+    """프론트 화면에서 사용하는 제품 분류 그룹."""
+
+    ESSENCE_SERUM = "에센스·세럼"
+    AMPOULE = "앰플"
+    CREAM_LOTION = "크림·로션"
+    TONER_PAD = "토너·패드"
+    CLEANSER = "클렌저"
+    MASK_PATCH = "마스크·패치"
+    SUNCARE = "선케어"
+    OTHER = "기타"
+
+
 class ProductMatchStatus(StrEnum):
     """`data.scripts.product_candidate_schemas.MatchStatus`와 값을 맞춘다."""
 
@@ -121,6 +166,16 @@ class Product(EntityBase):
     category1: Mapped[str] = mapped_column(Text, nullable=False, comment="대분류")
     category2: Mapped[str | None] = mapped_column(Text, nullable=True, comment="중분류")
     category3: Mapped[str | None] = mapped_column(Text, nullable=True, comment="소분류")
+    product_type_normalized: Mapped[ProductTypeNormalized | None] = mapped_column(
+        _sql_enum(ProductTypeNormalized, length=40),
+        nullable=True,
+        comment="상품명과 원본 카테고리로 정규화한 제품 세부 유형. 미확정이면 NULL",
+    )
+    service_category: Mapped[ProductServiceCategory | None] = mapped_column(
+        _sql_enum(ProductServiceCategory, length=20),
+        nullable=True,
+        comment="서비스 화면에서 사용하는 제품 그룹. 미확정이면 NULL",
+    )
     lowest_price: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

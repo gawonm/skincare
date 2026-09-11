@@ -24,6 +24,8 @@ _FIELDNAMES = [
     "category1",
     "category2",
     "category3",
+    "product_type_normalized",
+    "service_category",
     "lowest_price",
     "highest_price",
     "price_band",
@@ -42,7 +44,14 @@ _FIELDNAMES = [
 
 # CSV 에 빈 문자열로 저장되는 필드 중, 모델에서는 `None` 이 정답인 필드.
 # 나머지 필드(예: `maker`)는 빈 문자열 자체가 유효한 값이라 이 목록에 넣지 않는다.
-_NULLABLE_FIELD_NAMES = ("target_group", "volume_value", "volume_unit", "raw_ingredients_text")
+_NULLABLE_FIELD_NAMES = (
+    "target_group",
+    "volume_value",
+    "volume_unit",
+    "raw_ingredients_text",
+    "product_type_normalized",
+    "service_category",
+)
 
 # `review_reasons` 는 리스트라 다른 manual_review CSV(`review_candidate_ids` 등)와
 # 같은 관례로 "|" 구분 문자열로 저장한다.

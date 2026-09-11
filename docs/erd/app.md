@@ -98,6 +98,8 @@ erDiagram
         text category1
         text category2
         text category3
+        varchar product_type_normalized
+        varchar service_category
         int lowest_price
         int highest_price
         text price_band
@@ -277,6 +279,8 @@ erDiagram
 | maker | text | Y | - | 제조사 |
 | category1 | text | N | - | 대분류 |
 | category2 / category3 | text | Y | - | 중/소분류 |
+| product_type_normalized | varchar(40), enum | Y | NULL | 제품 세부 유형. 아래 확장 초안, 미적용 |
+| service_category | varchar(20), enum | Y | NULL | 화면용 제품 그룹. 아래 확장 초안, 미적용 |
 | lowest_price / highest_price | int | N | - | 올리브영: 할인가/정가 |
 | price_band | text(enum) | N | - | lowest_price 기준 가격대 |
 | volume_value | numeric | Y | - | 단일 용량. 미확정이면 NULL(0 아님) |
@@ -292,6 +296,41 @@ erDiagram
 | created_at / updated_at | timestamptz | N | `now()` | 공통 |
 
 키: PK `id`, UK `(source, source_product_id)`. FK 없음(아래 참고).
+
+
+#### 상품 분류 확장안 — 2026-09-11, 사용자 확인 완료·DB 미적용
+
+위 PRODUCT 관계도와 컬럼 표의 `product_type_normalized`, `service_category`는 제안 스키마다.
+나머지 기존 스키마 설명과 구분하며, 모델·마이그레이션은 아직 변경하지 않았다.
+
+- 기존 `product_type`(쇼핑몰 상품 구분)과 `category1/2/3`(원본 분류)는 보존한다.
+- 두 필드는 기존 모델의 `native_enum=False` 관례를 따라 VARCHAR에 Enum 값을 저장한다.
+- NULL은 미처리 또는 근거 부족·충돌로 유형을 확정하지 못한 상태다. 분류 실행 여부와
+  미분류 사유는 미리보기 보고서로 구분한다. 이를 위해 별도 DB 컬럼을 추가하지 않는다.
+- 유형은 알지만 일곱 메뉴에 속하지 않는 제품은 세부 유형을 보존하고 `service_category=기타`로 둔다.
+- 두 값을 같은 저장 작업에서 갱신한다. 서비스 그룹은 세부 유형의 명시적 매핑으로만 결정한다.
+- 새 테이블·FK·유니크 제약·인덱스는 추가하지 않는다. 기존 PK와 `(source, source_product_id)` UK를 유지한다.
+- 제품별 세부 유형을 보존하고 UI 그룹을 파생값으로 함께 저장하는 의도적인 비정규화다.
+  메뉴 구성이 바뀌면 세부 유형을 다시 판별하지 않고 서비스 그룹 매핑만 다시 적용한다.
+
+| product_type_normalized | service_category |
+| --- | --- |
+| serum, essence | 에센스·세럼 |
+| ampoule | 앰플 |
+| cream, lotion, emulsion | 크림·로션 |
+| toner, toner_pad | 토너·패드 |
+| cleanser, cleansing_foam, cleansing_gel, cleansing_oil, cleansing_balm, cleansing_water | 클렌저 |
+| sheet_mask, wash_off_mask, sleeping_mask, mask, patch | 마스크·패치 |
+| sunscreen | 선케어 |
+| mist, facial_oil, balm, spot_treatment, booster, peeling, all_in_one | 기타 |
+| NULL | NULL |
+
+`pad`, `gel`, `skin`, `treatment` 같은 단어만으로 제품 용도를 단정하지 않는다.
+예를 들어 각질 제거 패드는 무조건 토너 패드로 넣지 않고, 복합 구성·비화장품·충돌하는
+상품명은 미분류 보고서로 남긴다. 실제 분류 규칙의 우선순위는 샘플 검증 후 확정한다.
+
+새 마이그레이션은 구현 시 head를 다시 확인하고 두 컬럼만 추가한다.
+기존 데이터 분류·갱신은 별도 실행으로 분리하며, 기존 RAG 인덱스와 테이블은 변경하지 않는다.
 
 ### product_ingredient_snapshot
 
@@ -362,24 +401,11 @@ CHECK 제약으로 `source_table`별 참조 컬럼 정확히 1개만 채워지�
 선언 안 돼 있고 raw SQL 마이그레이션으로 관리. autogenerate가 이 인덱스를 "삭제 대상"으로
 오판하니 마이그레이션 리뷰 시 주의).
 
-#### BGE-M3 1024차원 전환안 — 승인 전
+#### 임베딩 차원 유지 결정 — 2026-09-11
 
-현재 실제 스키마와 위 표는 `text-embedding-3-small`의 `vector(1536)`이다. 통합 Agent가
-선택한 `BAAI/bge-m3` dense 출력은 1024차원이므로 기존 컬럼에 그대로 저장할 수 없다.
-모델·마이그레이션을 바꾸기 전 다음 전환안을 확인한다.
-
-1. `rag_chunk`가 원본이 아니라 재생성 가능한 검색 인덱스인지 원본별로 확인한다.
-2. 서비스의 RAG 쓰기를 멈추고 기존 청크 건수와 원본별 재생성 가능 여부를 기록한다.
-3. 기존 HNSW/BM25 인덱스를 제거하고 `rag_chunk`의 파생 행을 비운다.
-4. `embedding`을 `vector(1024)`로 변경하고 HNSW/BM25 인덱스를 다시 만든다.
-5. `Evidence`와 `IngredientKnowledgeFact`를 BGE-M3로 전량 재임베딩한다.
-6. 모든 행의 `embedding_model`이 `BAAI/bge-m3`인지와 원본별 청크 수를 검증한다.
-
-이 방식은 단순하고 서로 다른 모델 벡터가 섞이지 않지만 전환 중 RAG 검색이 중단된다.
-특히 현재 계약에서 제외한 NIA Q&A 청크는 원본 ZIP과 새 data→agent 계약이 없으면 재생성되지
-않으므로, 승인 없이 기존 행을 지우거나 모델·마이그레이션을 변경하지 않는다. 무중단 전환이
-필요하면 별도 `vector(1024)` 컬럼을 추가해 백필·검증 후 교체하는 2단계 마이그레이션을 사용해야
-하며 컬럼과 인덱스를 한동안 이중으로 유지하는 비용이 생긴다.
+- `rag_chunk.embedding`은 기존 `vector(1536)`을 유지한다.
+- 운영 임베딩 모델은 기존 `text-embedding-3-small`을 유지한다.
+- BGE-M3 1024차원 전환, 벡터 컬럼 변경, 전체 재임베딩과 재색인은 진행하지 않는다.
 
 ## 왜 이렇게 나눴는지
 
