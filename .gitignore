@@ -13,6 +13,7 @@ wheels/
 # 비밀 값이 들어가는 설정 파일. 절대 커밋하지 않는다.
 # 대신 값이 비어 있는 config.yaml.sample 과 .env.example 을 커밋한다.
 config.yaml
+config.prod.yaml
 .env
 .env.*
 !.env.example
