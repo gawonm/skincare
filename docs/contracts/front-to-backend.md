@@ -232,10 +232,10 @@ class SignupRequest(BaseModel):  # backend/schemas/auth.py
 2. (완료) backend 담당에게 설명하고 합의했다.
 3. (완료) "아직 안 정한 것"을 확정했다 — 위 "확정된 내용" 참고. ERD 문서 승인 완료.
 4. (완료, backend) `backend/schemas/auth.py`·`models/user.py`·마이그레이션 구현 및 검증.
-5. **(front 남음)** `frontend/src/schemas/auth.ts`·`frontend/src/pages/SignupPage.tsx`를
-   이 문서에 맞춰 갱신하고, 지금은 안 보내고 있는 `gender`/`age_group`/`terms_agreed`를
-   실제로 `POST /auth/signup`에 실어 보내도록 연결한다(`passwordConfirm`은 여전히
-   서버로 보내지 않는다 — 클라이언트 전용 검증).
+5. (완료, front) `frontend/src/api/auth.ts`·`frontend/src/pages/SignupPage.tsx`를
+   이 문서에 맞춰 갱신해 `gender`/`age_group`/`terms_agreed`를 `POST /auth/signup`에
+   실어 보내도록 연결했다(`passwordConfirm`은 여전히 서버로 보내지 않는다 — 클라이언트
+   전용 검증). 로컬에서 회원가입·로그인 전체 플로우로 연동 검증 완료.
 
 ## 관련 문서
 

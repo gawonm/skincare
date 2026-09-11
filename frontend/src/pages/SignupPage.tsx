@@ -5,10 +5,9 @@
  * 이메일 중복(409)은 상단 배너뿐 아니라 이메일 필드 밑에도 표시해 어디를 고쳐야 하는지
  * 바로 보이게 한다.
  *
- * 시안에는 비밀번호 재확인·성별·연령대·이용약관 동의가 있지만, `docs/contracts/front-to-backend.md`
- * "회원가입 확장" 절이 아직 backend 와 합의 전이다(규칙 16). 그래서 화면 검증·상태는
- * `signupSchema` 가 전부 다루되, 실제로 `POST /auth/signup` 에는 지금 계약대로
- * email·password·name 만 골라 보낸다.
+ * 시안에는 비밀번호 재확인·성별·연령대·이용약관 동의가 있다. `passwordConfirm`은
+ * 클라이언트 전용 검증(비밀번호 일치 확인)이라 서버로 보내지 않고, 나머지는
+ * `docs/contracts/front-to-backend.md` "회원가입 확장" 절(확정됨)에 맞춰 그대로 보낸다.
  */
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -41,9 +40,15 @@ export function SignupPage() {
   const signup = useSignup();
 
   const onSubmit = handleSubmit((values) => {
-    // TODO(contract): gender/ageGroup/termsAgreed 는 합의 전이라 아직 안 보낸다.
     signup.mutate(
-      { email: values.email, password: values.password, name: values.name },
+      {
+        email: values.email,
+        password: values.password,
+        name: values.name,
+        gender: values.gender,
+        age_group: values.ageGroup,
+        terms_agreed: values.termsAgreed,
+      },
       {
         onError: (error) => {
           // 중복 이메일은 사용자가 이메일만 바꾸면 되는 상황이라 필드 레벨로도 안내한다.

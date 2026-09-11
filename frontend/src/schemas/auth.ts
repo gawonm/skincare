@@ -9,10 +9,9 @@
  * 걸지 않는다. transform 을 넣으면 react-hook-form 의 입력/출력 타입이 갈라져 다루기
  * 번거로워지는데, 그 대가에 비해 얻는 게 없다.
  *
- * `passwordConfirm`·`gender`·`ageGroup`·`termsAgreed` 는 피그마 회원가입 시안(node 93:25)에는
- * 있지만 아직 backend 와 합의 전이라 `POST /auth/signup` 에 실어 보내지 않는다
- * (`docs/contracts/front-to-backend.md` "회원가입 확장" 절, 규칙 16). 화면 검증·상태만
- * 이 스키마가 맡고, 실제 제출은 `SignupPage` 가 합의된 필드만 골라 보낸다.
+ * `passwordConfirm` 은 비밀번호 일치 확인용 클라이언트 전용 필드라 서버로 보내지 않는다.
+ * `gender`·`ageGroup`·`termsAgreed` 는 `docs/contracts/front-to-backend.md` "회원가입 확장"
+ * 절(확정됨)에 맞춰 `SignupPage` 가 `POST /auth/signup` 에 그대로 실어 보낸다.
  */
 
 import { z } from "zod";
