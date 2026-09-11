@@ -1,7 +1,7 @@
 # agent 구조와 연결 계약 검토
 
 검토일: 2026-09-11. agent 기준 `6f710be`, main 기준 `02ed955`.
-동적 분류, 후보 표시, 로컬 임베딩·리랭커와 운영 팩토리 변경을 포함한 기준이다.
+동적 분류, 후보 표시, 선택형 임베딩·로컬 리랭커와 운영 팩토리 변경을 포함한 기준이다.
 
 상태: agent 담당 범위에서 작성한 기존 코드 검토서. 구현된 시그니처와 미합의 항목을
 구분한다. 상대 담당자 승인이나 실제 main 병합·운영 연결 완료를 의미하지 않는다.
@@ -139,11 +139,12 @@ backend 어댑터에 있으며 상품·성분 ID 구분 방식은 합의가 필�
 독립 적재·질의 호출자는 모델/API 장애도 처리해야 한다. agent 적재 함수는 DB를 쓰지 않으므로
 예외 시 DB 변경 취소와 최종 commit은 backend 서비스가 관리한다.
 
-운영 검색은 `BAAI/bge-m3`로 질문을 임베딩하고 vector/BM25 결과를 RRF로 합친 뒤,
+현재 운영 검색은 `text-embedding-3-small`의 1536차원으로 질문을 임베딩하고 vector/BM25
+결과를 RRF로 합친 뒤,
 최대 `RagRetrievalPolicy.rerank_candidate_limit`개 후보를
 `BAAI/bge-reranker-v2-m3`로 재정렬한다. 기본 후보 수는 30이며 최종 반환 수는 요청의
-`limit`를 따른다. 로컬 모델은 `sentence-transformers`로 실행하고 첫 사용 시 지연 로드한다.
-Intent 해석과 근거 문장 생성만 `gpt-4o-mini`를 사용한다.
+`limit`를 따른다. 리랭커와 선택 가능한 BGE-M3 임베더는 `sentence-transformers`로 실행하고
+첫 사용 시 지연 로드한다. Intent 해석과 근거 문장 생성에는 `gpt-4o-mini`를 사용한다.
 
 `DataRecordMapper`가 반환하는 `EvidenceRecord`에서 `RagDocument.fields`를 구성하는
 정책은 아직 미합의다. 검수 상태는 공식 출처 여부와 다르며 매퍼는 자료를 자동으로
@@ -319,10 +320,10 @@ backend 요청 사항은 운영 코드/이름/별칭과 목록 버전 공급, �
 
 ### 7.1 병합 순서와 최소 게이트
 
-`integration/llm-rag-main`에서 main 병합과 8개 충돌 해결을 수행했다. 구형
-`OpenAiEmbedder`·`RagQueryService` 경로는 제거했고, 적재 서비스와 SQLAlchemy 검색
-어댑터는 현재 비동기 DTO로 전환했다. DB 벡터 차원 변경과 전체 운영 의존성 조립은 아래
-체크리스트에 따라 계속 확인해야 한다.
+`integration/llm-rag-main`에서 main 병합과 8개 충돌 해결을 수행했다. 구형 동기식
+`OpenAiEmbedder`와 `RagQueryService`는 제거했고, 현재 비동기 계약의
+`OpenAiTextEmbedder`, 적재 서비스와 SQLAlchemy 검색 어댑터를 연결했다. DB 벡터 차원은
+1536으로 유지하며 전체 운영 의존성 조립은 아래 체크리스트에 따라 계속 확인해야 한다.
 
 병합 전 기능 브랜치는 최신 main보다 47커밋 뒤이고 8커밋 앞이었다.
 merge-tree 검사와 실제 병합에서 아래 8개 agent RAG 파일에 충돌이 발생했다.
@@ -344,7 +345,7 @@ main으로 보내는 순서를 사용한다. Git 충돌 해결과 공개 계약 
 - `backend`가 import하는 모든 `agent.rag` 심볼이 존재한다.
 - 애플리케이션 시작과 API 라우터 등록이 성공한다.
 - main의 기존 단위·DB·통합 테스트와 agent 테스트가 모두 통과한다.
-- 실제 사용 경로가 OpenAI 임베더가 아니라 선택한 로컬 임베더를 호출한다.
+- 실제 사용 경로가 설정에서 선택한 임베더를 질의·적재에 동일하게 사용한다.
 - DB 벡터 차원과 질의 벡터 차원이 일치한다.
 
 ### 7.2 운영 조립과 호출 경로
@@ -355,7 +356,7 @@ main으로 보내는 순서를 사용한다. Git 충돌 해결과 공개 계약 
 | --- | --- |
 | Intent 분석 | `OpenAiLlmClient` / `gpt-4o-mini` |
 | 근거 문장 생성 | `OpenAiClaimGenerator` / `gpt-4o-mini` |
-| 임베딩 | `LocalBgeM3Embedder` / `BAAI/bge-m3` |
+| 임베딩 | `OpenAiTextEmbedder` / `text-embedding-3-small` 1536차원 |
 | 재정렬 | `LocalBgeRerankerV2M3` / `BAAI/bge-reranker-v2-m3` |
 
 Backend 담당자는 다음을 정해야 한다.
@@ -378,19 +379,15 @@ Backend 담당자는 다음을 정해야 한다.
 트랜잭션 책임을 유지하면서 비동기 `TextEmbedder`를 사용하고, DB 검색은
 `SqlAlchemyHybridSearchBackend`가 현재 Agent DTO로 변환한다.
 
-main의 `models/rag_chunk.py`는 `text-embedding-3-small` 기준 1536차원으로 정의되어 있고,
-BGE-M3 dense 벡터는 1024차원이다. 이 변경은 agent 파일만 병합해서 해결되지 않는다.
-DB 담당자와 다음 절차를 합의해야 한다.
+main의 `models/rag_chunk.py`는 `text-embedding-3-small` 기준 1536차원으로 정의되어 있다.
+이번 선택은 OpenAI 요청에 `dimensions=1536`을 명시하므로 모델·마이그레이션·HNSW 인덱스를
+바꾸지 않는다. 질의와 신규 적재 모두 `embedding_model=text-embedding-3-small`인 벡터만
+사용하는지 실제 DB 통합 테스트로 확인한다. 기존 자유 텍스트 관련성 임계값 `0.45`도 같은
+임베딩 모델에서 정한 값이므로 샘플 설정에 유지한다.
 
-1. `docs/erd/`의 RAG 테이블 문서에서 벡터 차원 변경을 먼저 확인한다.
-2. 모델과 마이그레이션을 1024차원으로 변경한다.
-3. 기존 1536차원 청크를 BGE-M3로 전부 다시 임베딩한다.
-4. `embedding_model`이 BGE-M3인 행만 새 질의에 사용되는지 확인한다.
-5. HNSW 인덱스 재생성과 vector/BM25 검색 통합 테스트를 실행한다.
-
-기존 자유 텍스트 관련성 임계값 `0.45`는 OpenAI 임베딩 검증셋으로 정한 값이다. BGE-M3는
-점수 분포가 다르므로 그대로 복사하지 않는다. Backend가 실제 DB 검색 결과를 제공하고 agent와
-함께 별도 튜닝셋·검증셋으로 `free_text_min_vector_similarity`를 다시 확정한다.
+선택 가능한 BGE-M3 dense 벡터는 1024차원이다. 향후 `provider: local`로 운영 전환할 때는
+ERD 합의, 차원 마이그레이션, 전체 재임베딩, HNSW 재생성과 별도 임계값 검증을 먼저 완료해야
+한다. 현재 1536차원 DB에서 로컬 provider를 바로 사용하지 않는다.
 
 `HybridSearchBackend.search` 구현은 다음을 보장해야 한다.
 
@@ -405,9 +402,9 @@ DB 담당자와 다음 절차를 합의해야 한다.
 
 애플리케이션 설정 소스는 `config.yaml` 하나로 확정한다. `.env`는 Docker Compose 변수에만
 사용하며, agent 내부에서 dotenv나 `os.environ`으로 OpenAI API 키를 직접 읽지 않는다.
-Backend가 `config.yaml`의 OpenAI API 키와 `gpt-4o-mini` 모델 설정을 읽어
-`ProductionAgentConfig`의 `OpenAiChatConfig`에 주입한다. 실제 키는 Git에 포함하지 않고,
-샘플 설정에는 자리표시자만 둔다.
+Backend가 `config.yaml`의 OpenAI API 키를 읽어 `ProductionAgentConfig`의 채팅과 임베딩
+설정에 주입한다. 채팅 모델은 `gpt-4o-mini`, 임베딩 provider와 모델은 각각 `openai`,
+`text-embedding-3-small`로 둔다. 실제 키는 Git에 포함하지 않고 샘플 설정에는 자리표시자만 둔다.
 
 키 누락 시 기동 자체를 막을지 Agent 기능만 비활성화할지는 Backend 운영 정책으로 확정해야 한다.
 이 정책과 설정 필드가 바뀌면 `config.yaml.sample`, `config.prod.yaml.sample`도 함께 갱신한다.

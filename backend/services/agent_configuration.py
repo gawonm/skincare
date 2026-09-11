@@ -4,18 +4,23 @@ from pydantic import SecretStr
 
 from agent.factory import ProductionAgentConfig
 from agent.rag.schemas import (
+    EmbeddingProvider,
     LocalEmbeddingConfig,
     LocalEmbeddingModel,
     LocalRerankerConfig,
     LocalRerankerModel,
     OpenAiChatConfig,
     OpenAiChatModel,
+    OpenAiEmbeddingConfig,
+    OpenAiEmbeddingModel,
     RagRetrievalPolicy,
+    TextEmbeddingConfig,
 )
 from agent.rag.schemas import (
     LocalModelDevice as AgentLocalModelDevice,
 )
 from core.config import AgentSettings, OpenAiConfig
+from core.config import EmbeddingProvider as CoreEmbeddingProvider
 from core.config import LocalModelDevice as CoreLocalModelDevice
 
 
@@ -31,9 +36,14 @@ class AgentConfigurationAssembler:
             raise RuntimeError("config.yaml에 openai 블록이 없어 Agent를 조립할 수 없습니다.")
         threshold = agent.retrieval.free_text_min_vector_similarity
         if threshold is None:
+            embedding_model = (
+                agent.embedding.openai_model.value
+                if agent.embedding.provider is CoreEmbeddingProvider.OPENAI
+                else agent.embedding.model.value
+            )
             raise RuntimeError(
                 "config.yaml의 agent.retrieval.free_text_min_vector_similarity를 "
-                "BGE-M3 검증값으로 설정해야 합니다."
+                f"{embedding_model} 검증값으로 설정해야 합니다."
             )
         return ProductionAgentConfig(
             openai=OpenAiChatConfig(
@@ -42,7 +52,7 @@ class AgentConfigurationAssembler:
                 timeout_seconds=openai.timeout_seconds,
                 max_retries=openai.max_retries,
             ),
-            embedding=self.create_embedding(agent),
+            embedding=self.create_embedding(openai, agent),
             reranker=LocalRerankerConfig(
                 model=LocalRerankerModel(agent.reranker.model.value),
                 device=self._device(agent.reranker.device),
@@ -58,13 +68,40 @@ class AgentConfigurationAssembler:
             ),
         )
 
-    def create_embedding(self, agent: AgentSettings) -> LocalEmbeddingConfig:
-        return LocalEmbeddingConfig(
-            model=LocalEmbeddingModel(agent.embedding.model.value),
-            device=self._device(agent.embedding.device),
-            batch_size=agent.embedding.batch_size,
-            cache_folder=agent.embedding.cache_folder,
-            local_files_only=agent.embedding.local_files_only,
+    def create_embedding(
+        self,
+        openai: OpenAiConfig | None,
+        agent: AgentSettings,
+    ) -> TextEmbeddingConfig:
+        openai_embedding = self._openai_embedding(openai, agent)
+        return TextEmbeddingConfig(
+            provider=EmbeddingProvider(agent.embedding.provider.value),
+            openai=openai_embedding,
+            local=LocalEmbeddingConfig(
+                model=LocalEmbeddingModel(agent.embedding.model.value),
+                device=self._device(agent.embedding.device),
+                batch_size=agent.embedding.batch_size,
+                cache_folder=agent.embedding.cache_folder,
+                local_files_only=agent.embedding.local_files_only,
+            ),
+        )
+
+    def _openai_embedding(
+        self,
+        openai: OpenAiConfig | None,
+        agent: AgentSettings,
+    ) -> OpenAiEmbeddingConfig | None:
+        if agent.embedding.provider is CoreEmbeddingProvider.LOCAL:
+            return None
+        if openai is None:
+            raise RuntimeError("OpenAI 임베딩을 선택했지만 config.yaml에 openai 블록이 없습니다.")
+        return OpenAiEmbeddingConfig(
+            api_key=SecretStr(openai.api_key),
+            model=OpenAiEmbeddingModel(agent.embedding.openai_model.value),
+            dimensions=agent.embedding.openai_dimensions,
+            batch_size=agent.embedding.openai_batch_size,
+            timeout_seconds=openai.timeout_seconds,
+            max_retries=openai.max_retries,
         )
 
     def _device(self, device: CoreLocalModelDevice | None) -> AgentLocalModelDevice | None:

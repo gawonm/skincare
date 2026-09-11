@@ -160,16 +160,16 @@ class RagIngestionService:
 
 
 class RagIngestionCommand:
-    """CLI에서도 애플리케이션과 같은 config.yaml 로컬 임베딩 설정을 사용한다."""
+    """CLI에서도 애플리케이션과 같은 config.yaml 임베딩 설정을 사용한다."""
 
     async def run(self, replace_mfds: bool, review_queue_path: Path) -> None:
         # 단위 테스트가 CLI용 config.yaml 유무에 종속되지 않도록 실행 시점에만 설정을 읽는다.
-        from agent.rag.embedding.local_embedder import LocalBgeM3Embedder
+        from agent.rag.embedding.factory import TextEmbedderFactory
         from backend.services.agent_configuration import AgentConfigurationAssembler
         from core.config import settings
 
-        embedder = LocalBgeM3Embedder(
-            AgentConfigurationAssembler().create_embedding(settings.agent)
+        embedder = TextEmbedderFactory().create(
+            AgentConfigurationAssembler().create_embedding(settings.openai, settings.agent)
         )
         if replace_mfds:
             await self._replace_mfds(embedder, review_queue_path)

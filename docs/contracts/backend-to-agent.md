@@ -1,6 +1,6 @@
 # Backend → Agent 호출 계약
 
-> 상태: **통합 방향 합의 — DB 차원·운영 저장소는 후속 확인 필요**
+> 상태: **통합 방향 합의 — 기존 DB 차원 유지·운영 저장소는 후속 확인 필요**
 >
 > 기준: `integration/llm-rag-main`의 agent 공개 계약
 >
@@ -13,8 +13,9 @@ RAG 검색 조정, 재정렬, 답변 생성과 대화 그래프를 소유한다.
 
 이번 통합에서 "현재 코드 버전으로 맞춘다"는 의미는 다음과 같다.
 
-- 기존 `OpenAiEmbedder`를 새 인터페이스에 맞춰 유지하지 않는다. 임베딩은 Agent가 조립하는
-  `LocalBgeM3Embedder` (`BAAI/bge-m3`)로 교체한다.
+- 기존 동기식 `OpenAiEmbedder` 구현은 유지하지 않는다. 현재 비동기 `TextEmbedder` 계약을
+  구현한 `OpenAiTextEmbedder` (`text-embedding-3-small`, 1536차원)를 기본 운영 임베더로
+  조립하고, `LocalBgeM3Embedder`는 설정으로 선택할 수 있게 유지한다.
 - 기존 `RagDocument`, `RetrievedChunk`, `RagQueryResult`와 UUID·tuple 기반 구조를 호환용
   복사본으로 남기지 않는다. Backend 어댑터가 ORM 조회 결과를 현재 Agent 소유 Pydantic DTO로
   변환한다.
@@ -58,6 +59,24 @@ class OpenAiChatConfig(RagModel):
     max_retries: int = Field(default=1, ge=0)
 
 
+class EmbeddingProvider(StrEnum):
+    OPENAI = "openai"
+    LOCAL = "local"
+
+
+class OpenAiEmbeddingModel(StrEnum):
+    TEXT_EMBEDDING_3_SMALL = "text-embedding-3-small"
+
+
+class OpenAiEmbeddingConfig(RagModel):
+    api_key: SecretStr
+    model: OpenAiEmbeddingModel = OpenAiEmbeddingModel.TEXT_EMBEDDING_3_SMALL
+    dimensions: int = Field(default=1536, ge=1)
+    batch_size: int = Field(default=100, ge=1)
+    timeout_seconds: float = Field(default=30, gt=0)
+    max_retries: int = Field(default=1, ge=0)
+
+
 class LocalEmbeddingModel(StrEnum):
     BGE_M3 = "BAAI/bge-m3"
 
@@ -68,6 +87,18 @@ class LocalEmbeddingConfig(RagModel):
     batch_size: int = Field(default=DEFAULT_EMBEDDING_BATCH_SIZE, ge=1)
     cache_folder: str | None = Field(default=None, min_length=1)
     local_files_only: bool = False
+
+
+class TextEmbeddingConfig(RagModel):
+    provider: EmbeddingProvider = EmbeddingProvider.LOCAL
+    openai: OpenAiEmbeddingConfig | None = None
+    local: LocalEmbeddingConfig = Field(default_factory=LocalEmbeddingConfig)
+
+    @model_validator(mode="after")
+    def validate_selected_provider(self) -> Self:
+        if self.provider is EmbeddingProvider.OPENAI and self.openai is None:
+            raise ValueError("OpenAI 임베딩을 선택하면 OpenAI 임베딩 설정이 필요합니다.")
+        return self
 
 
 class LocalRerankerModel(StrEnum):
@@ -91,12 +122,13 @@ class RagRetrievalPolicy(RagModel):
 
 class ProductionAgentConfig(AgentModel):
     openai: OpenAiChatConfig
-    embedding: LocalEmbeddingConfig = Field(default_factory=LocalEmbeddingConfig)
+    embedding: TextEmbeddingConfig = Field(default_factory=TextEmbeddingConfig)
     reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
     retrieval_policy: RagRetrievalPolicy
 ```
 
-`OpenAiChatConfig`·로컬 모델·검색 정책은 `agent/rag/schemas.py`,
+OpenAI API 키는 채팅과 OpenAI 임베딩 설정에 같은 `config.yaml` 값을 주입한다.
+`OpenAiChatConfig`·임베딩 선택·로컬 모델·검색 정책은 `agent/rag/schemas.py`,
 `ProductionAgentConfig`는 `agent/factory.py`가 소유한다. 샘플 설정에는 실제 API 키를 넣지 않는다.
 
 ## 3. 사용자 요청 호출
@@ -254,15 +286,15 @@ NIA Q&A는 현재 Agent에 대응하는 변환 계약이 없다. 기존 로더�
 - 동일 `request_id`의 본문 충돌과 처리 중 재요청은 각각 `REQUEST_CONFLICT`,
   `REQUEST_IN_PROGRESS`로 반환한다.
 - 그래프·도구·저장 실패는 `ChatTurnOutput.error_code`와 `retryable`에 반영한다.
-- 로컬 모델 로드, 임베딩 차원 불일치, 검색 모델 불일치는 예외 또는 `LookupStatus.ERROR`로
+- 외부 임베딩 API·로컬 모델 로드, 임베딩 차원 불일치, 검색 모델 불일치는 예외 또는
+  `LookupStatus.ERROR`로
   드러내며 빈 성공 결과로 숨기지 않는다.
 - Backend는 Agent가 반환한 오류를 HTTP 응답으로 변환하되 Agent 타입의 의미를 바꾸지 않는다.
 
 ## 7. 아직 합의가 필요한 항목
 
 - `config.yaml`에 OpenAI 키가 없을 때 서버 전체 기동을 막을지 Agent 기능만 비활성화할지
-- 1536차원 `rag_chunk.embedding`을 BGE-M3 1024차원으로 바꾸는 ERD·마이그레이션·재색인 계획
-- BGE-M3 검증셋으로 다시 정할 `free_text_min_vector_similarity`
+- 향후 로컬 BGE-M3로 전환할 경우의 1024차원 ERD·마이그레이션·재색인 계획과 검증 임계값
 - Agent 조립 객체의 lifespan 위치와 로컬 모델 캐시 볼륨
 - NIA Q&A의 유지 여부와, 유지한다면 data→agent DTO
 - `ChatTurnOutput`을 외부 HTTP 응답으로 노출할 backend→front 계약
@@ -271,7 +303,8 @@ NIA Q&A는 현재 Agent에 대응하는 변환 계약이 없다. 기존 로더�
 
 - Backend import와 FastAPI 기동이 성공한다.
 - 기존 main 테스트와 Agent 테스트가 함께 통과한다.
-- 운영 질의와 적재 모두 `OpenAiEmbedder`를 참조하지 않는다.
-- Intent·답변 생성만 `gpt-4o-mini`를 호출하고 임베딩·재정렬은 로컬 모델을 사용한다.
-- DB 벡터 차원과 BGE-M3 결과 차원이 일치하며 기존 데이터 재색인이 완료된다.
+- 운영 질의와 적재가 모두 선택된 `OpenAiTextEmbedder`를 사용한다.
+- Intent·답변 생성은 `gpt-4o-mini`, 임베딩은 `text-embedding-3-small`, 재정렬은 로컬
+  `BAAI/bge-reranker-v2-m3`를 사용한다.
+- OpenAI 임베딩 결과가 1536차원이며 기존 DB 벡터와 `embedding_model` 값이 일치한다.
 - 실제 DB를 사용한 vector/BM25 검색과 리랭킹 통합 테스트가 통과한다.

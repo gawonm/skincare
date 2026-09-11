@@ -21,6 +21,9 @@ from pydantic_settings import (
 from core.database import DatabaseConfig
 from core.redis import RedisConfig
 
+DEFAULT_OPENAI_EMBEDDING_DIMENSIONS = 1536
+DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE = 100
+
 
 class CookieSameSite(StrEnum):
     """세션 쿠키의 SameSite 정책. Starlette 응답 API가 받는 소문자 리터럴과 값을 맞춘다."""
@@ -70,6 +73,15 @@ class OpenAiChatModel(StrEnum):
     GPT_4O_MINI = "gpt-4o-mini"
 
 
+class EmbeddingProvider(StrEnum):
+    OPENAI = "openai"
+    LOCAL = "local"
+
+
+class OpenAiEmbeddingModel(StrEnum):
+    TEXT_EMBEDDING_3_SMALL = "text-embedding-3-small"
+
+
 class LocalEmbeddingModel(StrEnum):
     BGE_M3 = "BAAI/bge-m3"
 
@@ -85,7 +97,7 @@ class LocalModelDevice(StrEnum):
 
 
 class OpenAiConfig(PydanticBaseModel):
-    """Intent 분석·답변 생성에만 쓰는 OpenAI 설정."""
+    """Intent·답변 생성과 선택적 OpenAI 임베딩에서 공유하는 API 설정."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -95,9 +107,14 @@ class OpenAiConfig(PydanticBaseModel):
     max_retries: Annotated[int, Field(ge=0)] = 1
 
 
-class LocalEmbeddingSettings(PydanticBaseModel):
+class EmbeddingSettings(PydanticBaseModel):
     model_config = ConfigDict(frozen=True)
 
+    # 기존 설정 파일이 명시적으로 바뀌기 전에는 외부 API 호출로 전환되지 않게 로컬이 기본이다.
+    provider: EmbeddingProvider = EmbeddingProvider.LOCAL
+    openai_model: OpenAiEmbeddingModel = OpenAiEmbeddingModel.TEXT_EMBEDDING_3_SMALL
+    openai_dimensions: Annotated[int, Field(ge=1)] = DEFAULT_OPENAI_EMBEDDING_DIMENSIONS
+    openai_batch_size: Annotated[int, Field(ge=1)] = DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE
     model: LocalEmbeddingModel = LocalEmbeddingModel.BGE_M3
     device: LocalModelDevice | None = None
     batch_size: Annotated[int, Field(ge=1)] = 16
@@ -128,7 +145,7 @@ class RagRetrievalSettings(PydanticBaseModel):
 class AgentSettings(PydanticBaseModel):
     model_config = ConfigDict(frozen=True)
 
-    embedding: LocalEmbeddingSettings = LocalEmbeddingSettings()
+    embedding: EmbeddingSettings = EmbeddingSettings()
     reranker: LocalRerankerSettings = LocalRerankerSettings()
     retrieval: RagRetrievalSettings = RagRetrievalSettings()
 
@@ -162,9 +179,9 @@ class Settings(BaseSettings):
     auth: AuthConfig = AuthConfig()
     # `mfds` 블록이 없으면 None. MFDS 연동 스크립트를 실행할 때만 필요하다.
     mfds: MfdsConfig | None = None
-    # `openai` 블록이 없으면 None. Intent 분석·답변 생성을 실행할 때만 필요하다.
+    # `openai` 블록이 없으면 None. Intent·답변 생성 또는 OpenAI 임베딩을 실행할 때 필요하다.
     openai: OpenAiConfig | None = None
-    # 로컬 임베딩·리랭커와 검색 정책. 모델 추론에는 OpenAI 키를 사용하지 않는다.
+    # 선택형 임베딩·로컬 리랭커와 검색 정책.
     agent: AgentSettings = AgentSettings()
 
     @classmethod

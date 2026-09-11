@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, SecretStr, model
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_ROUTINE_FREQUENCY = 2
 DEFAULT_EMBEDDING_BATCH_SIZE = 16
+DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE = 100
+DEFAULT_OPENAI_EMBEDDING_DIMENSIONS = 1536
 DEFAULT_RERANKER_BATCH_SIZE = 8
 DEFAULT_RERANKER_MAX_LENGTH = 512
 DEFAULT_RERANK_CANDIDATE_LIMIT = 30
@@ -267,6 +269,15 @@ class OpenAiChatModel(StrEnum):
     GPT_4O_MINI = "gpt-4o-mini"
 
 
+class EmbeddingProvider(StrEnum):
+    OPENAI = "openai"
+    LOCAL = "local"
+
+
+class OpenAiEmbeddingModel(StrEnum):
+    TEXT_EMBEDDING_3_SMALL = "text-embedding-3-small"
+
+
 class LocalEmbeddingModel(StrEnum):
     BGE_M3 = "BAAI/bge-m3"
 
@@ -389,12 +400,36 @@ class OpenAiChatConfig(RagModel):
     max_retries: int = Field(default=1, ge=0)
 
 
+class OpenAiEmbeddingConfig(RagModel):
+    api_key: SecretStr
+    model: OpenAiEmbeddingModel = OpenAiEmbeddingModel.TEXT_EMBEDDING_3_SMALL
+    # DB의 vector(1536) 계약과 API 결과가 어긋나면 저장 전에 실패하도록 차원을 고정한다.
+    dimensions: int = Field(default=DEFAULT_OPENAI_EMBEDDING_DIMENSIONS, ge=1)
+    batch_size: int = Field(default=DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE, ge=1)
+    timeout_seconds: float = Field(default=30, gt=0)
+    max_retries: int = Field(default=1, ge=0)
+
+
 class LocalEmbeddingConfig(RagModel):
     model: LocalEmbeddingModel = LocalEmbeddingModel.BGE_M3
     device: LocalModelDevice | None = None
     batch_size: int = Field(default=DEFAULT_EMBEDDING_BATCH_SIZE, ge=1)
     cache_folder: str | None = Field(default=None, min_length=1)
     local_files_only: bool = False
+
+
+class TextEmbeddingConfig(RagModel):
+    """운영에서 선택한 임베더와 각 구현의 설정을 함께 운반한다."""
+
+    provider: EmbeddingProvider = EmbeddingProvider.LOCAL
+    openai: OpenAiEmbeddingConfig | None = None
+    local: LocalEmbeddingConfig = Field(default_factory=LocalEmbeddingConfig)
+
+    @model_validator(mode="after")
+    def validate_selected_provider(self) -> Self:
+        if self.provider is EmbeddingProvider.OPENAI and self.openai is None:
+            raise ValueError("OpenAI 임베딩을 선택하면 OpenAI 임베딩 설정이 필요합니다.")
+        return self
 
 
 class LocalRerankerConfig(RagModel):

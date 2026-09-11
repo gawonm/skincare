@@ -4,7 +4,8 @@
 
 `feature/llm-rag-pipeline`의 `6f710be`를 Agent 구현 기준으로 사용해
 `integration/llm-rag-main`에서 main `02ed955`를 통합한다. 아래 내용은 2026-09-11
-연결 검토와 사용자 합의 결과다. DB 차원 변경과 전체 운영 저장소 조립은 아직 완료되지 않았다.
+연결 검토와 사용자 합의 결과다. 기존 DB 차원은 유지하며 전체 운영 저장소 조립은 아직
+완료되지 않았다.
 
 agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결과 통합,
 근거 적용성·인용 검증, 답변 생성을 담당한다. DB 쿼리·트랜잭션·HTTP·인증 구현은
@@ -24,7 +25,7 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 | `agent/rag/schemas.py`, `agent/rag/ports.py` | RAG·상품 조회 DTO와 검색·임베딩·생성 계약 |
 | `agent/rag/loaders/data_records.py` | 주입받은 데이터 DTO를 성분·근거 DTO로 변환 |
 | `agent/rag/chunking/field_chunker.py` | 입력 문서의 필드 단위 청킹 및 조건 보존 |
-| `agent/rag/embedding/local_embedder.py` | BGE-M3 로컬 임베딩 비동기 추론 어댑터 |
+| `agent/rag/embedding/` | 선택형 OpenAI·BGE-M3 비동기 임베딩 어댑터와 조립 팩토리 |
 | `agent/rag/retrieval/` | 성분명 해석, 의도 분류, 하이브리드 검색 통합 및 BGE 리랭커 |
 | `agent/rag/generation/` | 문장별 인용과 조건 검사, 생성 모델 어댑터 |
 | `agent/rag/pipeline.py` | 적재용 청킹·임베딩과 질의용 검색·적용성·생성 조립 |
@@ -54,8 +55,10 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 미등록 코드와 미상인 속성을 요청 조건에 맞는 것으로 처리하지 않는다. `DevelopmentAgentFactory`는
 개발용 대체 구현을 사용한다. 운영 조립에서 이를 실제 DB 연결로 간주하지 않는다.
 
-`ProductionAgentFactory`는 Intent·답변 생성에 `gpt-4o-mini`, 임베딩에 `BAAI/bge-m3`,
-재정렬에 `BAAI/bge-reranker-v2-m3`를 연결한다. 모델 객체는 첫 사용 시 지연 로드한다.
+`ProductionAgentFactory`는 Intent·답변 생성에 `gpt-4o-mini`, 기본 운영 임베딩에
+`text-embedding-3-small` 1536차원, 재정렬에 로컬 `BAAI/bge-reranker-v2-m3`를 연결한다.
+`config.yaml`의 `agent.embedding.provider`를 `local`로 바꾸면 `BAAI/bge-m3`도 선택할 수
+있다. 로컬 모델 객체는 첫 사용 시 지연 로드한다.
 Backend의 `AgentConfigurationAssembler`가 `config.yaml`을 운영 설정으로 변환한다.
 다만 히스토리·상품·성분·루틴·체크포인터 구현이 모두 준비되지 않아
 `ProductionAgentFactory`를 완성된 애플리케이션 lifespan에서 호출하는 단계는 남아 있다.
@@ -72,12 +75,14 @@ Backend의 `AgentConfigurationAssembler`가 `config.yaml`을 운영 설정으로
 main의 다음 구형 파일은 최종 Agent 구성에서 제외했다. NIA 적재 기능을 대체 완료한 것으로
 표시하지 않으며, data→agent 계약이 합의되기 전에는 되살리지 않는다.
 
-- `agent/rag/embedding/openai_embedder.py`
 - `agent/rag/generation/prompts.py`
 - `agent/rag/loaders/evidence_loader.py`
 - `agent/rag/loaders/knowledge_fact_loader.py`
 - `agent/rag/loaders/nia_qa_loader.py`
 - `agent/rag/nia_labeling_schemas.py`
+
+main의 동기식 구형 `OpenAiEmbedder` 구현은 제거했고, 같은 경로에는 현재 `TextEmbedder` 비동기
+계약을 구현하는 `OpenAiTextEmbedder`를 새로 연결했다.
 
 최신 main을 현재 기능 브랜치에 병합하면 아래 8개 파일에서 실제 텍스트 충돌이 발생한다.
 Git은 충돌을 해결하기 전에는 병합 커밋을 완료할 수 없다. 따라서 **main을 기능 브랜치에 먼저
@@ -107,15 +112,15 @@ main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거
 - 구형 `RagQueryService`는 제거했고 `RagIngestionService`는 현재 비동기 포트로 전환했다.
 - `SqlAlchemyHybridSearchBackend.search`가 target 필터, vector/BM25 원점수, 상태 코드와
   후보 개수 계약을 구현한다. 실제 DB 통합 테스트는 아직 필요하다.
-- main의 `rag_chunk.embedding` 1536차원을 BGE-M3의 1024차원으로 바꾸려면 ERD 확인,
-  마이그레이션, 기존 청크 전체 재임베딩을 하나의 배포 절차로 합의한다.
-- OpenAI 기반으로 정한 자유 텍스트 유사도 `0.45`를 BGE-M3에 그대로 재사용하지 않고
-  별도 튜닝·검증셋으로 다시 정한다.
+- 현재 운영 선택인 `text-embedding-3-small`이 질의·적재 모두 1536차원을 반환하고 기존
+  `rag_chunk.embedding vector(1536)` 및 `embedding_model` 값과 일치하는지 확인한다.
+- 향후 `provider: local`로 바꿀 때만 BGE-M3의 1024차원에 맞춘 ERD 확인, 마이그레이션,
+  전체 재임베딩과 별도 유사도 임계값 검증을 하나의 배포 절차로 합의한다.
 - 애플리케이션 설정은 `config.yaml`만 사용한다. Backend가 OpenAI API 키와
   `gpt-4o-mini` 모델 설정을 읽어 `ProductionAgentConfig`에 주입하고, agent는 `.env`나
   환경변수를 직접 읽지 않는다. `.env`는 Docker Compose 변수에만 사용한다.
-- 모델 캐시의 컨테이너 경로·볼륨·최초 다운로드 정책을 정하고, 재시작 때마다 가중치를
-  다시 내려받지 않는지 확인한다.
+- 로컬 리랭커와 선택적 로컬 임베더의 모델 캐시 경로·볼륨·최초 다운로드 정책을 정하고,
+  재시작 때마다 가중치를 다시 내려받지 않는지 확인한다.
 - 최소 병합 게이트로 backend import/기동, 전체 단위 테스트, DB 검색·적재 통합 테스트를
   통과시킨다. 이 게이트 이후의 관측성·성능 튜닝은 후속 커밋으로 분리할 수 있다.
 
@@ -126,8 +131,9 @@ main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거
 .venv/bin/python -m agent.demo
 ```
 
-2026-09-11 agent 테스트 50개 통과를 확인했다. 기존 34개에 동적 분류 10개와 RAG 계약 6개를
-추가했다. DB 없는 대화 흐름·방 격리·후보 참조·실패 복구·데이터 DTO 변환 외에도 신규 분류,
+2026-09-11 agent 테스트 54개 통과를 확인했다. 기존 34개에 동적 분류 10개, RAG 계약 6개,
+임베딩 선택·차원 검사 4개를 추가했다. DB 없는 대화 흐름·방 격리·후보 참조·실패 복구·데이터
+DTO 변환 외에도 신규 분류,
 제형·사용감 분리, 폐기된 코드 차단, 조건 누락 후보 제외, 실제 상품 표시, 청킹→검색 통합→
 인용·조건 검증을 검사한다. 실제 DB 검색, 임베딩 API, 운영 연결의 검증은 아니다.
 

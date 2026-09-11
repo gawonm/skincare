@@ -1,6 +1,6 @@
 """저장소를 선택하지 않는 운영 조립과 DB 없는 개발용 조립.
 
-운영 조립은 GPT-4o mini 기반 Intent·답변 생성과 로컬 BGE 검색 모델을 연결한다.
+운영 조립은 GPT-4o mini 기반 Intent·답변 생성과 선택한 임베딩·로컬 BGE 리랭커를 연결한다.
 검색 임계값과 API 키는 호출자가 구조화 설정으로 전달하며 이 모듈은 설정 파일을 읽지 않는다.
 외부 체크포인터에는 CheckpointSerializerFactory의 직렬화 허용 타입을 적용해야 한다.
 """
@@ -36,7 +36,7 @@ from agent.ports import (
     RoutinePlanner,
 )
 from agent.prompts import PromptCatalog
-from agent.rag.embedding.local_embedder import LocalBgeM3Embedder
+from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.generation.openai_generator import OpenAiClaimGenerator
 from agent.rag.pipeline import EvidenceApplicabilityEvaluator, EvidencePipeline
@@ -44,11 +44,11 @@ from agent.rag.ports import EvidenceReranker, EvidenceRetriever, HybridSearchBac
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
 from agent.rag.schemas import (
-    LocalEmbeddingConfig,
     LocalRerankerConfig,
     OpenAiChatConfig,
     ProductTaxonomy,
     RagRetrievalPolicy,
+    TextEmbeddingConfig,
 )
 from agent.schemas import AgentModel, ContextLimits, ExecutionLimits
 from agent.service import ChatService, RequestIdentityFactory
@@ -118,7 +118,7 @@ class ProductionAgentConfig(AgentModel):
     """운영 모델 선택과 검색 정책. OpenAI 키는 SecretStr 상태로만 전달한다."""
 
     openai: OpenAiChatConfig
-    embedding: LocalEmbeddingConfig = Field(default_factory=LocalEmbeddingConfig)
+    embedding: TextEmbeddingConfig = Field(default_factory=TextEmbeddingConfig)
     reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
     retrieval_policy: RagRetrievalPolicy
 
@@ -149,7 +149,7 @@ class ProductionAgentApplication(AgentModel):
 
 
 class ProductionAgentFactory:
-    """GPT 호출과 로컬 검색 모델을 한 지점에서 명시적으로 조립한다."""
+    """GPT 호출과 설정에서 선택한 검색 모델을 한 지점에서 명시적으로 조립한다."""
 
     def create(
         self,
@@ -158,7 +158,7 @@ class ProductionAgentFactory:
         execution_limits: ExecutionLimits | None = None,
         context_limits: ContextLimits | None = None,
     ) -> ProductionAgentApplication:
-        embedder = LocalBgeM3Embedder(config.embedding)
+        embedder = TextEmbedderFactory().create(config.embedding)
         reranker = LocalBgeRerankerV2M3(config.reranker)
         evidence_retriever = HybridEvidenceRetriever(
             backend=dependencies.search_backend,
