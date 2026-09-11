@@ -113,3 +113,116 @@ event: error    data: {"detail": "..."}
 
 - `docs/contracts/backend-to-agent.md` (backend 가 초안, 아직 없음): 이 계약의 SSE 이벤트는
   에이전트가 낼 수 있는 것에서 나온다. backend 는 이 문서를 확정하기 전에 그쪽과 맞춰야 한다.
+
+---
+
+# front → backend: 회원가입 확장 (성별·연령대·약관동의)
+
+호출하는 쪽(front)이 쓴 초안이다. 확정 전이며, 아래 "아직 안 정한 것" 은 backend 담당과
+합의한 뒤 채운다. **합의 전에는 이 형태로 구현하지 않는다 (규칙 16).** 프론트 화면(UI)은
+피그마 시안대로 먼저 만들되, 아래 새 필드는 합의 전까지 실제로 `POST /auth/signup` 에
+실어 보내지 않는다 — 지금 계약(email/password/name)만 그대로 보낸다.
+
+## 배경
+
+피그마 회원가입 시안(node `93:25`, 파일 `2C2MK9s2UnKQMC3Hbm9O3X`)에 지금 계약에 없는
+입력이 추가됐다.
+
+- 비밀번호 재확인: 서버로 보내지 않는다. 프론트에서 비밀번호와 일치하는지만 확인하는
+  순수 클라이언트 검증이라 이 계약에 없다.
+- 성별, 연령대, 이용약관 동의: 서버가 저장해야 하는 값이라 계약·스키마·DB 변경이 필요하다.
+
+## 부르는 대상
+
+- `POST /auth/signup` (기존 엔드포인트, 요청 필드만 확장)
+
+## 입력
+
+- 타입 소유: 불리는 쪽(backend)이 소유한다 (규칙 11). 아래는 front 가 제안하는 형태이고,
+  최종 정의는 `backend/schemas/auth.py` 에 backend 가 작성한다.
+
+```python
+from enum import StrEnum
+
+from pydantic import BaseModel, EmailStr, Field, StringConstraints, field_validator
+from typing import Annotated
+
+
+class Gender(StrEnum):
+    FEMALE = "female"
+    MALE = "male"
+    UNSPECIFIED = "unspecified"
+
+
+class AgeGroup(StrEnum):
+    TEENS = "10s"
+    TWENTIES = "20s"
+    THIRTIES = "30s"
+    FORTIES = "40s"
+    FIFTIES_PLUS = "50s_plus"
+
+
+class SignupRequest(BaseModel):
+    email: EmailStr
+    password: PasswordStr  # 기존 정의 재사용
+    name: NameStr  # 기존 정의 재사용
+    gender: Gender
+    age_group: AgeGroup
+    # 체크박스를 안 누르면 프론트가 제출 버튼을 막지만, 서버도 값 자체는 받아서
+    # True 가 아니면 거부한다 — 클라이언트 검증을 서버가 못 믿는다는 전제(규칙 7 취지).
+    terms_agreed: bool
+```
+
+### 예시
+
+```json
+{
+  "email": "user@example.com",
+  "password": "abcd1234",
+  "name": "홍길동",
+  "gender": "female",
+  "age_group": "20s",
+  "terms_agreed": true
+}
+```
+
+## 출력
+
+- 기존 `UserResponse` 그대로 쓸지, `gender`/`age_group` 도 응답에 포함할지는 미정
+  (아래 "아직 안 정한 것" 참고).
+
+## 실패했을 때 (규칙 7)
+
+- `terms_agreed: false` 또는 누락: `422` (Pydantic 검증 실패로 자연히 발생).
+- 그 외 실패는 기존 계약과 동일 (이메일 중복 `409` 등).
+
+## 아직 안 정한 것
+
+임의로 채우지 않는다 (규칙 3). backend 담당과 합의 후 기록한다.
+
+- **DB 스키마 변경 필요 여부**: `gender`, `age_group` 을 `models.User` 컬럼으로 저장할지,
+  아니면 별도 프로필 테이블(피그마 "05 · 사용자 프로필" 화면과 연결되는 확장 정보)로
+  분리할지. 기존 테이블에 컬럼을 추가하거나 새 테이블을 만들면 규칙 14에 따라
+  `docs/erd/app.md` 를 먼저 고쳐서 사용자 확인을 받아야 한다 — 이 계약 문서만으로는
+  `models/` 를 만들지 않는다.
+- `terms_agreed` 를 DB에 값(true/false, 동의 시각)으로 남길지, 아니면 가입 게이트로만
+  쓰고 저장은 안 할지.
+- `UserResponse` 에 `gender`/`age_group` 포함 여부.
+- `gender`/`age_group` 이 필수 입력인지, 나중에 프로필에서 채워도 되는 선택 입력인지.
+  피그마 시안은 기본값이 이미 선택된 상태(여성·10대)로 보이지만, 실제로 필수로 강제할지는
+  UX 논의가 더 필요할 수 있다.
+
+## 절차 (규칙 16)
+
+1. (완료) front 가 이 초안을 작성한다.
+2. backend 담당에게 설명한다: 새로 필요한 3개 필드(gender, age_group, terms_agreed)와
+   그로 인한 잠재적 DB 스키마 변경(규칙 14 ERD 선행 필요)을 공유한다.
+3. "아직 안 정한 것" 을 논의해 확정한다. DB 변경이 필요하면 ERD 문서 승인까지 마친다.
+4. 확정 후 구현한다. backend 가 `backend/schemas/auth.py` 를 먼저 확장하고, front 가
+   `frontend/src/schemas/auth.ts` 를 그에 맞춰 미러링한 뒤 실제 제출 로직을 연결한다.
+5. front·backend 양쪽 `README.md` "관련 문서" 에 이 파일 링크를 건다.
+
+## 관련 문서
+
+- 피그마: `성분노트 MVP 와이어프레임` 파일, node `93:25` ("Overview / 회원가입")
+- 기존 계약(회원가입 email/password/name)의 실제 정의: `backend/schemas/auth.py`
