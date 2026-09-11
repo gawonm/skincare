@@ -310,6 +310,7 @@ class ProductTypeNormalized(StrEnum):
     SHEET_MASK = "sheet_mask"
     WASH_OFF_MASK = "wash_off_mask"
     SLEEPING_MASK = "sleeping_mask"
+    MASK = "mask"
     PATCH = "patch"
     SUNSCREEN = "sunscreen"
     MIST = "mist"
@@ -364,7 +365,7 @@ class ProductTaxonomyUpdate(BaseModel):
     source: str
     source_product_id: str
     product_type_normalized: ProductTypeNormalized | None
-    service_category: ServiceCategory | None
+    service_category: ProductServiceCategory | None
 
 # ProductRepository 메서드 제안
 async def update_taxonomy(self, input_: ProductTaxonomyUpdate) -> Product:
@@ -380,6 +381,47 @@ async def update_taxonomy(self, row: ProductCandidateRow) -> Product:
 잘못된 Enum 입력은 검증 오류로 실패한다. 서비스는 리포지토리에 변환된 입력을 넘기고,
 리포지토리는 commit하지 않는다. 기존 로더처럼 호출부에서 전체 성공 후 commit하는 것을 제안한다.
 분류 전용 갱신을 재실행해 값이 같으면 UPDATE하지 않도록 한다.
+
+### backend 담당자 구현 요청
+
+상태: **backend 구현 대기**. 아래 두 파일은 backend 파트가 소유하며 data 파트가 대신
+작성하지 않는다.
+
+```text
+backend/repositories/product_repository.py
+backend/services/product_service.py
+```
+
+구현할 내용:
+
+1. `ProductRepository`는 `(source, source_product_id)`로 기존 `Product`를 조회한다.
+2. `ProductUpsertInput`에 아래 두 필드를 추가하고 신규 생성과 기존 행 갱신 양쪽에 반영한다.
+
+   ```python
+   product_type_normalized: ProductTypeNormalized | None
+   service_category: ProductServiceCategory | None
+   ```
+
+3. `ProductService.ingest(row: ProductCandidateRow)`는 data Enum 값을
+   `models.product.ProductTypeNormalized`과 `ProductServiceCategory`로 변환해 리포지토리에 넘긴다.
+4. 기존 상품 백필용 `ProductService.update_taxonomy(row)`와
+   `ProductRepository.update_taxonomy(input_)`를 구현한다. 이 경로는 분류 두 필드만 변경하며
+   상품명·가격·관측 시각·매칭 상태·전성분 데이터는 변경하지 않는다.
+5. 리포지토리는 `commit`하지 않는다. 호출부가 전체 배치 성공 후 한 번 commit한다.
+6. 대상 상품이 없으면 새 상품을 만들지 않고 `LookupError`를 발생시킨다.
+7. 값이 기존 값과 같으면 불필요한 UPDATE를 실행하지 않는다.
+
+완료 조건:
+
+- 신규 상품 적재 시 두 분류 필드가 저장된다.
+- 기존 상품 전체 UPSERT 시 두 분류 필드가 최신 분류 결과로 갱신된다.
+- 분류 전용 백필에서는 다른 상품 필드가 그대로 유지된다.
+- `None`도 유효한 최신 분류 결과로 저장된다.
+- 같은 입력을 다시 실행하면 행이 늘어나지 않고 값이 바뀌지 않는다.
+- `product_ingredient_repository.py`, `product_ingredient_service.py`와 RAG 파일은 수정하지 않는다.
+
+backend 구현이 끝나면 data 파트가 `data/scripts/ingest_product_catalog.py`에
+`ProductTaxonomyNormalizer.apply()`를 연결하고 실제 백필을 검증한다.
 
 ### 담당 범위와 확인할 항목
 

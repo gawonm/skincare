@@ -55,6 +55,51 @@ class PriceBand(StrEnum):
     OVER_50K = "5만원 이상"
 
 
+class ProductTypeNormalized(StrEnum):
+    """`models.product.ProductTypeNormalized`과 값을 맞춘 제품 세부 유형."""
+
+    SERUM = "serum"
+    ESSENCE = "essence"
+    AMPOULE = "ampoule"
+    CREAM = "cream"
+    LOTION = "lotion"
+    EMULSION = "emulsion"
+    TONER = "toner"
+    TONER_PAD = "toner_pad"
+    CLEANSER = "cleanser"
+    CLEANSING_FOAM = "cleansing_foam"
+    CLEANSING_GEL = "cleansing_gel"
+    CLEANSING_OIL = "cleansing_oil"
+    CLEANSING_BALM = "cleansing_balm"
+    CLEANSING_WATER = "cleansing_water"
+    SHEET_MASK = "sheet_mask"
+    WASH_OFF_MASK = "wash_off_mask"
+    SLEEPING_MASK = "sleeping_mask"
+    MASK = "mask"
+    PATCH = "patch"
+    SUNSCREEN = "sunscreen"
+    MIST = "mist"
+    FACIAL_OIL = "facial_oil"
+    BALM = "balm"
+    SPOT_TREATMENT = "spot_treatment"
+    BOOSTER = "booster"
+    PEELING = "peeling"
+    ALL_IN_ONE = "all_in_one"
+
+
+class ServiceCategory(StrEnum):
+    """`models.product.ProductServiceCategory`와 값을 맞춘 화면용 그룹."""
+
+    ESSENCE_SERUM = "에센스·세럼"
+    AMPOULE = "앰플"
+    CREAM_LOTION = "크림·로션"
+    TONER_PAD = "토너·패드"
+    CLEANSER = "클렌저"
+    MASK_PATCH = "마스크·패치"
+    SUNCARE = "선케어"
+    OTHER = "기타"
+
+
 class ReviewReason(StrEnum):
     """`match_status=manual_review_required` 인 행이 정확히 왜 검토가 필요한지.
 
@@ -141,6 +186,8 @@ class ProductCandidateRow(BaseModel):
     category1: str
     category2: str
     category3: str
+    product_type_normalized: ProductTypeNormalized | None = None
+    service_category: ServiceCategory | None = None
     lowest_price: int
     highest_price: int
     price_band: PriceBand

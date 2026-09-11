@@ -306,7 +306,7 @@ erDiagram
 | cream, lotion, emulsion | 크림·로션 |
 | toner, toner_pad | 토너·패드 |
 | cleanser, cleansing_foam, cleansing_gel, cleansing_oil, cleansing_balm, cleansing_water | 클렌저 |
-| sheet_mask, wash_off_mask, sleeping_mask, patch | 마스크·패치 |
+| sheet_mask, wash_off_mask, sleeping_mask, mask, patch | 마스크·패치 |
 | sunscreen | 선케어 |
 | mist, facial_oil, balm, spot_treatment, booster, peeling, all_in_one | 기타 |
 | NULL | NULL |
