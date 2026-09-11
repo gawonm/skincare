@@ -12,8 +12,8 @@ export enum AuthEndpoint {
   Login = "/auth/login",
 }
 
-// TODO(contract): 아래 두 enum 은 `docs/contracts/front-to-backend.md` "회원가입 확장" 절의
-// 제안일 뿐, backend 와 합의 전이다(규칙 16). 값이 바뀌면 여기와 회원가입 화면만 고치면 된다.
+// `docs/contracts/front-to-backend.md` "회원가입 확장" 절(확정됨)에 맞춘 값. `models/user.py`
+// 의 `Gender`/`AgeGroup` 과 문자열 값이 같아야 한다 — 어긋나면 백엔드가 422 로 거부한다.
 export enum Gender {
   Female = "female",
   Male = "male",

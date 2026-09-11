@@ -5,6 +5,7 @@
  * 같이 바꿔야 하며, 그 전까지는 컴파일이 통과해도 런타임에서 어긋난다.
  */
 
+import type { AgeGroup, Gender } from "../constants/auth";
 import { AuthEndpoint } from "../constants/auth";
 import { fetchJson } from "./client";
 
@@ -19,6 +20,10 @@ export interface SignupRequest {
   email: string;
   password: string;
   name: string;
+  gender: Gender;
+  age_group: AgeGroup;
+  // 폼 검증(zod refine)이 true일 때만 제출을 허용하므로 여기서는 boolean으로 둔다.
+  terms_agreed: boolean;
 }
 
 /** `/auth/*` 성공 응답(`UserResponse`). `id`·`created_at` 은 문자열로 직렬화되어 온다. */
@@ -26,6 +31,8 @@ export interface UserResponse {
   id: string;
   email: string;
   name: string;
+  gender: Gender;
+  age_group: AgeGroup;
   is_active: boolean;
   created_at: string;
 }
