@@ -44,6 +44,17 @@ CLAUDE.md 규칙 15에 따라 `backend/` 전체가 backend 파트 소유다. dat
 DB에 넣는 서비스/리포지토리가 필요하면 직접 만들지 말고
 [docs/contracts/data-to-backend.md](../contracts/data-to-backend.md)에 계약만 쓴다(규칙 16).
 
+### 상품 taxonomy backfill은 Data 계획과 backend DB 실행을 분리한다
+
+`data/scripts/product_taxonomy_backfill.py`는 DB에 직접 접근하지 않고, DB에서 읽은 기존 상품을
+`ProductTaxonomyNormalizer`로 분류해 변경 계획과 전후 분포를 만든다. CSV를 읽지 않으므로
+CSV에만 있는 상품을 기존 DB backfill 대상으로 넣지 않는다.
+
+DB 조회·갱신은 규칙 12에 따라 `backend/repositories/`만 담당한다. 현재 일반 상품
+`ProductRepository`/`ProductService`가 없으므로 실제 backfill 실행 진입점은 아직 연결하지 않는다.
+taxonomy만을 위해 data 파트가 backend 파일을 만들거나 `data/scripts`에 SQLAlchemy 쿼리를 넣지
+않는다. 일반 상품 ingest용 backend 구현이 계약대로 들어온 뒤 같은 경로를 재사용한다.
+
 ### 상품 데이터를 다른 파트에 전달할 때
 
 - **이미지**: 파일로 전달하지 않는다. `product.image_url`(올리브영 CDN 원본)을 그대로 쓴다.

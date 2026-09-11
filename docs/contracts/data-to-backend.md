@@ -379,40 +379,45 @@ CSV에 새 컬럼이 없어도 None으로 읽으며, 빈 셀도 None으로 변�
   CSV에만 있는 상품을 backfill 도중 새로 생성하지 않는다.
 
 ```python
-# backend 소유: backend/repositories/product_repository.py
-# ProductUpsertInput 등과 동일하게 models.product의 ORM용 Enum을 사용한다.
-class ProductTaxonomyUpdate(BaseModel):
+# data 소유: data/scripts/product_taxonomy_backfill.py
+class ProductTaxonomyBackfillRow(BaseModel):
+    id: UUID
     source: str
     source_product_id: str
+    raw_title: str
+    display_title: str
+    category3: str | None
     product_type_normalized: ProductTypeNormalized | None
-    service_category: ProductServiceCategory | None
+    service_category: ServiceCategory | None
 
-# ProductRepository 메서드 제안
-async def list_for_taxonomy_backfill(self) -> list[Product]:
-    ...
+class ProductTaxonomyBackfillUpdate(BaseModel):
+    id: UUID
+    source: str
+    source_product_id: str
+    product_type_normalized: ProductTypeNormalized
+    service_category: ServiceCategory
 
-async def update_taxonomy(self, input_: ProductTaxonomyUpdate) -> Product:
-    ...
-
-# backend 소유: backend/services/product_service.py
-# 호출부는 이미 분류된 ProductCandidateRow를 넘긴다.
-async def update_taxonomy(self, row: ProductCandidateRow) -> Product:
-    ...
+class ProductTaxonomyBackfillPlan(BaseModel):
+    total_rows: int
+    update_rows: int
+    unchanged_rows: int
+    null_rows_before: int
+    null_rows_after: int
+    updates: list[ProductTaxonomyBackfillUpdate]
 ```
 
-기존 상품을 찾지 못하면 `LookupError`로 실패하고 새 상품을 생성하지 않는다.
-잘못된 Enum 입력은 검증 오류로 실패한다. 서비스는 리포지토리에 변환된 입력을 넘기고,
-리포지토리는 commit하지 않는다. 기존 로더처럼 호출부에서 전체 성공 후 commit하는 것을 제안한다.
-분류 전용 갱신을 재실행해 값이 같으면 UPDATE하지 않도록 한다.
+Data 계획기는 DB 조회·갱신을 하지 않는다. 실행 대상 DB의 상품 수와 식별자 중복을 검증하고,
+현재 taxonomy가 NULL이거나 이미 같은 값인 경우에만 결정적 변경 계획을 만든다. 기존 non-NULL
+분류가 현재 결과와 다르면 자동으로 덮어쓰지 않고 실패한다.
 
 ### migration과 backfill 실행 계약
 
 1. 로컬 `skincare` DB에서 현재 revision과 product 건수를 읽기 전용으로 기록한다.
 2. Alembic migration으로 nullable 분류 컬럼 두 개만 추가한다. migration에는 데이터 UPDATE를
    넣지 않아 상품이 없는 새 DB에서도 동일한 migration chain이 정상 완료돼야 한다.
-3. 로컬 backfill은 `list_for_taxonomy_backfill()`이 반환한 현재 DB 상품만 분류한다.
-4. 한 트랜잭션에서 `product_type_normalized`, `service_category`만 갱신하고 다른 필드의
-   전후 값을 검증한다. 실패하면 전체 rollback한다.
+3. 로컬 backfill은 일반 상품 repository가 반환한 현재 DB 상품만 Data 계획기에 넘긴다.
+4. backend 실행부는 계획의 식별자와 두 taxonomy 값만 받아 한 트랜잭션으로 갱신하고 다른
+   필드의 전후 값을 검증한다. 실패하면 전체 rollback한다.
 5. 재실행했을 때 변경 건수가 0인지 확인한다.
 6. `skincare-verify` 적용 직전에 revision, product 건수, 대상 컬럼 존재 여부를 다시 조회한다.
 7. 배포 migration과 backfill에 사용할 명령과 SQL을 사용자에게 먼저 보여주고 승인받는다.
@@ -449,13 +454,11 @@ backend/services/product_service.py
 
 3. `ProductService.ingest(row: ProductCandidateRow)`는 data Enum 값을
    `models.product.ProductTypeNormalized`과 `ProductServiceCategory`로 변환해 리포지토리에 넘긴다.
-4. 기존 상품 백필용 `ProductService.update_taxonomy(row)`와
-   `ProductRepository.update_taxonomy(input_)`를 구현한다. 이 경로는 분류 두 필드만 변경하며
-   상품명·가격·관측 시각·매칭 상태·전성분 데이터는 변경하지 않는다.
-5. `ProductRepository.list_for_taxonomy_backfill()`은 실행 대상 DB의 기존 상품을 반환한다.
-   backfill은 이 목록만 처리하고 CSV-only 상품을 생성하지 않는다.
+4. 일반 상품 ingest에 필요한 repository/service 구현 안에서 기존 상품 조회와 두 taxonomy 컬럼
+   갱신을 지원한다. taxonomy backfill만을 위한 별도 backend 계층은 만들지 않는다.
+5. backfill은 repository가 조회한 실행 대상 DB의 상품만 처리하고 CSV-only 상품을 생성하지 않는다.
 6. 리포지토리는 `commit`하지 않는다. 호출부가 전체 배치 성공 후 한 번 commit한다.
-7. 대상 상품이 없으면 새 상품을 만들지 않고 `LookupError`를 발생시킨다.
+7. 대상 상품이 없으면 새 상품을 만들지 않고 실패한다.
 8. 값이 기존 값과 같으면 불필요한 UPDATE를 실행하지 않는다.
 
 완료 조건:
@@ -468,7 +471,8 @@ backend/services/product_service.py
 - `product_ingredient_repository.py`, `product_ingredient_service.py`와 RAG 파일은 수정하지 않는다.
 
 backend 구현이 끝나면 data 파트가 `data/scripts/ingest_product_catalog.py`에
-`ProductTaxonomyNormalizer.apply()`를 연결하고 실제 백필을 검증한다.
+`ProductTaxonomyNormalizer.apply()`를 연결한다. 기존 상품 backfill은
+`ProductTaxonomyBackfillPlanner`의 계획을 같은 일반 상품 DB 경로로 적용해 검증한다.
 
 ### 담당 범위와 확인할 항목
 
