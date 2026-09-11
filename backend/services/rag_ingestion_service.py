@@ -1,59 +1,63 @@
-"""`Evidence`/`IngredientKnowledgeFact`/NIA Q&A를 읽어 `rag_chunk`에 적재하는 배치 진입점.
-
-`data/scripts/`에 두지 않는 이유: 이 파이프라인은 `agent/rag`(로더·청킹·임베딩)와
-`backend/repositories`(저장) 둘 다 필요한데, STRUCTURE.md 규칙상 `data/scripts/`는 `agent`,
-`backend`를 import할 수 없다. `backend/services/`는 이미 그 규칙에서 `agent`와 `repositories`
-양쪽을 부를 수 있는 계층이라 여기에 둔다.
-
-모든 `sync_*` 메서드는 재실행해도 안전하다(`RagChunkRepository.sync_documents` 참고) -
-같은 소스를 다시 적재해도 청크가 중복되지 않고, 원본에서 사라진 필드의 청크는 삭제되고,
-바뀌지 않은 청크는 그대로 둔다.
-
-사용법:
-    uv run python -m backend.services.rag_ingestion_service --nia-qa-zip "data/nia_qa/*.zip"
-"""
+"""근거 원본을 현재 Agent DTO로 변환해 설정에서 선택한 임베딩 청크로 적재한다."""
 
 import argparse
 import asyncio
-import glob
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.rag.chunking.field_chunker import FieldChunker
-from agent.rag.embedding.openai_embedder import OpenAiEmbedder
-from agent.rag.loaders.evidence_loader import EvidenceLoader
-from agent.rag.loaders.knowledge_fact_loader import IngredientKnowledgeFactLoader
-from agent.rag.loaders.nia_qa_loader import NiaQaLoader
 from agent.rag.pipeline import RagIngestionPipeline
-from agent.rag.schemas import EmbeddedChunk
+from agent.rag.ports import TextEmbedder
+from agent.rag.schemas import (
+    EmbeddedChunk,
+    EvidenceRecord,
+)
+from agent.rag.schemas import (
+    EvidenceSourceType as AgentEvidenceSourceType,
+)
 from backend.repositories.evidence_repository import EvidenceRepository
 from backend.repositories.ingredient_knowledge_fact_repository import (
     IngredientKnowledgeFactRepository,
 )
-from backend.repositories.ingredient_master_repository import IngredientMasterRepository
 from backend.repositories.rag_chunk_repository import (
     RagChunkInsert,
     RagChunkRepository,
     RagSyncResult,
 )
-from core.config import settings
-from core.database import Database
+from backend.services.rag_document_mapper import RagDocumentMapper
 from data.scripts.evidence_schemas import MfdsImportSummary, MfdsRestrictedIngredientItem
 from data.scripts.ingredient_name_matcher import IngredientNameMatcher
-from data.scripts.ingredient_name_normalizer import IngredientNameNormalizer
-from data.scripts.mfds_client import MfdsRestrictedIngredientClient
 from data.scripts.mfds_importer import MfdsRestrictedIngredientImporter
 from models.evidence import Evidence, EvidenceSourceType
-from models.rag_chunk import RagSourceTable
+from models.rag_chunk import RagChunkField, RagConfidenceTier, RagSourceTable
+
+
+class MfdsReplaceResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    summary: MfdsImportSummary
+    chunk_count: int
+
+
+class RagInsertSource(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source_table: RagSourceTable
+    evidence_id: UUID | None = None
+    ingredient_knowledge_fact_id: UUID | None = None
 
 
 class RagIngestionService:
-    """소스 3종을 전부 `rag_chunk`로 안전하게(재적재해도 중복 없이) 동기화한다. commit은 호출부가 한다."""
+    """DB 트랜잭션은 호출자에게 남기고 현재 Agent 청킹·임베딩 계약만 호출한다."""
 
-    def __init__(self, session: AsyncSession, embedder: OpenAiEmbedder) -> None:
+    def __init__(self, session: AsyncSession, embedder: TextEmbedder) -> None:
         self._session = session
+        self._documents = RagDocumentMapper()
         self._pipeline = RagIngestionPipeline(FieldChunker(), embedder)
         self._evidence_repository = EvidenceRepository(session)
         self._knowledge_fact_repository = IngredientKnowledgeFactRepository(session)
@@ -61,31 +65,20 @@ class RagIngestionService:
 
     async def sync_evidence(self) -> RagSyncResult:
         rows = await self._evidence_repository.list_all()
-        documents = EvidenceLoader().load(rows)
-        embedded = self._pipeline.run(documents)
-        inserts = self._to_inserts(embedded)
-        fetched_refs = [str(row.id) for row in rows]
+        embedded = await self._pipeline.run(self._documents.evidence(rows))
         return await self._rag_chunk_repository.sync_documents(
-            RagSourceTable.EVIDENCE, fetched_refs, inserts
+            RagSourceTable.EVIDENCE,
+            [str(row.id) for row in rows],
+            self._to_inserts(embedded),
         )
 
     async def sync_knowledge_facts(self) -> RagSyncResult:
         rows = await self._knowledge_fact_repository.list_all()
-        documents = IngredientKnowledgeFactLoader().load(rows)
-        embedded = self._pipeline.run(documents)
-        inserts = self._to_inserts(embedded)
-        fetched_refs = [str(row.id) for row in rows]
+        embedded = await self._pipeline.run(self._documents.knowledge(rows))
         return await self._rag_chunk_repository.sync_documents(
-            RagSourceTable.INGREDIENT_KNOWLEDGE_FACT, fetched_refs, inserts
-        )
-
-    async def sync_nia_qa(self, zip_paths: list[Path]) -> RagSyncResult:
-        documents = NiaQaLoader().load(zip_paths)
-        embedded = self._pipeline.run(documents)
-        inserts = self._to_inserts(embedded)
-        fetched_refs = [document.nia_record_id for document in documents if document.nia_record_id]
-        return await self._rag_chunk_repository.sync_documents(
-            RagSourceTable.NIA_QA, fetched_refs, inserts
+            RagSourceTable.INGREDIENT_KNOWLEDGE_FACT,
+            [str(row.id) for row in rows],
+            self._to_inserts(embedded),
         )
 
     async def replace_mfds_evidence_and_reindex(
@@ -93,26 +86,17 @@ class RagIngestionService:
         items: list[MfdsRestrictedIngredientItem],
         matcher: IngredientNameMatcher,
         review_queue_path: Path,
-    ) -> tuple[MfdsImportSummary, int]:
-        """MFDS `Evidence` 전량 교체와 그 RAG 재적재를 하나의 트랜잭션으로 확정한다.
-
-        두 단계(Evidence 교체 → RAG 재적재)를 순서대로 따로 실행하면, Evidence 삭제가
-        먼저 커밋된 뒤 임베딩이 실패할 경우 검색 데이터가 사라진 채 복구되지 않는다. 그래서
-        새 Evidence와 그 임베딩까지 **전부 메모리에서 준비를 끝낸 뒤에만** DB 쓰기(옛 Evidence
-        삭제 + 새 Evidence/청크 삽입)를 시작한다 - DB 쓰기 단계에서 실패해도 호출부가 commit을
-        안 하면 옛 데이터가 삭제 이전 상태로 롤백된다.
-        """
+    ) -> MfdsReplaceResult:
+        """새 Evidence와 임베딩 준비가 끝난 뒤에만 기존 데이터를 교체한다."""
         importer = MfdsRestrictedIngredientImporter(self._session, matcher, review_queue_path)
         rows_to_insert, review_entries = importer.build_new_rows(items)
-
-        # 아직 세션에 추가하지 않은 transient 객체 - EvidenceLoader가 속성만 읽으므로
-        # DB에 있든 없든 상관없이 동작한다. id는 build_new_rows가 미리 uuid4()로 채워뒀다.
-        pending_evidence = [Evidence(**row) for row in rows_to_insert]
-        documents = EvidenceLoader().load(pending_evidence)
-        embedded = self._pipeline.run(documents)
+        collected_at = datetime.now(UTC)
+        # 서버 기본값은 INSERT 뒤에 생기므로 임베딩용 DTO를 먼저 만들 때도 같은 수집 시각을 넣는다.
+        pending_evidence = [Evidence(**row, collected_at=collected_at) for row in rows_to_insert]
+        embedded = await self._pipeline.run(self._documents.evidence(pending_evidence))
         inserts = self._to_inserts(embedded)
 
-        # 여기서부터 DB 쓰기 - 실패하면 호출부가 commit하지 않아 전부 롤백된다.
+        # 임베딩까지 성공한 뒤 DB를 바꿔야 실패 시 호출자가 기존 상태로 롤백할 수 있다.
         await self._session.execute(
             delete(Evidence).where(
                 Evidence.source_type == EvidenceSourceType.MFDS_RESTRICTED_INGREDIENT
@@ -122,138 +106,147 @@ class RagIngestionService:
             self._session.add_all(pending_evidence)
         if inserts:
             await self._rag_chunk_repository.save_many(inserts)
-
         importer.write_review_queue(review_entries)
-
-        summary = MfdsImportSummary(
-            total_items=len(items),
-            inserted=len(rows_to_insert),
-            manual_review=len(review_entries),
+        return MfdsReplaceResult(
+            summary=MfdsImportSummary(
+                total_items=len(items),
+                inserted=len(rows_to_insert),
+                manual_review=len(review_entries),
+            ),
+            chunk_count=len(inserts),
         )
-        return summary, len(inserts)
 
     def _to_inserts(self, embedded: list[EmbeddedChunk]) -> list[RagChunkInsert]:
-        return [
-            RagChunkInsert(
-                ingredient_id=chunk.draft.ingredient_id,
-                source_table=chunk.draft.source_table,
-                evidence_id=chunk.draft.evidence_id,
-                ingredient_knowledge_fact_id=chunk.draft.ingredient_knowledge_fact_id,
-                nia_record_id=chunk.draft.nia_record_id,
-                chunk_field=chunk.draft.chunk_field,
-                chunk_index=chunk.draft.chunk_index,
-                content=chunk.draft.content,
-                embedding=chunk.vector,
-                embedding_model=chunk.embedding_model,
-                confidence_tier=chunk.draft.metadata.confidence_tier,
-                cites_cir=chunk.draft.metadata.cites_cir,
-                source_title=chunk.draft.metadata.source_title,
-                source_url=chunk.draft.metadata.source_url,
-                citation_refs=chunk.draft.metadata.citation_refs,
-            )
-            for chunk in embedded
-        ]
+        return [self._to_insert(chunk) for chunk in embedded]
 
-
-async def _run_mfds_replace(review_queue_path: Path) -> None:
-    """MFDS 전량 재수집 -> Evidence 교체 -> RAG 재적재를 한 번에, 한 트랜잭션으로 실행한다.
-
-    "MFDS 재수집하고 나중에 따로 RAG 재적재"처럼 두 명령으로 나눠 실행하지 않는다 -
-    그 사이에 죽으면 Evidence는 새로 바뀌었는데 rag_chunk는 옛 내용을 가리키는 상태가 된다.
-    """
-    if settings.mfds is None:
-        raise RuntimeError("config.yaml에 mfds.service_key가 없습니다.")
-    if settings.openai is None:
-        raise RuntimeError("config.yaml에 openai 블록이 없습니다.")
-
-    client = MfdsRestrictedIngredientClient(settings.mfds)
-    try:
-        print("MFDS API에서 화장품 사용제한 원료정보를 수집하는 중...")
-        items = await client.fetch_all()
-    finally:
-        await client.close()
-    print(f"MFDS API에서 {len(items)}건을 받았습니다.")
-
-    embedder = OpenAiEmbedder(
-        api_key=settings.openai.api_key, model=settings.openai.embedding_model
-    )
-    database = Database(settings.database)
-    try:
-        async with database.session_factory() as session:
-            candidates = await IngredientMasterRepository(session).list_all_as_candidates()
-            if not candidates:
-                raise RuntimeError("IngredientMaster가 비어 있습니다.")
-            matcher = IngredientNameMatcher(candidates, IngredientNameNormalizer())
-            service = RagIngestionService(session, embedder)
-            summary, chunk_count = await service.replace_mfds_evidence_and_reindex(
-                items, matcher, review_queue_path
-            )
-            await session.commit()
-    finally:
-        await database.dispose()
-
-    print(
-        f"Evidence 교체 완료: 총 {summary.total_items}건 "
-        f"(매칭 {summary.inserted}건, 수동 검토 {summary.manual_review}건), RAG 청크 {chunk_count}건"
-    )
-
-
-async def _run(nia_qa_zip_glob: str | None) -> None:
-    if settings.openai is None:
-        raise RuntimeError(
-            "config.yaml에 openai 블록이 없습니다. RAG 적재를 실행하려면 api_key를 채워야 합니다."
+    def _to_insert(self, chunk: EmbeddedChunk) -> RagChunkInsert:
+        evidence = chunk.draft.evidence
+        source = self._source(evidence)
+        return RagChunkInsert(
+            ingredient_id=self._ingredient_id(evidence),
+            source_table=source.source_table,
+            evidence_id=source.evidence_id,
+            ingredient_knowledge_fact_id=source.ingredient_knowledge_fact_id,
+            nia_record_id=None,
+            chunk_field=RagChunkField(chunk.draft.field_id),
+            chunk_index=0,
+            content=chunk.draft.content,
+            embedding=list(chunk.vector.values),
+            embedding_model=chunk.embedding_model,
+            confidence_tier=RagConfidenceTier(chunk.draft.confidence_tier.value),
+            cites_cir=bool(
+                evidence.source_reference and "CIR" in evidence.source_reference.upper()
+            ),
+            source_title=evidence.source_title,
+            source_url=evidence.url,
+            citation_refs=[evidence.source_reference] if evidence.source_reference else [],
         )
 
-    embedder = OpenAiEmbedder(
-        api_key=settings.openai.api_key, model=settings.openai.embedding_model
-    )
-    database = Database(settings.database)
-    try:
-        async with database.session_factory() as session:
-            service = RagIngestionService(session, embedder)
+    def _source(self, evidence: EvidenceRecord) -> RagInsertSource:
+        source_id = UUID(evidence.evidence_id)
+        if evidence.source_type is AgentEvidenceSourceType.MFDS:
+            return RagInsertSource(source_table=RagSourceTable.EVIDENCE, evidence_id=source_id)
+        if evidence.source_type is AgentEvidenceSourceType.INGREDIENT_KNOWLEDGE:
+            return RagInsertSource(
+                source_table=RagSourceTable.INGREDIENT_KNOWLEDGE_FACT,
+                ingredient_knowledge_fact_id=source_id,
+            )
+        raise ValueError(f"현재 DB 적재가 지원하지 않는 근거 출처입니다: {evidence.source_type}")
 
-            evidence_result = await service.sync_evidence()
-            print(f"Evidence 동기화: {evidence_result}")
-
-            knowledge_result = await service.sync_knowledge_facts()
-            print(f"IngredientKnowledgeFact 동기화: {knowledge_result}")
-
-            if nia_qa_zip_glob:
-                zip_paths = [Path(path) for path in glob.glob(nia_qa_zip_glob)]
-                if not zip_paths:
-                    raise RuntimeError(f"'{nia_qa_zip_glob}' 패턴에 맞는 zip 파일이 없습니다.")
-                nia_result = await service.sync_nia_qa(zip_paths)
-                print(f"NIA Q&A 동기화({len(zip_paths)}개 zip): {nia_result}")
-
-            await session.commit()
-    finally:
-        await database.dispose()
+    def _ingredient_id(self, evidence: EvidenceRecord) -> UUID:
+        if len(evidence.target_ids) != 1:
+            raise ValueError("현재 성분 RAG 청크는 정확히 하나의 성분 ID가 필요합니다.")
+        return UUID(evidence.target_ids[0])
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--nia-qa-zip",
-        default=None,
-        help="NIA Q-CoT-A 라벨링데이터 zip 경로 glob 패턴. 생략하면 NIA는 적재하지 않는다.",
-    )
-    parser.add_argument(
-        "--mfds-replace",
-        action="store_true",
-        help="MFDS 전량 재수집 + Evidence 교체 + RAG 재적재를 한 트랜잭션으로 실행하고 종료한다"
-        "(다른 소스는 건드리지 않는다).",
-    )
-    parser.add_argument(
-        "--mfds-review-queue-path",
-        type=Path,
-        default=Path("data/manual_review/mfds_ingredient_match_queue.csv"),
-    )
-    args = parser.parse_args()
-    if args.mfds_replace:
-        asyncio.run(_run_mfds_replace(args.mfds_review_queue_path))
-    else:
-        asyncio.run(_run(args.nia_qa_zip))
+class RagIngestionCommand:
+    """CLI에서도 애플리케이션과 같은 config.yaml 임베딩 설정을 사용한다."""
+
+    async def run(self, replace_mfds: bool, review_queue_path: Path) -> None:
+        # 단위 테스트가 CLI용 config.yaml 유무에 종속되지 않도록 실행 시점에만 설정을 읽는다.
+        from agent.rag.embedding.factory import TextEmbedderFactory
+        from backend.services.agent_configuration import AgentConfigurationAssembler
+        from core.config import settings
+
+        embedder = TextEmbedderFactory().create(
+            AgentConfigurationAssembler().create_embedding(settings.openai, settings.agent)
+        )
+        if replace_mfds:
+            await self._replace_mfds(embedder, review_queue_path)
+            return
+        await self._sync(embedder)
+
+    async def _replace_mfds(self, embedder: TextEmbedder, review_queue_path: Path) -> None:
+        from backend.repositories.ingredient_master_repository import IngredientMasterRepository
+        from core.config import settings
+        from core.database import Database
+        from data.scripts.ingredient_name_normalizer import IngredientNameNormalizer
+        from data.scripts.mfds_client import MfdsRestrictedIngredientClient
+
+        if settings.mfds is None:
+            raise RuntimeError("config.yaml에 mfds.service_key가 없습니다.")
+        client = MfdsRestrictedIngredientClient(settings.mfds)
+        try:
+            items = await client.fetch_all()
+        finally:
+            await client.close()
+        database = Database(settings.database)
+        try:
+            async with database.session_factory() as session:
+                candidates = await IngredientMasterRepository(session).list_all_as_candidates()
+                if not candidates:
+                    raise RuntimeError("IngredientMaster가 비어 있습니다.")
+                matcher = IngredientNameMatcher(candidates, IngredientNameNormalizer())
+                result = await RagIngestionService(
+                    session, embedder
+                ).replace_mfds_evidence_and_reindex(items, matcher, review_queue_path)
+                await session.commit()
+        finally:
+            await database.dispose()
+        print(
+            f"Evidence 교체 완료: 총 {result.summary.total_items}건 "
+            f"(매칭 {result.summary.inserted}건, 수동 검토 {result.summary.manual_review}건), "
+            f"RAG 청크 {result.chunk_count}건"
+        )
+
+    async def _sync(self, embedder: TextEmbedder) -> None:
+        from core.config import settings
+        from core.database import Database
+
+        database = Database(settings.database)
+        try:
+            async with database.session_factory() as session:
+                service = RagIngestionService(session, embedder)
+                evidence = await service.sync_evidence()
+                knowledge = await service.sync_knowledge_facts()
+                await session.commit()
+        finally:
+            await database.dispose()
+        print(f"Evidence 동기화: {evidence}")
+        print(f"IngredientKnowledgeFact 동기화: {knowledge}")
+
+
+class RagIngestionArgumentParser:
+    def create(self) -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument(
+            "--mfds-replace",
+            action="store_true",
+            help="MFDS 전량 재수집과 RAG 재적재를 한 트랜잭션으로 실행합니다.",
+        )
+        parser.add_argument(
+            "--mfds-review-queue-path",
+            type=Path,
+            default=Path("data/manual_review/mfds_ingredient_match_queue.csv"),
+        )
+        return parser
+
+
+class RagIngestionEntryPoint:
+    def run(self) -> None:
+        args = RagIngestionArgumentParser().create().parse_args()
+        asyncio.run(RagIngestionCommand().run(args.mfds_replace, args.mfds_review_queue_path))
 
 
 if __name__ == "__main__":
-    main()
+    RagIngestionEntryPoint().run()

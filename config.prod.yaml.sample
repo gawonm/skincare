@@ -13,6 +13,9 @@ database:
     - models.evidence
     - models.ingredient
     - models.ingredient_knowledge
+    - models.product
+    - models.product_ingredient
+    - models.rag_chunk
     - models.user
 
 redis:
@@ -34,3 +37,35 @@ auth:
 
 # 배포 컨테이너는 MFDS 수집 스크립트를 실행하지 않으므로 mfds 블록이 없어도 된다.
 # 컨테이너 안에서 그 스크립트를 돌릴 일이 생기면 그때 추가한다.
+
+# 실제 키는 이 샘플이 아니라 배포 호스트의 config.yaml에만 입력한다.
+openai:
+  api_key: "OpenAI API 키"
+  chat_model: gpt-4o-mini
+  timeout_seconds: 30
+  max_retries: 1
+
+agent:
+  embedding:
+    # 현재 DB vector(1536)와 기존 색인을 그대로 사용한다.
+    provider: openai
+    openai_model: text-embedding-3-small
+    openai_dimensions: 1536
+    openai_batch_size: 100
+    # provider: local을 선택할 때 사용하는 설정이다.
+    model: BAAI/bge-m3
+    device: null
+    batch_size: 16
+    cache_folder: null
+    local_files_only: false
+  reranker:
+    model: BAAI/bge-reranker-v2-m3
+    device: null
+    batch_size: 8
+    max_length: 512
+    cache_folder: null
+    local_files_only: false
+  retrieval:
+    free_text_min_vector_similarity: 0.45
+    rrf_k: 60
+    rerank_candidate_limit: 30

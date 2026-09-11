@@ -1,59 +1,50 @@
-from uuid import uuid4
-
 from agent.rag.retrieval.ingredient_mention_resolver import IngredientMentionResolver
-from data.scripts.ingredient_schemas import IngredientCandidate
+from agent.rag.schemas import IngredientRecord, IngredientResolveRequest, LookupStatus
 
 
-def _candidate(standard_name_ko: str, old_names_ko: tuple[str, ...] = ()) -> IngredientCandidate:
-    return IngredientCandidate(
-        ingredient_id=uuid4(),
-        standard_name_ko=standard_name_ko,
-        standard_name_en=None,
-        old_names_ko=old_names_ko,
-        old_names_en=(),
-        normalized_name_ko=standard_name_ko,
-        normalized_name_en=None,
-    )
+class TestIngredientMentionResolver:
+    def _ingredient(
+        self, ingredient_id: str, canonical_name: str, aliases: list[str] | None = None
+    ) -> IngredientRecord:
+        return IngredientRecord(
+            ingredient_id=ingredient_id,
+            canonical_name=canonical_name,
+            aliases=aliases or [],
+            is_demo=False,
+        )
 
+    def test_resolves_unambiguous_mention(self) -> None:
+        ingredient = self._ingredient("1", "나이아신아마이드")
+        result = IngredientMentionResolver([ingredient]).resolve(
+            IngredientResolveRequest(name="나이아신아마이드 세럼 자극 있나요?")
+        )
 
-def test_resolves_unambiguous_mention() -> None:
-    niacinamide = _candidate("나이아신아마이드")
-    resolver = IngredientMentionResolver([niacinamide])
+        assert result.status is LookupStatus.SUCCESS
+        assert result.ingredient == ingredient
 
-    resolutions = resolver.resolve("나이아신아마이드 세럼 자극 있나요?")
+    def test_longer_name_wins_over_substring(self) -> None:
+        short = self._ingredient("1", "나이아신")
+        long = self._ingredient("2", "나이아신아마이드")
+        result = IngredientMentionResolver([short, long]).resolve(
+            IngredientResolveRequest(name="나이아신아마이드 써도 되나요?")
+        )
 
-    assert len(resolutions) == 1
-    assert resolutions[0].ingredient_id == niacinamide.ingredient_id
-    assert not resolutions[0].ambiguous
+        assert result.ingredient == long
 
+    def test_ambiguous_name_returns_candidates_without_picking_one(self) -> None:
+        first = self._ingredient("1", "동명이인성분", ["공용명"])
+        second = self._ingredient("2", "다른표준명", ["공용명"])
+        result = IngredientMentionResolver([first, second]).resolve(
+            IngredientResolveRequest(name="공용명")
+        )
 
-def test_longer_name_wins_over_substring() -> None:
-    niacin = _candidate("나이아신")
-    niacinamide = _candidate("나이아신아마이드")
-    resolver = IngredientMentionResolver([niacin, niacinamide])
+        assert result.status is LookupStatus.SUCCESS
+        assert result.ingredient is None
+        assert {item.ingredient_id for item in result.ambiguous_candidates} == {"1", "2"}
 
-    resolutions = resolver.resolve("나이아신아마이드 써도 되나요?")
+    def test_unregistered_synonym_is_not_guessed(self) -> None:
+        resolver = IngredientMentionResolver([self._ingredient("1", "아스코빅애씨드")])
 
-    # "나이아신"이 "나이아신아마이드" 안의 부분 문자열일 뿐이므로 별도 언급으로 잡히면 안 된다.
-    assert len(resolutions) == 1
-    assert resolutions[0].ingredient_id == niacinamide.ingredient_id
+        result = resolver.resolve(IngredientResolveRequest(name="비타민C"))
 
-
-def test_ambiguous_name_returns_candidates_without_picking_one() -> None:
-    a = _candidate("동명이인성분", old_names_ko=("공용명",))
-    b = _candidate("다른표준명", old_names_ko=("공용명",))
-    resolver = IngredientMentionResolver([a, b])
-
-    resolutions = resolver.resolve("공용명 괜찮나요?")
-
-    assert len(resolutions) == 1
-    assert resolutions[0].ambiguous
-    assert resolutions[0].ingredient_id is None
-    assert set(resolutions[0].candidate_ingredient_ids) == {a.ingredient_id, b.ingredient_id}
-
-
-def test_unregistered_synonym_is_not_guessed() -> None:
-    resolver = IngredientMentionResolver([_candidate("아스코빅애씨드")])
-
-    # "비타민C"가 old_names_ko에 등록돼 있지 않으면 잡지 않는다 - 임의로 확정하지 않는다.
-    assert resolver.resolve("비타민C 세럼 괜찮나요?") == []
+        assert result.status is LookupStatus.NO_RESULTS

@@ -21,6 +21,10 @@ from pydantic_settings import (
 from core.database import DatabaseConfig
 from core.redis import RedisConfig
 
+DEFAULT_OPENAI_EMBEDDING_DIMENSIONS = 1536
+DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE = 100
+DEFAULT_OPENAI_FREE_TEXT_MIN_VECTOR_SIMILARITY = 0.45
+
 
 class CookieSameSite(StrEnum):
     """세션 쿠키의 SameSite 정책. Starlette 응답 API가 받는 소문자 리터럴과 값을 맞춘다."""
@@ -66,19 +70,85 @@ class MfdsConfig(PydanticBaseModel):
     )
 
 
-class OpenAiConfig(PydanticBaseModel):
-    """`config.yaml`의 `openai` 블록. RAG 임베딩·답변 생성에 쓰는 OpenAI 인증·모델 설정.
+class OpenAiChatModel(StrEnum):
+    GPT_4O_MINI = "gpt-4o-mini"
 
-    API 키는 비밀값이라 `.env`가 아니라 여기(`config.yaml`, gitignore 대상)에 둔다.
-    임베딩 모델을 바꾸면 기존 `rag_chunk.embedding` 벡터를 전부 다시 만들어야 하므로,
-    모델명은 기본값을 두되 바꿀 때는 재임베딩이 필요하다는 걸 알고 바꿔야 한다.
-    """
+
+class EmbeddingProvider(StrEnum):
+    OPENAI = "openai"
+    LOCAL = "local"
+
+
+class OpenAiEmbeddingModel(StrEnum):
+    TEXT_EMBEDDING_3_SMALL = "text-embedding-3-small"
+
+
+class LocalEmbeddingModel(StrEnum):
+    BGE_M3 = "BAAI/bge-m3"
+
+
+class LocalRerankerModel(StrEnum):
+    BGE_RERANKER_V2_M3 = "BAAI/bge-reranker-v2-m3"
+
+
+class LocalModelDevice(StrEnum):
+    CPU = "cpu"
+    CUDA = "cuda"
+    MPS = "mps"
+
+
+class OpenAiConfig(PydanticBaseModel):
+    """Intent·답변 생성과 선택적 OpenAI 임베딩에서 공유하는 API 설정."""
 
     model_config = ConfigDict(frozen=True)
 
     api_key: Annotated[str, Field(min_length=1)]
-    embedding_model: Annotated[str, Field(min_length=1)] = "text-embedding-3-small"
-    chat_model: Annotated[str, Field(min_length=1)] = "gpt-4.1-mini"
+    chat_model: OpenAiChatModel = OpenAiChatModel.GPT_4O_MINI
+    timeout_seconds: Annotated[float, Field(gt=0)] = 30
+    max_retries: Annotated[int, Field(ge=0)] = 1
+
+
+class EmbeddingSettings(PydanticBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    # 현재 rag_chunk vector(1536)와 맞는 모델이 기본이어야 설정 누락이 DB 오류로 이어지지 않는다.
+    provider: EmbeddingProvider = EmbeddingProvider.OPENAI
+    openai_model: OpenAiEmbeddingModel = OpenAiEmbeddingModel.TEXT_EMBEDDING_3_SMALL
+    openai_dimensions: Annotated[int, Field(ge=1)] = DEFAULT_OPENAI_EMBEDDING_DIMENSIONS
+    openai_batch_size: Annotated[int, Field(ge=1)] = DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE
+    model: LocalEmbeddingModel = LocalEmbeddingModel.BGE_M3
+    device: LocalModelDevice | None = None
+    batch_size: Annotated[int, Field(ge=1)] = 16
+    cache_folder: Annotated[str | None, Field(min_length=1)] = None
+    local_files_only: bool = False
+
+
+class LocalRerankerSettings(PydanticBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model: LocalRerankerModel = LocalRerankerModel.BGE_RERANKER_V2_M3
+    device: LocalModelDevice | None = None
+    batch_size: Annotated[int, Field(ge=1)] = 8
+    max_length: Annotated[int, Field(ge=1)] = 512
+    cache_folder: Annotated[str | None, Field(min_length=1)] = None
+    local_files_only: bool = False
+
+
+class RagRetrievalSettings(PydanticBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    # None이면 OpenAI는 검증된 기존값을 쓰고, BGE-M3는 별도 검증값 입력을 요구한다.
+    free_text_min_vector_similarity: Annotated[float | None, Field(ge=-1, le=1)] = None
+    rrf_k: Annotated[int, Field(gt=0)] = 60
+    rerank_candidate_limit: Annotated[int, Field(ge=1)] = 30
+
+
+class AgentSettings(PydanticBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    embedding: EmbeddingSettings = EmbeddingSettings()
+    reranker: LocalRerankerSettings = LocalRerankerSettings()
+    retrieval: RagRetrievalSettings = RagRetrievalSettings()
 
 
 class AppConfig(PydanticBaseModel):
@@ -110,8 +180,10 @@ class Settings(BaseSettings):
     auth: AuthConfig = AuthConfig()
     # `mfds` 블록이 없으면 None. MFDS 연동 스크립트를 실행할 때만 필요하다.
     mfds: MfdsConfig | None = None
-    # `openai` 블록이 없으면 None. RAG 임베딩·생성 파이프라인을 실행할 때만 필요하다.
+    # `openai` 블록이 없으면 None. Intent·답변 생성 또는 OpenAI 임베딩을 실행할 때 필요하다.
     openai: OpenAiConfig | None = None
+    # 선택형 임베딩·로컬 리랭커와 검색 정책.
+    agent: AgentSettings = AgentSettings()
 
     @classmethod
     def settings_customise_sources(

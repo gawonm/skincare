@@ -25,3 +25,11 @@ class IngredientKnowledgeFactRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def list_by_ids(self, fact_ids: list[UUID]) -> list[IngredientKnowledgeFact]:
+        if not fact_ids:
+            return []
+        result = await self._session.execute(
+            select(IngredientKnowledgeFact).where(IngredientKnowledgeFact.id.in_(fact_ids))
+        )
+        return list(result.scalars().all())

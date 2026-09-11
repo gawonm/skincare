@@ -1,47 +1,57 @@
-from uuid import uuid4
+import pytest
+from pydantic import ValidationError
 
 from agent.rag.chunking.field_chunker import FieldChunker
-from agent.rag.schemas import RagDocument, RagDocumentField, RagDocumentMetadata
-from models.rag_chunk import RagChunkField, RagConfidenceTier, RagSourceTable
+from agent.rag.schemas import (
+    EvidenceRecord,
+    EvidenceReviewStatus,
+    QuestionIntent,
+    RagConfidenceTier,
+    RagDocument,
+    RagDocumentField,
+)
 
 
-def _metadata() -> RagDocumentMetadata:
-    return RagDocumentMetadata(
-        confidence_tier=RagConfidenceTier.STRUCTURED_KNOWLEDGE, source_title="테스트 출처"
-    )
+class TestFieldChunker:
+    def _evidence(self) -> EvidenceRecord:
+        return EvidenceRecord(
+            evidence_id="evidence-1",
+            source_id="source-1",
+            source_title="테스트 출처",
+            text="효능과 주의 설명",
+            locator="test:1",
+            target_ids=["ingredient-1"],
+            review_status=EvidenceReviewStatus.VERIFIED,
+            is_demo=False,
+        )
 
+    def test_chunk_creates_one_chunk_per_field(self) -> None:
+        document = RagDocument(
+            evidence=self._evidence(),
+            fields=[
+                RagDocumentField(
+                    field_id="knowledge_efficacy",
+                    content="효능 설명",
+                    intents=[QuestionIntent.EFFICACY],
+                ),
+                RagDocumentField(
+                    field_id="knowledge_precautions",
+                    content="주의 설명",
+                    intents=[QuestionIntent.PRECAUTION],
+                ),
+            ],
+            confidence_tier=RagConfidenceTier.STRUCTURED_KNOWLEDGE,
+        )
 
-def test_chunk_creates_one_chunk_per_field() -> None:
-    document = RagDocument(
-        source_table=RagSourceTable.INGREDIENT_KNOWLEDGE_FACT,
-        ingredient_id=uuid4(),
-        ingredient_knowledge_fact_id=uuid4(),
-        fields=(
-            RagDocumentField(chunk_field=RagChunkField.KNOWLEDGE_EFFICACY, content="효능 설명"),
-            RagDocumentField(chunk_field=RagChunkField.KNOWLEDGE_PRECAUTIONS, content="주의 설명"),
-        ),
-        metadata=_metadata(),
-    )
+        drafts = FieldChunker().chunk(document)
 
-    drafts = FieldChunker().chunk(document)
+        assert len(drafts) == 2
+        assert {draft.field_id for draft in drafts} == {
+            "knowledge_efficacy",
+            "knowledge_precautions",
+        }
+        assert all(draft.evidence == document.evidence for draft in drafts)
 
-    assert len(drafts) == 2
-    assert {draft.chunk_field for draft in drafts} == {
-        RagChunkField.KNOWLEDGE_EFFICACY,
-        RagChunkField.KNOWLEDGE_PRECAUTIONS,
-    }
-    assert all(
-        draft.ingredient_knowledge_fact_id == document.ingredient_knowledge_fact_id
-        for draft in drafts
-    )
-
-
-def test_chunk_empty_fields_produces_no_chunks() -> None:
-    document = RagDocument(
-        source_table=RagSourceTable.INGREDIENT_KNOWLEDGE_FACT,
-        ingredient_knowledge_fact_id=uuid4(),
-        fields=(),
-        metadata=_metadata(),
-    )
-
-    assert FieldChunker().chunk(document) == []
+    def test_document_requires_at_least_one_field(self) -> None:
+        with pytest.raises(ValidationError):
+            RagDocument(evidence=self._evidence(), fields=[])
