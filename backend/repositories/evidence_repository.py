@@ -23,3 +23,9 @@ class EvidenceRepository:
             select(Evidence).where(Evidence.ingredient_id == ingredient_id)
         )
         return list(result.scalars().all())
+
+    async def list_by_ids(self, evidence_ids: list[UUID]) -> list[Evidence]:
+        if not evidence_ids:
+            return []
+        result = await self._session.execute(select(Evidence).where(Evidence.id.in_(evidence_ids)))
+        return list(result.scalars().all())

@@ -1,10 +1,9 @@
 """`rag_chunk` 저장·검색. pgvector 코사인 검색과 ParadeDB BM25 검색을 여기서 실행한다.
 
 검색 알고리즘(코사인 거리, BM25 랭킹)이 SQL 쿼리 그 자체라 STRUCTURE.md 규칙("SQLAlchemy
-쿼리는 backend/repositories/에만")을 따라 이 클래스가 소유한다. `agent/rag/retrieval`은
-이 리포지토리가 이미 랭킹까지 끝낸 `list[tuple[RagChunk, float]]` 두 개(벡터 결과, BM25
-결과 - float는 원점수)를 받아 병합(RRF)만 한다 - 순수 데이터만 받고 세션을 직접 만들지
-않는다는 agent 규칙을 지킨다.
+쿼리는 backend/repositories/에만")을 따라 이 클래스가 소유한다. 검색 결과는
+`RagChunkSearchHit`으로 반환하고 Backend service가 현재 Agent `RetrievedChunk`로 변환한다.
+Agent는 세션이나 ORM을 직접 받지 않는다.
 
 `RagChunkInsert`를 이 파일에 따로 두는 이유: `backend/repositories/`는 `models`만 import
 한다는 규칙(import 방향)이 있어 `agent.rag.schemas.EmbeddedChunk`를 직접 받을 수 없다.
@@ -14,7 +13,7 @@
 import re
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,13 +39,13 @@ class RagChunkInsert(BaseModel):
     chunk_field: RagChunkField
     chunk_index: int
     content: str
-    embedding: tuple[float, ...]
+    embedding: list[float]
     embedding_model: str
     confidence_tier: RagConfidenceTier
     cites_cir: bool
     source_title: str
     source_url: str | None
-    citation_refs: tuple[str, ...]
+    citation_refs: list[str]
 
     def document_ref(self) -> str:
         """`ux_rag_chunk_natural_key`가 쓰는 문서 참조 문자열. 정확히 하나만 채워져 있다."""
@@ -67,6 +66,31 @@ class RagSyncResult(BaseModel):
     updated: int
     unchanged: int
     deleted: int
+
+
+class RagVectorSearchRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    query_vector: list[float] = Field(min_length=1)
+    limit: int = Field(ge=1)
+    target_ids: list[UUID] = Field(default_factory=list)
+    embedding_model: str = Field(min_length=1)
+
+
+class RagBm25SearchRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    query_text: str = Field(min_length=1)
+    limit: int = Field(ge=1)
+    target_ids: list[UUID] = Field(default_factory=list)
+    embedding_model: str = Field(min_length=1)
+
+
+class RagChunkSearchHit(BaseModel):
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    chunk: RagChunk
+    score: float
 
 
 class RagChunkRepository:
@@ -155,8 +179,8 @@ class RagChunkRepository:
 
     def _is_unchanged(self, row: RagChunk, insert: RagChunkInsert) -> bool:
         # embedding 값은 비교하지 않는다 - 실제로 확인해보니(2026-09-10) 같은 텍스트를 같은
-        # 모델로 다시 임베딩해도 OpenAI API가 완전히 bit-identical한 벡터를 돌려주지 않는다
-        # (부동소수 비결정성). content/embedding_model이 같으면 벡터도 사실상 같다고 보고,
+        # 같은 모델도 장치·라이브러리 버전에 따라 벡터가 bit-identical하지 않을 수 있다.
+        # content/embedding_model이 같으면 재사용 가능한 벡터로 보고,
         # 벡터 값 자체는 "바뀌었다"는 신호로 쓰지 않는다 - 안 그러면 재적재할 때마다 아무것도
         # 안 바뀌었는데도 매번 UPDATE가 발생해 updated_at이 계속 갱신된다.
         return (
@@ -201,40 +225,46 @@ class RagChunkRepository:
             for insert in inserts
         ]
 
-    async def search_by_vector(
-        self, query_vector: list[float], top_k: int, ingredient_id: UUID | None
-    ) -> list[tuple[RagChunk, float]]:
+    async def search_by_vector(self, request: RagVectorSearchRequest) -> list[RagChunkSearchHit]:
         """반환값의 float는 코사인 유사도(1 - 거리, 클수록 유사)다.
 
         원문 관련성 판정(자유 텍스트 질문이 실제로 근거와 관련 있는지)에는 순위만으로는
         부족하고 원점수가 필요하다 - RRF 순위는 상대적 순서일 뿐 "이 결과가 질문과 실제로
         가까운가"는 말해주지 않는다(2026-09-10 지적).
         """
-        distance = RagChunk.embedding.cosine_distance(query_vector)
+        distance = RagChunk.embedding.cosine_distance(request.query_vector)
         statement = select(RagChunk, (1 - distance).label("similarity"))
-        if ingredient_id is not None:
-            statement = statement.where(RagChunk.ingredient_id == ingredient_id)
-        statement = statement.order_by(distance).limit(top_k)
+        statement = statement.where(
+            RagChunk.embedding_model == request.embedding_model,
+            RagChunk.source_table.in_(
+                (RagSourceTable.EVIDENCE, RagSourceTable.INGREDIENT_KNOWLEDGE_FACT)
+            ),
+        )
+        if request.target_ids:
+            statement = statement.where(RagChunk.ingredient_id.in_(request.target_ids))
+        statement = statement.order_by(distance).limit(request.limit)
         result = await self._session.execute(statement)
-        return [(row.RagChunk, row.similarity) for row in result]
+        return [RagChunkSearchHit(chunk=row.RagChunk, score=row.similarity) for row in result]
 
-    async def search_by_bm25(
-        self, query_text: str, top_k: int, ingredient_id: UUID | None
-    ) -> list[tuple[RagChunk, float]]:
+    async def search_by_bm25(self, request: RagBm25SearchRequest) -> list[RagChunkSearchHit]:
         """반환값의 float는 ParadeDB BM25 점수(클수록 관련성 높음)다."""
         # ParadeDB pg_search 연산자. `@@@`는 인덱싱된 컬럼에 대한 BM25 매치 조건이다.
-        safe_query_text = self._sanitize_bm25_query(query_text)
+        safe_query_text = self._sanitize_bm25_query(request.query_text)
         if not safe_query_text:
             return []
         score = func.paradedb.score(RagChunk.id)
         statement = select(RagChunk, score.label("score")).where(
-            RagChunk.content.op("@@@")(safe_query_text)
+            RagChunk.content.op("@@@")(safe_query_text),
+            RagChunk.embedding_model == request.embedding_model,
+            RagChunk.source_table.in_(
+                (RagSourceTable.EVIDENCE, RagSourceTable.INGREDIENT_KNOWLEDGE_FACT)
+            ),
         )
-        if ingredient_id is not None:
-            statement = statement.where(RagChunk.ingredient_id == ingredient_id)
-        statement = statement.order_by(score.desc()).limit(top_k)
+        if request.target_ids:
+            statement = statement.where(RagChunk.ingredient_id.in_(request.target_ids))
+        statement = statement.order_by(score.desc()).limit(request.limit)
         result = await self._session.execute(statement)
-        return [(row.RagChunk, row.score) for row in result]
+        return [RagChunkSearchHit(chunk=row.RagChunk, score=row.score) for row in result]
 
     def _sanitize_bm25_query(self, query_text: str) -> str:
         return _BM25_UNSAFE_CHARACTERS_PATTERN.sub(" ", query_text).strip()

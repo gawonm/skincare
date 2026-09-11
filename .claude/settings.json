@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Bash(gh repo delete:*)",
+      "Bash(gh repo archive:*)",
+      "Bash(gh repo unarchive:*)",
+      "Bash(gh repo rename:*)",
+      "Bash(gh repo edit:*)",
+      "Bash(gh repo deploy-key:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr close:*)",
+      "Bash(gh release delete:*)",
+      "Bash(gh release delete-asset:*)",
+      "Bash(gh release edit:*)",
+      "Bash(gh secret set:*)",
+      "Bash(gh secret delete:*)",
+      "Bash(gh variable set:*)",
+      "Bash(gh variable delete:*)",
+      "Bash(gh workflow run:*)",
+      "Bash(gh workflow enable:*)",
+      "Bash(gh workflow disable:*)",
+      "Bash(gh run cancel:*)",
+      "Bash(gh run delete:*)",
+      "Bash(gh run rerun:*)",
+      "Bash(gh cache delete:*)",
+      "Bash(gh auth logout:*)",
+      "Bash(gh auth token:*)",
+      "Bash(gh auth refresh:*)",
+      "Bash(gh ssh-key:*)",
+      "Bash(gh gpg-key:*)",
+      "Bash(gh api:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)"
+    ],
+    "allow": [
+      "Bash(gh auth status)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr status:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh browse:*)"
+    ]
+  }
+}

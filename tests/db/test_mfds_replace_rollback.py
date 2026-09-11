@@ -16,7 +16,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from agent.rag.schemas import EmbeddedChunk, RagChunkDraft
+from agent.rag.ports import TextEmbedder
+from agent.rag.schemas import EmbeddingRequest, EmbeddingResult, EmbeddingVector
 from backend.repositories.rag_chunk_repository import RagChunkInsert, RagChunkRepository
 from backend.services.rag_ingestion_service import RagIngestionService
 from data.scripts.evidence_schemas import MfdsRestrictedIngredientItem
@@ -28,25 +29,25 @@ from models.ingredient import IngredientMaster
 from models.rag_chunk import RagChunk, RagChunkField, RagConfidenceTier, RagSourceTable
 
 
-class _FailingEmbedder:
+class _FailingEmbedder(TextEmbedder):
     """`embed()`가 항상 실패한다 - 준비 단계 실패를 흉내낸다."""
 
-    def embed(self, drafts: list[RagChunkDraft]) -> list[EmbeddedChunk]:
-        raise RuntimeError("임베딩 API 실패를 흉내낸다")
+    async def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
+        raise RuntimeError(f"임베딩 실패를 흉내낸다: {len(request.texts)}건")
 
 
-class _WrongDimensionEmbedder:
+class _WrongDimensionEmbedder(TextEmbedder):
     """`embed()`는 성공하지만 차원이 잘못된 벡터를 준다 - DB INSERT 단계 실패를 흉내낸다.
 
     pgvector 컬럼은 1536차원으로 고정돼 있어서(EMBEDDING_DIMENSION), 다른 차원을 넣으면
     DB가 제약 위반으로 거부한다 - 목을 새로 만들지 않고 실제 DB 제약을 그대로 이용한다.
     """
 
-    def embed(self, drafts: list[RagChunkDraft]) -> list[EmbeddedChunk]:
-        return [
-            EmbeddedChunk(draft=draft, vector=tuple([0.0] * 3), embedding_model="fake")
-            for draft in drafts
-        ]
+    async def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
+        return EmbeddingResult(
+            vectors=[EmbeddingVector(values=[0.0] * 3) for _ in request.texts],
+            model="fake",
+        )
 
 
 async def _seed_existing_mfds_evidence(session, ingredient_id):
@@ -76,13 +77,13 @@ async def _seed_existing_mfds_evidence(session, ingredient_id):
                 chunk_field=RagChunkField.EVIDENCE_CLAIM,
                 chunk_index=0,
                 content=evidence.claim,
-                embedding=tuple([0.0] * 1536),
+                embedding=[0.0] * 1536,
                 embedding_model="fake-seed",
                 confidence_tier=RagConfidenceTier.OFFICIAL_REGULATORY,
                 cites_cir=False,
                 source_title=evidence.source_title,
                 source_url=evidence.source_url,
-                citation_refs=(),
+                citation_refs=[],
             )
         ]
     )

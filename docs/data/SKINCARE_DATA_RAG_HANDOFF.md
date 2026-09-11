@@ -1,7 +1,8 @@
 # 스킨케어 데이터·RAG 파이프라인 — 작업 안내 및 인수인계
 
-작성 기준: 2026-09-10, 한국 시간  
-확인 대상: `/Users/moon/projects/skincare-rag-pipeline`  
+작성 기준: 2026-09-10, 한국 시간
+
+확인 대상: `/Users/moon/projects/skincare-rag-pipeline`
 문서 성격: 현재 코드 설명 + 진행 상태 + 다음 담당자를 위한 전달 지침
 
 ## 0. 내일(다른 컴퓨터에서) 이어서 할 때 먼저 볼 것

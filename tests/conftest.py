@@ -6,14 +6,16 @@
 """
 
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker
-
-from core.config import settings
-from core.database import Database
 
 
 @pytest_asyncio.fixture
 async def session():
+    # DB를 쓰지 않는 Agent 단위 테스트가 로컬 config.yaml 유무에 종속되지 않게 지연 import한다.
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from core.config import settings
+    from core.database import Database
+
     database = Database(settings.database)
     try:
         async with database.engine.connect() as connection:

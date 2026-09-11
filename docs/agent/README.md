@@ -1,115 +1,155 @@
 # 에이전트 (RAG · 챗봇)
 
-`agent/rag/`(문서 로딩·청킹·임베딩·검색·답변 생성)와 `agent/tools/`(에이전트가 호출하는 도구)를
-다룬다. 폴더 구조와 import 방향은 [STRUCTURE.md](../../STRUCTURE.md), 코드 작성 규칙은
-[CLAUDE.md](../../CLAUDE.md)를 따른다.
+## 구현 기준과 담당 범위
 
-## 담당 범위
+`feature/llm-rag-pipeline`의 `6f710be`를 Agent 구현 기준으로 사용해
+`integration/llm-rag-main`에서 main `02ed955`를 통합한다. 아래 내용은 2026-09-11
+연결 검토와 사용자 합의 결과다. 기존 DB 차원은 유지하며 전체 운영 저장소 조립은 아직
+완료되지 않았다.
 
-이 문서가 다루는 담당 범위는 다음까지다.
+agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결과 통합,
+근거 적용성·인용 검증, 답변 생성을 담당한다. DB 쿼리·트랜잭션·HTTP·인증 구현은
+소유하지 않는다. backend가 agent의 공개 인터페이스를 구현한 어댑터를 주입한다.
 
-- 소스 문서(Evidence/IngredientKnowledgeFact/NIA Q&A) → `RagDocument` 변환 (`agent/rag/loaders/`)
-- 의미단위 청킹 (`agent/rag/chunking/`)
-- 임베딩 (`agent/rag/embedding/`)
-- 하이브리드 검색·질문 축 분류 (`agent/rag/retrieval/`)
-- 근거 검증·답변 생성 (`agent/rag/generation/`)
-- 근거 없는 문장을 만들지 않는 것 — 이 파트의 가장 중요한 제약이다
+## 현재 구조
 
-다음은 담당 범위 밖이며, 이 문서와 이 파트의 작업 목록에 포함하지 않는다.
+| 경로 | 역할 |
+| --- | --- |
+| `agent/service.py` | 채팅 진입점, 권한·히스토리 계약 호출, 요청 중복 및 저장 재시도 조정 |
+| `agent/factory.py` | GPT-4o mini·선택형 임베딩·로컬 BGE 리랭커 운영 조립과 개발용 조립 |
+| `agent/schemas.py`, `agent/ports.py` | 채팅·세션 입출력 모델과 외부 조회·저장 계약 |
+| `agent/graph.py`, `agent/nodes.py` | LangGraph 상태 전이와 작업 처리 |
+| `agent/context.py` | 제한된 LLM 문맥과 대화 요약 구성 |
+| `agent/llm.py`, `agent/prompts.py` | 구조화된 의도 해석 어댑터와 프롬프트 |
+| `agent/adapters.py`, `agent/demo.py` | DB 없는 개발용 저장소·모델·계획기와 실행 예제 |
+| `agent/rag/schemas.py`, `agent/rag/ports.py` | RAG·상품 조회 DTO와 검색·임베딩·생성 계약 |
+| `agent/rag/loaders/data_records.py` | 주입받은 데이터 DTO를 성분·근거 DTO로 변환 |
+| `agent/rag/chunking/field_chunker.py` | 입력 문서의 필드 단위 청킹 및 조건 보존 |
+| `agent/rag/embedding/` | 선택형 OpenAI·BGE-M3 비동기 임베딩 어댑터와 조립 팩토리 |
+| `agent/rag/retrieval/` | 성분명 해석, 의도 분류, 하이브리드 검색 통합 및 BGE 리랭커 |
+| `agent/rag/generation/` | 문장별 인용과 조건 검사, 생성 모델 어댑터 |
+| `agent/rag/pipeline.py` | 적재용 청킹·임베딩과 질의용 검색·적용성·생성 조립 |
 
-- 챗봇 UI, 추천 API, 제품 랭킹 엔진, 프론트엔드
-- 사용자 발화 의도 분류기, 루틴/스케줄링 엔진
-- DB 세션 생성 — `agent`는 세션을 직접 만들지 않고 파라미터로 받는다 ([STRUCTURE.md](../../STRUCTURE.md))
-- `backend` import — `agent`는 FastAPI를 모른다
+`DataRecordMapper`는 DB나 CSV를 읽지 않으며 `EvidenceRecord`를 반환한다.
+`RagIngestionPipeline`은 `RagDocument`를 받는다. 두 타입 사이에서 어떤 원문 필드를
+청킹할지는 데이터 계약으로 합의해야 한다. 원문·출처·검수 상태를 임의로 채우지 않는다.
 
-## 현재 구현 상태 (2026-09-10 기준)
+## 공개 진입점
 
-`agent/rag/*`와 `models/rag_chunk.py`(pgvector+ParadeDB BM25 통합 인덱스)로 3개 소스를 하나의
-임베딩 인덱스에 적재한다. 실제 적재 건수·소스별 신뢰도 티어는 [docs/data/data.md의 "RAG 적재
-진행 상태"](../data/data.md#rag-적재-진행-상태)에 있다 — 같은 숫자를 이 문서에 중복해서 적지
-않는다.
+| 호출 | 입력 | 출력 |
+| --- | --- | --- |
+| `ChatService.handle_turn` | `ChatServiceRequest` | `ChatTurnOutput` |
+| `RagIngestionPipeline.run` | `list[RagDocument]` | `list[EmbeddedChunk]` |
+| `EvidencePipeline.run` | `EvidenceSearchRequest` | `EvidenceBundle` |
+| `HybridSearchBackend.search` | `HybridSearchRequest` | `HybridSearchResult` |
+| `EvidenceReranker.rerank` | `RerankRequest` | `RerankResult` |
 
-### 근거 검증 3단계 신뢰도 티어
+위 메서드는 모두 `async`이며 호출자는 `await`해야 한다. 최상위 채팅 요청에는
+`ChatService`를 사용하고, 별도 적재 배치에는 `RagIngestionPipeline`을 사용한다.
+`HybridSearchBackend`의 SQLAlchemy 구현은
+`backend/services/rag_search_backend.py`에 있으며 실제 DB 검증은 아직 필요하다.
 
-`RagConfidenceTier`(`models/rag_chunk.py`)로 소스를 구분하고, `AnswerGenerator`
-(`agent/rag/generation/answer_generator.py`)가 이 중 `OFFICIAL_REGULATORY`(MFDS)와
-`STRUCTURED_KNOWLEDGE`(Knowledgedata) 두 티어만 "검증된 근거"로 인정한다.
-`AI_GENERATED_REVIEWED`(NIA Q&A)만 있으면 `ONLY_AI_GENERATED_AVAILABLE`로 근거 부족 처리한다.
-이건 버그가 아니라 코드 주석에 명시된 의도적 설계다 — NIA는 AI가 생성하고 전문가 패널이
-검증한 데이터지, 공식 규제기관·사람이 구조화한 지식이 아니기 때문이다.
+`AgentFactory.create(AgentDependencies(...))`에 LLM, 히스토리, 상품·성분 조회,
+상품 분류 지원 목록(`ProductTaxonomy`), 계획기, 근거 파이프라인, 체크포인터를 전달한다.
+상품 분류는 코드·이름 Pydantic 모델이며 제형(`texture`)과 사용감(`skin_feel`)을 분리한다.
+미등록 코드와 미상인 속성을 요청 조건에 맞는 것으로 처리하지 않는다. `DevelopmentAgentFactory`는
+개발용 대체 구현을 사용한다. 운영 조립에서 이를 실제 DB 연결로 간주하지 않는다.
 
-**단, 이 정책 때문에 NIA는 현재 "임베딩은 됐지만 검증 근거 생성에는 전혀 쓰이지 않는" 상태다.**
-사용자가 지정한 이 프로젝트의 핵심 목표(NIA의 성분 지식과 피부·환경·사용 조건 상담 사례를
-보존해 검색에 활용하는 것)와 이 현재 정책 사이에는 차이가 있다. 이 문서 하단
-["다음에 필요한 것"](#다음에-필요한-것)에서 다룬다.
+`ProductionAgentFactory`는 Intent·답변 생성에 `gpt-4o-mini`, 기본 운영 임베딩에
+`text-embedding-3-small` 1536차원, 재정렬에 로컬 `BAAI/bge-reranker-v2-m3`를 연결한다.
+`config.yaml`의 `agent.embedding.provider`를 `local`로 바꾸면 `BAAI/bge-m3`도 선택할 수
+있다. 다만 현재 Backend는 DB가 1536차원인 동안 1024차원 로컬 임베더 선택을 조립 단계에서
+거부한다. 로컬 모델 객체는 첫 사용 시 지연 로드한다.
+Backend의 `AgentConfigurationAssembler`가 `config.yaml`을 운영 설정으로 변환한다.
+다만 히스토리·상품·성분·루틴·체크포인터 구현이 모두 준비되지 않아
+`ProductionAgentFactory`를 완성된 애플리케이션 lifespan에서 호출하는 단계는 남아 있다.
 
-### 질문 축 분류의 구조적 한계
+## main 통합 시 보존·제외 기준
 
-`QuestionIntentClassifier`(`agent/rag/retrieval/question_intent_classifier.py`)가 질문을
-7개 축(효능/피부타입/농도/주의사항/규제/사용주기/조합)으로 분류하고,
-`INTENT_TO_VERIFIABLE_CHUNK_FIELDS`가 각 축을 뒷받침할 수 있는 `RagChunkField`를 정의한다.
-`USAGE_FREQUENCY`와 `COMBINATION` 두 축은 매핑이 **빈 집합**이다 — Evidence/
-IngredientKnowledgeFact 어디에도 사용주기·조합 전용 필드가 없어서, 이 두 축을 묻는 질문은
-구조화된 근거만으로는 항상 근거 부족으로 판정된다. NIA Q-CoT-A의 `NIA_COT_STEP` 청크에는
-실제로 사용 시간·빈도·순서 서술이 들어 있지만, 위 신뢰도 티어 정책 때문에 애초에 검증 근거
-후보에 들어가지 못해 이 갭을 메우지 못한다.
+사용자 지정에 따라 아래 main 파일과 필요한 데이터 의존성을 보존한다. agent에서
+직접 import하거나 기존 시그니처를 변경하지 않는다.
 
-### NIA Q&A 로더의 현재 범위
+- `backend/services/product_ingredient_service.py`
+- `backend/repositories/product_ingredient_repository.py`
+- `backend/repositories/ingredient_master_repository.py`
 
-`NiaQaLoader`(`agent/rag/loaders/nia_qa_loader.py`)는 `info.question`/`info.answer`/
-`chain_of_thought[].content`만 청크로 만든다. `meta`(나이·성별·피부타입·피부고민·초기 피부상태)와
-`external`(계절·스트레스 등 배경요인)은 파싱 모델(`NiaQaRecord`)에 아예 없어 로더를 거치면서
-사라진다. `ingredient_id`는 코드 주석대로 "NIA Q&A는 상황 상담 사례라 한 성분에 매이지 않는다"는
-의도적 선택으로 항상 `None`이다 — 다만 이 때문에 "성분 X + 피부타입 Y + 사용시간 Z" 같은 조건
-조합 검색에서 NIA 근거를 걸러낼 방법이 지금은 없다(질문 축과 연결할 조건 필드 자체가 없다).
+main의 다음 구형 파일은 최종 Agent 구성에서 제외했다. NIA 적재 기능을 대체 완료한 것으로
+표시하지 않으며, data→agent 계약이 합의되기 전에는 되살리지 않는다.
 
-## NIA 원본 감사 결과 — agent 계층에 영향 있는 부분만
+- `agent/rag/generation/prompts.py`
+- `agent/rag/loaders/evidence_loader.py`
+- `agent/rag/loaders/knowledge_fact_loader.py`
+- `agent/rag/loaders/nia_qa_loader.py`
+- `agent/rag/nia_labeling_schemas.py`
 
-전체 감사(파싱 건수·분류표·출처 통계)는 [docs/data/data.md](../data/data.md)가 정본이다.
-여기서는 `agent/rag/generation/answer_generator.py`와 `agent/rag/retrieval/*`의 판단에 직접
-영향을 주는 사실만 요약한다.
+main의 동기식 구형 `OpenAiEmbedder` 구현은 제거했고, 같은 경로에는 현재 `TextEmbedder` 비동기
+계약을 구현하는 `OpenAiTextEmbedder`를 새로 연결했다.
 
-- **evidence_sources 상당수가 placeholder다.** Training 8,000건 전수 조사 기준
-  `PMID:12345678`이 2,961건(37%)에서 반복 등장하고, `DOI:10.xxxx/xxxxx` 2,780건,
-  `DOI:10.1234/example` 164건이 확인됐다. `RagDocumentMetadata.citation_refs`에 이 값이
-  그대로 들어가므로, NIA 청크를 앞으로 어떤 형태로든 근거로 노출하게 되면 이 citation을
-  검증된 출처로 보여주면 안 된다. (기존 `docs/data/data.md`의 "evidence_sources(PMID/DOI
-  실제 논문 인용)" 서술은 이 부분 정정이 필요해 아래에서 같이 고쳤다.)
-- **아카이브명과 `info.target_concern`이 72%(5,772/8,000) 불일치한다.** `NiaQaRecord`가
-  `info.target_concern`만 쓰고 있어 이 필드 자체는 영향받지 않지만, 향후 "피부고민별 필터"를
-  agent 쪽에서 만들 때 아카이브 파일명을 신뢰하면 안 된다는 뜻이다.
+최신 main을 현재 기능 브랜치에 병합하면 아래 8개 파일에서 실제 텍스트 충돌이 발생한다.
+Git은 충돌을 해결하기 전에는 병합 커밋을 완료할 수 없다. 따라서 **main을 기능 브랜치에 먼저
+병합하고 충돌을 해결한 뒤 검증하는 방향**은 가능하지만, 기능 브랜치를 main에 먼저 병합해
+깨진 상태를 후속 수정하는 방향은 허용하지 않는다.
 
-## 이번 세션에 추가한 파일: `agent/rag/nia_labeling_schemas.py`
+- `agent/rag/chunking/field_chunker.py`
+- `agent/rag/generation/answer_generator.py`
+- `agent/rag/generation/condition_preservation_checker.py`
+- `agent/rag/pipeline.py`
+- `agent/rag/retrieval/hybrid_retriever.py`
+- `agent/rag/retrieval/ingredient_mention_resolver.py`
+- `agent/rag/retrieval/question_intent_classifier.py`
+- `agent/rag/schemas.py`
 
-`docs/NIA_SEMANTIC_LABELING_SPEC.md`가 요구하는 "원문을 관계·조건 단위로 라벨링하고 고정
-스키마로 재사용"을 위한 Pydantic discriminated union이다. **주의: 아직 `NiaQaLoader`·
-`RagChunk`·DB 어디와도 연결되지 않은 독립 스키마 정의 단계다.** 현재 상태:
+충돌하지 않은 파일도 main의 RAG 서비스·테스트가 이전 DTO를 참조하면 연결 수정 대상이다.
+한쪽 파일 전체를 선택하는 방식으로 해결하면 main의 DB 계약이나 현재 agent 계약 중 하나가
+사라지므로 각 공개 타입과 호출부를 함께 확인한다.
 
-- 7개 statement 타입(`case_observation`/`cause_claim`/`ingredient_effect_claim`/
-  `precaution`/`usage_instruction`/`combination_claim`/`contextual_factor`)을
-  `NiaStatementType` discriminator로 구분.
-- `NiaSourceSpan`이 원문 인용 오프셋(Unicode 코드포인트 기준 `[start, end)`)을 강제하고,
-  `NiaLabelingSpanVerifier`가 승인된 라벨링을 다시 읽을 때 원문과 quote가 여전히 일치하는지
-  재검증한다.
-- `NiaIngredientSubject.matching_status`에 `unresolved_ambiguous_family` 상태를 따로 둬서
-  "대나무 추출물" 같은 계열명을 단일 INCI로 임의 확정하지 않도록 강제한다.
-- Training 파일럿 5건(33 statements)을 이 스키마 + span 재검증까지 통과시켜 검증함
-  (`docs/NIA_SEMANTIC_LABELING_SPEC.md` 8절의 회귀 사례 일부를 실제 데이터로 재현).
+## Backend 담당자 확인 항목
 
-## 다음에 필요한 것
+main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거와 후속 항목은
+[연결 계약 검토](AGENT_INTEGRATION_REVIEW.md#7-backend-병합-확인-체크리스트)에 있다.
 
-아래는 구현하지 않고 남겨 둔 것이다. 임의로 정하지 않고 사용자 확인 후 진행한다.
+- `ChatService.handle_turn`을 호출할 API/service와 `ProductionAgentFactory` 생성 위치를 정한다.
+- `ProductionAgentDependencies`의 히스토리·상품·성분·루틴·검색·체크포인터 구현을 주입한다.
+- 구형 `RagQueryService`는 제거했고 `RagIngestionService`는 현재 비동기 포트로 전환했다.
+- `SqlAlchemyHybridSearchBackend.search`가 target 필터, vector/BM25 원점수, 상태 코드와
+  후보 개수 계약을 구현한다. 실제 DB 통합 테스트는 아직 필요하다.
+- 현재 운영 선택인 `text-embedding-3-small`이 질의·적재 모두 1536차원을 반환하고 기존
+  `rag_chunk.embedding vector(1536)` 및 `embedding_model` 값과 일치하는지 확인한다.
+- 향후 `provider: local`로 바꿀 때만 BGE-M3의 1024차원에 맞춘 ERD 확인, 마이그레이션,
+  전체 재임베딩과 별도 유사도 임계값 검증을 하나의 배포 절차로 합의한다. 현재 Backend는
+  이 차원 불일치를 DB 접근 전에 명확한 설정 오류로 중단한다.
+- 애플리케이션 설정은 `config.yaml`만 사용한다. Backend가 OpenAI API 키와
+  `gpt-4o-mini` 모델 설정을 읽어 `ProductionAgentConfig`에 주입하고, agent는 `.env`나
+  환경변수를 직접 읽지 않는다. `.env`는 Docker Compose 변수에만 사용한다.
+- 로컬 리랭커와 선택적 로컬 임베더의 모델 캐시 경로·볼륨·최초 다운로드 정책을 정하고,
+  재시작 때마다 가중치를 다시 내려받지 않는지 확인한다.
+- 최소 병합 게이트로 backend import/기동, 전체 단위 테스트, DB 검색·적재 통합 테스트를
+  통과시킨다. 이 게이트 이후의 관측성·성능 튜닝은 후속 커밋으로 분리할 수 있다.
 
-- 라벨링 결과(`NiaLabelingDocument`)를 `NiaQaLoader`/`RagChunk`와 어떻게 연결할지. 지금은
-  라벨링이 `NiaQaRecord`와 완전히 별개 경로다.
-- NIA를 "검증된 근거"로 승격하지 않으면서도 "사례 검색"에는 쓰이게 하려면
-  `AnswerGenerator`/`RetrievedChunk`에 신뢰도 티어와 별개인 사용 목적 구분(사례 vs 검증 근거)이
-  필요한지, 아니면 지금처럼 완전히 배제할지.
-- `QuestionIntentClassifier`의 `USAGE_FREQUENCY`/`COMBINATION` 빈 집합을 라벨링된
-  `usage_instruction`/`combination_claim` statement로 채울지 여부.
+## 검증과 완료 범위
+
+```sh
+.venv/bin/python -m pytest tests -q -p no:cacheprovider
+.venv/bin/python -m agent.demo
+```
+
+2026-09-11 agent 테스트 55개 통과를 확인했다. 기존 34개에 동적 분류 10개, RAG 계약 6개,
+임베딩 선택·차원 검사 5개를 추가했다. DB 없는 대화 흐름·방 격리·후보 참조·실패 복구·데이터
+DTO 변환 외에도 신규 분류,
+제형·사용감 분리, 폐기된 코드 차단, 조건 누락 후보 제외, 실제 상품 표시, 청킹→검색 통합→
+인용·조건 검증을 검사한다. 실제 DB 검색, 임베딩 API, 운영 연결의 검증은 아니다.
+
+동적 분류 방향은 사용자 선택으로 반영했다. 운영용 분류 코드·지원 목록의 공급,
+상품 버전과 성분 스냅샷의 대응, 조회 어댑터, 실제 근거 문서 매핑·색인,
+운영 히스토리·체크포인터는 아직 연결 합의가 필요하다.
+현재 코드의 상세 제약과 담당자별 요청은 아래 연결 검토서가 기준이다.
 
 ## 관련 문서
 
-- NIA 데이터 성격·라이선스·전체 적재 현황: [docs/data/data.md](../data/data.md)
-- 의미 라벨링 설계 초안: [docs/NIA_SEMANTIC_LABELING_SPEC.md](../NIA_SEMANTIC_LABELING_SPEC.md)
-- 폴더 구조와 import 방향: [STRUCTURE.md](../../STRUCTURE.md)
+- [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
+- [현재 구조·연결 계약 검토](AGENT_INTEGRATION_REVIEW.md)
+- [DB·히스토리 연동 요청서](RAG_YK/LLM_RAG_DB_CONTRACT.md)
+- [개발 요청서](RAG_YK/LLM_RAG_DEVELOPMENT_REQUEST.md)
+- [초기 파이프라인 설계](RAG_YK/LLM_RAG_PIPELINE.md)
+
+정식 `backend → agent` 계약은 호출자인 backend가 소유하며 위 문서의 합의 내용을 따른다.

@@ -14,6 +14,7 @@
 | [uv](https://docs.astral.sh/uv/) | 파이썬 버전과 패키지 관리 | `uv --version` |
 | Docker Desktop | PostgreSQL, Redis 컨테이너 | `docker --version` |
 | [just](https://github.com/casey/just) | 명령 단축 실행 | `just --version` |
+| [GitHub CLI (gh)](https://cli.github.com/) | PR 생성·조회 | `gh --version` |
 
 `just`는 선택이다. 없으면 `justfile` 안의 명령을 직접 쳐도 된다.
 
@@ -23,6 +24,7 @@ Windows 기준 설치:
 winget install astral-sh.uv
 winget install Casey.Just
 winget install Docker.DockerDesktop
+winget install GitHub.cli
 ```
 
 ## 2. 최초 1회 준비
@@ -105,7 +107,79 @@ uv run pytest tests/test_routing.py -q # 특정 파일만
 uv run pre-commit run --all-files      # 전체 파일 검사
 ```
 
-## 5. 주의가 필요한 명령
+## 5. GitHub CLI (gh) 인증
+
+`gh` 는 PR 을 올리고 확인할 때 쓴다 (CLAUDE.md 규칙 19). 설치만으로는 동작하지 않고,
+계정을 한 번 연결해야 한다.
+
+### 최초 1회 로그인
+
+```bash
+gh auth login
+```
+
+물어보는 것에 이렇게 답한다.
+
+| 질문 | 고를 값 | 이유 |
+| --- | --- | --- |
+| What account do you want to log into? | GitHub.com | |
+| What is your preferred protocol for Git operations? | HTTPS | 이 저장소의 remote 가 HTTPS 다. SSH 를 고르면 remote 와 어긋난다 |
+| Authenticate Git with your GitHub credentials? | Yes | `git push` 가 따로 비밀번호를 묻지 않는다 |
+| How would you like to authenticate? | Login with a web browser | 토큰을 직접 만들어 붙여 넣는 것보다 실수할 여지가 적다 |
+
+브라우저가 열리면 터미널에 뜬 8자리 코드를 넣고 승인한다. 그다음 확인한다.
+
+```bash
+gh auth status
+```
+
+`✓ Logged in to github.com account <아이디>` 가 나오면 된 것이다.
+
+### 이 저장소에 쓰기 권한이 있는지 확인한다
+
+로그인이 됐더라도 `gawonm/skincare` 의 collaborator 가 아니면 push 가 거부된다.
+PR 을 올리기 전에 먼저 본다.
+
+```bash
+gh repo view gawonm/skincare --json viewerPermission
+```
+
+`WRITE` 나 `ADMIN` 이면 된다. `READ` 면 저장소 주인에게 collaborator 초대를 받는다.
+이 프로젝트는 fork 가 아니라 collaborator 방식으로 작업한다.
+
+### 토큰을 다루는 법
+
+- 토큰은 `gh` 가 OS 키체인에 넣어 관리한다. 직접 꺼내서 파일이나 `.env` 에 적지 않는다.
+- 토큰 값을 채팅, 이슈, PR 본문에 붙여 넣지 않는다. 한 번 드러나면 즉시 폐기해야 한다.
+- 남의 컴퓨터나 공용 서버에서 로그인했다면 작업이 끝난 뒤 직접 `gh auth logout` 한다.
+- 배포 서버에는 `gh` 를 깔지 않는다. 서버는 `git clone` 만 하면 되고(README.md 참고),
+  서버에 토큰이 남아 있을수록 서버가 뚫렸을 때 번지는 범위가 커진다.
+
+### 막아 둔 명령
+
+`.claude/settings.json` 에 위험한 명령을 차단해 두었다. Claude Code 로 작업할 때 아래는
+실행되지 않고 거부된다.
+
+| 막아 둔 것 | 왜 |
+| --- | --- |
+| `gh repo delete`, `gh repo archive`, `gh repo edit`, `gh repo rename` | 저장소가 사라지거나 설정이 통째로 바뀐다. 되돌릴 수 없다 |
+| `gh pr merge`, `gh pr close` | 머지는 사람이 GitHub 에서 Squash and merge 로 한다 (규칙 19) |
+| `gh secret set/delete`, `gh variable set/delete` | 배포 비밀 값이다. 바뀌면 CI 와 배포가 조용히 깨진다 |
+| `gh release delete`, `gh release edit` | 배포본 기록이 사라진다 |
+| `gh workflow run/enable/disable`, `gh run cancel/delete/rerun` | CI 를 임의로 돌리거나 실행 기록을 지운다 |
+| `gh auth logout`, `gh auth token`, `gh auth refresh` | 남의 로그인을 끊거나 토큰을 꺼낸다 |
+| `gh ssh-key`, `gh gpg-key` | 계정 전체의 접근 키를 건드린다 |
+| `gh api` | 위 제한을 모두 우회할 수 있는 통로라 조회까지 함께 막았다 |
+| `git push --force`, `git push -f` | 남의 커밋을 덮어쓴다 (규칙 19) |
+
+조회 명령(`gh pr view/list/diff/status/checks`, `gh repo view`, `gh issue view/list`,
+`gh run list/view`, `gh auth status`)은 확인 없이 바로 실행된다.
+`gh pr create` 는 막혀 있지 않지만 자동 허용도 아니라서, 실행할 때마다 확인을 묻는다.
+
+이 차단은 **Claude Code 안에서만** 걸린다. 사람이 터미널에서 직접 치는 명령까지 막지는
+못한다. 사람에게 위 표는 "하지 않기로 정해 둔 목록" 이다.
+
+## 6. 주의가 필요한 명령
 
 ```bash
 just reset
@@ -120,7 +194,7 @@ just migrate downgrade base
 
 모든 마이그레이션을 되돌린다. **테이블과 그 안의 데이터가 지워진다.**
 
-## 6. 안 될 때
+## 7. 안 될 때
 
 | 증상 | 원인 | 해결 |
 | --- | --- | --- |

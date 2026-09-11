@@ -27,13 +27,13 @@ def _insert(
         chunk_field=chunk_field,
         chunk_index=chunk_index,
         content=content,
-        embedding=tuple([0.0] * 1536),
+        embedding=[0.0] * 1536,
         embedding_model="fake-test-model",
         confidence_tier=RagConfidenceTier.AI_GENERATED_REVIEWED,
         cites_cir=False,
         source_title="테스트 출처",
         source_url=None,
-        citation_refs=(),
+        citation_refs=[],
     )
 
 
