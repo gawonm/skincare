@@ -27,3 +27,21 @@
   --color-accent-progress: #35b9c6; /* 04C 진행 다이아몬드 */
   --color-accent-stop: #5b52a8; /* 04C 정지 버튼 */
 }
+
+/*
+ * 로그인·회원가입 화면(피그마 node 93:2, 93:25)의 색 토큰.
+ *
+ * 위 채팅 팔레트와 달리 눈대중 근사값이 아니라, 피그마 파일에 이름이 붙은 CSS 변수
+ * (`var(--surface, #fbfaf7)` 등)의 실제 값을 그대로 옮긴 것이다.
+ */
+@theme {
+  --color-surface: #fbfaf7; /* 화면 배경 */
+  --color-surface-2: #eeefe6; /* 입력창 배경 */
+  --color-hairline: #d8d9ce; /* 테두리 */
+  --color-ink: #1e2a22; /* 본문 글자 */
+  --color-ink-soft: #5b6a5e; /* 보조 글자·플레이스홀더 */
+  --color-moss-tint: #e4eae1; /* 브랜드 배지 배경 */
+  --color-moss-deep: #38503f; /* 브랜드 강조색·기본 버튼 */
+  --color-blue-point: #256bf6; /* 링크 강조색 */
+  --color-blue-tint: #eaf1ff; /* 선택된 연령대 배경 */
+}
