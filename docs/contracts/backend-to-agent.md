@@ -90,7 +90,7 @@ class LocalEmbeddingConfig(RagModel):
 
 
 class TextEmbeddingConfig(RagModel):
-    provider: EmbeddingProvider = EmbeddingProvider.LOCAL
+    provider: EmbeddingProvider
     openai: OpenAiEmbeddingConfig | None = None
     local: LocalEmbeddingConfig = Field(default_factory=LocalEmbeddingConfig)
 
@@ -99,6 +99,13 @@ class TextEmbeddingConfig(RagModel):
         if self.provider is EmbeddingProvider.OPENAI and self.openai is None:
             raise ValueError("OpenAI 임베딩을 선택하면 OpenAI 임베딩 설정이 필요합니다.")
         return self
+
+    def output_dimensions(self) -> int:
+        if self.provider is EmbeddingProvider.OPENAI:
+            if self.openai is None:
+                raise ValueError("OpenAI 임베딩 설정이 없습니다.")
+            return self.openai.dimensions
+        return BGE_M3_EMBEDDING_DIMENSIONS
 
 
 class LocalRerankerModel(StrEnum):
@@ -122,7 +129,7 @@ class RagRetrievalPolicy(RagModel):
 
 class ProductionAgentConfig(AgentModel):
     openai: OpenAiChatConfig
-    embedding: TextEmbeddingConfig = Field(default_factory=TextEmbeddingConfig)
+    embedding: TextEmbeddingConfig
     reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
     retrieval_policy: RagRetrievalPolicy
 ```
@@ -130,6 +137,10 @@ class ProductionAgentConfig(AgentModel):
 OpenAI API 키는 채팅과 OpenAI 임베딩 설정에 같은 `config.yaml` 값을 주입한다.
 `OpenAiChatConfig`·임베딩 선택·로컬 모델·검색 정책은 `agent/rag/schemas.py`,
 `ProductionAgentConfig`는 `agent/factory.py`가 소유한다. 샘플 설정에는 실제 API 키를 넣지 않는다.
+Backend는 `TextEmbeddingConfig.output_dimensions()`와 현재 `rag_chunk.embedding` 차원을
+조립 단계에서 비교한다. 일치하지 않으면 DB 검색·적재 전에 `RuntimeError`로 중단한다.
+검색 임계값이 `null`이면 OpenAI provider에서만 기존 검증값 `0.45`를 적용하고, 로컬 provider는
+모델별 검증값을 명시하도록 오류로 중단한다.
 
 ## 3. 사용자 요청 호출
 
