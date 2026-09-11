@@ -8,11 +8,18 @@
  * 이메일 소문자 정규화는 백엔드(`_lowercase_email`)가 이미 하므로 여기서 `transform` 을
  * 걸지 않는다. transform 을 넣으면 react-hook-form 의 입력/출력 타입이 갈라져 다루기
  * 번거로워지는데, 그 대가에 비해 얻는 게 없다.
+ *
+ * `passwordConfirm`·`gender`·`ageGroup`·`termsAgreed` 는 피그마 회원가입 시안(node 93:25)에는
+ * 있지만 아직 backend 와 합의 전이라 `POST /auth/signup` 에 실어 보내지 않는다
+ * (`docs/contracts/front-to-backend.md` "회원가입 확장" 절, 규칙 16). 화면 검증·상태만
+ * 이 스키마가 맡고, 실제 제출은 `SignupPage` 가 합의된 필드만 골라 보낸다.
  */
 
 import { z } from "zod";
 
 import {
+  AgeGroup,
+  Gender,
   NAME_MAX_LENGTH,
   NAME_MIN_LENGTH,
   PASSWORD_MAX_LENGTH,
@@ -40,11 +47,24 @@ export const loginSchema = z.object({
   password: passwordField,
 });
 
-export const signupSchema = z.object({
-  email: emailField,
-  password: passwordField,
-  name: nameField,
-});
+export const signupSchema = z
+  .object({
+    email: emailField,
+    password: passwordField,
+    passwordConfirm: passwordField,
+    name: nameField,
+    gender: z.nativeEnum(Gender, { errorMap: () => ({ message: "성별을 선택해 주세요." }) }),
+    ageGroup: z.nativeEnum(AgeGroup, {
+      errorMap: () => ({ message: "연령대를 선택해 주세요." }),
+    }),
+    termsAgreed: z
+      .boolean()
+      .refine((value) => value, { message: "이용약관 및 개인정보 처리방침에 동의해야 합니다." }),
+  })
+  .refine((values) => values.password === values.passwordConfirm, {
+    message: "비밀번호가 일치하지 않습니다.",
+    path: ["passwordConfirm"],
+  });
 
 // 폼 값 타입은 스키마에서 추론만 한다(별도 interface 를 두면 두 곳이 어긋날 수 있다).
 export type LoginFormValues = z.infer<typeof loginSchema>;
