@@ -8,6 +8,7 @@ from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.embedding.local_embedder import LocalBgeM3Embedder
 from agent.rag.embedding.openai_embedder import OpenAiTextEmbedder
 from agent.rag.schemas import (
+    BGE_M3_EMBEDDING_DIMENSIONS,
     DEFAULT_OPENAI_EMBEDDING_DIMENSIONS,
     EmbeddingProvider,
     EmbeddingRequest,
@@ -77,6 +78,16 @@ class TestAgentEmbedding:
 
         assert isinstance(openai, OpenAiTextEmbedder)
         assert isinstance(local, LocalBgeM3Embedder)
+
+    def test_embedding_config_reports_provider_output_dimensions(self) -> None:
+        openai = TextEmbeddingConfig(
+            provider=EmbeddingProvider.OPENAI,
+            openai=OpenAiEmbeddingConfig(api_key=SecretStr("test-key")),
+        )
+        local = TextEmbeddingConfig(provider=EmbeddingProvider.LOCAL)
+
+        assert openai.output_dimensions() == DEFAULT_OPENAI_EMBEDDING_DIMENSIONS
+        assert local.output_dimensions() == BGE_M3_EMBEDDING_DIMENSIONS
 
     def test_openai_provider_requires_api_configuration(self) -> None:
         with pytest.raises(ValidationError, match="OpenAI 임베딩 설정이 필요합니다"):
