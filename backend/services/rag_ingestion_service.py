@@ -1,4 +1,4 @@
-"""근거 원본을 현재 Agent DTO로 변환해 로컬 임베딩 청크로 적재한다."""
+"""근거 원본을 현재 Agent DTO로 변환해 설정에서 선택한 임베딩 청크로 적재한다."""
 
 import argparse
 import asyncio
@@ -87,7 +87,7 @@ class RagIngestionService:
         matcher: IngredientNameMatcher,
         review_queue_path: Path,
     ) -> MfdsReplaceResult:
-        """새 Evidence와 로컬 임베딩 준비가 끝난 뒤에만 기존 데이터를 교체한다."""
+        """새 Evidence와 임베딩 준비가 끝난 뒤에만 기존 데이터를 교체한다."""
         importer = MfdsRestrictedIngredientImporter(self._session, matcher, review_queue_path)
         rows_to_insert, review_entries = importer.build_new_rows(items)
         collected_at = datetime.now(UTC)

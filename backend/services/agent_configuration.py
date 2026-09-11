@@ -19,9 +19,14 @@ from agent.rag.schemas import (
 from agent.rag.schemas import (
     LocalModelDevice as AgentLocalModelDevice,
 )
-from core.config import AgentSettings, OpenAiConfig
+from core.config import (
+    DEFAULT_OPENAI_FREE_TEXT_MIN_VECTOR_SIMILARITY,
+    AgentSettings,
+    OpenAiConfig,
+)
 from core.config import EmbeddingProvider as CoreEmbeddingProvider
 from core.config import LocalModelDevice as CoreLocalModelDevice
+from models.rag_chunk import EMBEDDING_DIMENSION
 
 
 class AgentConfigurationAssembler:
@@ -34,17 +39,7 @@ class AgentConfigurationAssembler:
     ) -> ProductionAgentConfig:
         if openai is None:
             raise RuntimeError("config.yaml에 openai 블록이 없어 Agent를 조립할 수 없습니다.")
-        threshold = agent.retrieval.free_text_min_vector_similarity
-        if threshold is None:
-            embedding_model = (
-                agent.embedding.openai_model.value
-                if agent.embedding.provider is CoreEmbeddingProvider.OPENAI
-                else agent.embedding.model.value
-            )
-            raise RuntimeError(
-                "config.yaml의 agent.retrieval.free_text_min_vector_similarity를 "
-                f"{embedding_model} 검증값으로 설정해야 합니다."
-            )
+        threshold = self._retrieval_threshold(agent)
         return ProductionAgentConfig(
             openai=OpenAiChatConfig(
                 api_key=SecretStr(openai.api_key),
@@ -74,7 +69,7 @@ class AgentConfigurationAssembler:
         agent: AgentSettings,
     ) -> TextEmbeddingConfig:
         openai_embedding = self._openai_embedding(openai, agent)
-        return TextEmbeddingConfig(
+        embedding = TextEmbeddingConfig(
             provider=EmbeddingProvider(agent.embedding.provider.value),
             openai=openai_embedding,
             local=LocalEmbeddingConfig(
@@ -85,6 +80,8 @@ class AgentConfigurationAssembler:
                 local_files_only=agent.embedding.local_files_only,
             ),
         )
+        self._validate_storage_dimension(embedding)
+        return embedding
 
     def _openai_embedding(
         self,
@@ -102,6 +99,26 @@ class AgentConfigurationAssembler:
             batch_size=agent.embedding.openai_batch_size,
             timeout_seconds=openai.timeout_seconds,
             max_retries=openai.max_retries,
+        )
+
+    def _validate_storage_dimension(self, embedding: TextEmbeddingConfig) -> None:
+        output_dimensions = embedding.output_dimensions()
+        if output_dimensions != EMBEDDING_DIMENSION:
+            raise RuntimeError(
+                "선택한 임베딩 모델과 rag_chunk.embedding 차원이 다릅니다: "
+                f"provider={embedding.provider.value}, output={output_dimensions}, "
+                f"database={EMBEDDING_DIMENSION}. ERD 승인과 마이그레이션 전에는 사용할 수 없습니다."
+            )
+
+    def _retrieval_threshold(self, agent: AgentSettings) -> float:
+        threshold = agent.retrieval.free_text_min_vector_similarity
+        if threshold is not None:
+            return threshold
+        if agent.embedding.provider is CoreEmbeddingProvider.OPENAI:
+            return DEFAULT_OPENAI_FREE_TEXT_MIN_VECTOR_SIMILARITY
+        raise RuntimeError(
+            "config.yaml의 agent.retrieval.free_text_min_vector_similarity를 "
+            f"{agent.embedding.model.value} 검증값으로 설정해야 합니다."
         )
 
     def _device(self, device: CoreLocalModelDevice | None) -> AgentLocalModelDevice | None:
