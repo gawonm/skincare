@@ -18,8 +18,8 @@ export function SubmitButton({ pending, children, pendingLabel }: SubmitButtonPr
       type="submit"
       disabled={pending}
       className={[
-        "mt-2 rounded-md px-4 py-2 text-sm font-semibold text-white transition",
-        pending ? "cursor-not-allowed bg-slate-400" : "bg-slate-900 hover:bg-slate-700",
+        "h-12 w-full rounded-xl text-sm font-bold text-white transition",
+        pending ? "cursor-not-allowed bg-ink-soft" : "bg-moss-deep hover:opacity-90",
       ].join(" ")}
     >
       {pending ? pendingLabel : children}
