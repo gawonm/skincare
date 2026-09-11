@@ -284,6 +284,21 @@ class ProductService:
 `product_repository.py`가 없고, `product_ingredient_service.py`와
 `product_ingredient_repository.py`는 전성분 테이블만 담당한다.
 
+### 확인된 데이터 및 실행 환경 기준
+
+- 로컬 개발 환경은 Compose project `skincare`다. 2026-09-11 조회 당시 product 1,838건,
+  Alembic revision `7b85bd9f1045`였다.
+- 배포 환경은 Compose project `skincare-verify`다. 별도 영속 볼륨을 사용하며 같은 시점의
+  product·ingredient·evidence·RAG 관련 테이블은 모두 0건, `app_user`는 2건, revision은
+  `7b85bd9f1045`였다. 두 환경의 데이터 규모가 같다고 가정하지 않는다.
+- 로컬 product 1,838건의 `product_type`은 모두 `GENERAL_PRODUCT`다. 이 필드는 source
+  merchandise type으로 유지하고 새 분류 필드와 섞지 않는다.
+- 로컬 번역 상태는 translated 82건, untranslated 1,756건이고
+  `display_title != raw_title`은 82건이다. 번역 파이프라인과 taxonomy 분류를 분리한다.
+- processed CSV는 2,262개 고유 상품이고 로컬 DB 1,838개는 전부 CSV에 존재한다.
+  CSV에만 있는 424개는 DB 마지막 관측 시각 뒤에 추가 수집된 상품이므로, 기존 DB backfill의
+  대상 집합을 CSV로 정하지 않는다.
+
 ### 타입과 입력 변경
 
 `data/scripts/product_candidate_schemas.py`에 아래 타입을 정의하고 기존
@@ -343,7 +358,10 @@ CSV에 새 컬럼이 없어도 None으로 읽으며, 빈 셀도 None으로 변�
 ### 분류 및 저장 계약
 
 - `ingest_product_catalog.py`에서 두 CSV를 합치고 기존 우선순위대로 중복을 제거한 후,
-  새 `ProductTaxonomyNormalizer`가 원본 상품명·표시명·원본 카테고리를 바탕으로 분류한다.
+  새 `ProductTaxonomyNormalizer`가 원본 상품명과 원본 카테고리를 바탕으로 저장 분류를 결정한다.
+- `raw_title`이 최종 판정의 primary signal이다. `display_title`은 번역문에서 발견된 후보를
+  미리보기로 보고하는 secondary signal이며 저장할 두 분류 값을 변경하지 않는다.
+  따라서 같은 `raw_title`과 `category3`는 번역 여부와 관계없이 같은 결과를 낸다.
 - `ProductCandidateRow`는 frozen이므로 새 필드가 반영된 검증된 새 행을 만들어 전달한다.
   서비스 호출 형태 `ProductService.ingest(row)`와 기존 반환 형태는 유지한다.
 - 분류 매핑은 `docs/erd/app.md`의 상품 분류 확장 표를 따른다.
@@ -357,6 +375,8 @@ CSV에 새 컬럼이 없어도 None으로 읽으며, 빈 셀도 None으로 변�
 - 기존 DB 행을 채우는 작업은 전체 카탈로그 재적재와 구분한다. backend 담당자가
   아래 갱신 메서드를 제공하면 기존 상품의 분류 두 필드만 갱신한다.
   상품명·가격·관측 시각·매칭 상태·전성분을 다시 적재하지 않는다.
+- backfill 대상은 실행 시점 DB에서 조회한다. CSV 2,262개와 일치한다고 가정하거나,
+  CSV에만 있는 상품을 backfill 도중 새로 생성하지 않는다.
 
 ```python
 # backend 소유: backend/repositories/product_repository.py
@@ -368,6 +388,9 @@ class ProductTaxonomyUpdate(BaseModel):
     service_category: ProductServiceCategory | None
 
 # ProductRepository 메서드 제안
+async def list_for_taxonomy_backfill(self) -> list[Product]:
+    ...
+
 async def update_taxonomy(self, input_: ProductTaxonomyUpdate) -> Product:
     ...
 
@@ -381,6 +404,28 @@ async def update_taxonomy(self, row: ProductCandidateRow) -> Product:
 잘못된 Enum 입력은 검증 오류로 실패한다. 서비스는 리포지토리에 변환된 입력을 넘기고,
 리포지토리는 commit하지 않는다. 기존 로더처럼 호출부에서 전체 성공 후 commit하는 것을 제안한다.
 분류 전용 갱신을 재실행해 값이 같으면 UPDATE하지 않도록 한다.
+
+### migration과 backfill 실행 계약
+
+1. 로컬 `skincare` DB에서 현재 revision과 product 건수를 읽기 전용으로 기록한다.
+2. Alembic migration으로 nullable 분류 컬럼 두 개만 추가한다. migration에는 데이터 UPDATE를
+   넣지 않아 상품이 없는 새 DB에서도 동일한 migration chain이 정상 완료돼야 한다.
+3. 로컬 backfill은 `list_for_taxonomy_backfill()`이 반환한 현재 DB 상품만 분류한다.
+4. 한 트랜잭션에서 `product_type_normalized`, `service_category`만 갱신하고 다른 필드의
+   전후 값을 검증한다. 실패하면 전체 rollback한다.
+5. 재실행했을 때 변경 건수가 0인지 확인한다.
+6. `skincare-verify` 적용 직전에 revision, product 건수, 대상 컬럼 존재 여부를 다시 조회한다.
+7. 배포 migration과 backfill에 사용할 명령과 SQL을 사용자에게 먼저 보여주고 승인받는다.
+
+현재 배포 DB는 빈 상태이므로 이번 배포에서는 기존 상품 backfill을 실행하지 않는다.
+로컬에서 taxonomy·translation·data pipeline을 완성한 다음 배포 DB에 migration을 먼저 적용하고,
+확정된 pipeline으로 데이터를 처음부터 적재한다. 적재 완료 후 테이블별 건수와 FK·유니크 제약
+무결성을 검증한다. 위 backfill 계약은 로컬 1,838건 검증과 향후 기존 데이터가 생긴 환경에서만 쓴다.
+
+`skincare-verify`에서는 TRUNCATE, DROP, 전체 dump restore, 기존 데이터 덮어쓰기,
+DB·container·volume 재생성을 하지 않는다. taxonomy backfill은 상품명, 가격, 전성분,
+`observed_at`, 번역 필드를 변경하지 않는다. 번역 backfill은 별도 인터페이스로
+`display_title`, `title_source` 등 합의된 번역 필드만 갱신한다.
 
 ### backend 담당자 구현 요청
 
@@ -407,9 +452,11 @@ backend/services/product_service.py
 4. 기존 상품 백필용 `ProductService.update_taxonomy(row)`와
    `ProductRepository.update_taxonomy(input_)`를 구현한다. 이 경로는 분류 두 필드만 변경하며
    상품명·가격·관측 시각·매칭 상태·전성분 데이터는 변경하지 않는다.
-5. 리포지토리는 `commit`하지 않는다. 호출부가 전체 배치 성공 후 한 번 commit한다.
-6. 대상 상품이 없으면 새 상품을 만들지 않고 `LookupError`를 발생시킨다.
-7. 값이 기존 값과 같으면 불필요한 UPDATE를 실행하지 않는다.
+5. `ProductRepository.list_for_taxonomy_backfill()`은 실행 대상 DB의 기존 상품을 반환한다.
+   backfill은 이 목록만 처리하고 CSV-only 상품을 생성하지 않는다.
+6. 리포지토리는 `commit`하지 않는다. 호출부가 전체 배치 성공 후 한 번 commit한다.
+7. 대상 상품이 없으면 새 상품을 만들지 않고 `LookupError`를 발생시킨다.
+8. 값이 기존 값과 같으면 불필요한 UPDATE를 실행하지 않는다.
 
 완료 조건:
 

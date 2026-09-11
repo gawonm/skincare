@@ -13,6 +13,7 @@ from data.scripts.product_candidate_schemas import (
     TitleSource,
 )
 from data.scripts.product_taxonomy_normalizer import (
+    ProductTaxonomyInput,
     ProductTaxonomyNormalizer,
     ProductTaxonomyResult,
     TaxonomyDecisionBasis,
@@ -96,6 +97,45 @@ class TestProductTaxonomyNormalizer:
         assert result.product_type_normalized is ProductTypeNormalized.CLEANSER
         assert result.basis is TaxonomyDecisionBasis.SOURCE_CATEGORY
 
+    def test_translation_does_not_change_persisted_taxonomy(self) -> None:
+        normalizer = ProductTaxonomyNormalizer()
+        untranslated = ProductTaxonomyInput(
+            raw_title="Daily Hydrating Care",
+            display_title="Daily Hydrating Care",
+            category3="Moisturizers",
+        )
+        translated = untranslated.model_copy(update={"display_title": "데일리 수분 세럼"})
+
+        untranslated_result = normalizer.classify(untranslated)
+        translated_result = normalizer.classify(translated)
+
+        assert (
+            translated_result.product_type_normalized is untranslated_result.product_type_normalized
+        )
+        assert translated_result.service_category is untranslated_result.service_category
+        assert translated_result.product_type_normalized is None
+        assert translated_result.display_title_signal is not None
+        assert (
+            translated_result.display_title_signal.product_type_normalized
+            is ProductTypeNormalized.SERUM
+        )
+
+    def test_display_title_signal_does_not_override_raw_title(self) -> None:
+        normalizer = ProductTaxonomyNormalizer()
+
+        result = normalizer.classify(
+            ProductTaxonomyInput(
+                raw_title="Daily Cream 50ml",
+                display_title="데일리 세럼",
+                category3="Moisturizers",
+            )
+        )
+
+        assert result.product_type_normalized is ProductTypeNormalized.CREAM
+        assert result.service_category is ServiceCategory.CREAM_LOTION
+        assert result.display_title_signal is not None
+        assert result.display_title_signal.product_type_normalized is ProductTypeNormalized.SERUM
+
     def test_every_normalized_type_has_service_category(self) -> None:
         normalizer = ProductTaxonomyNormalizer()
 
@@ -114,7 +154,13 @@ class TestProductTaxonomyNormalizer:
         }
 
     def _classify(self, title: str, *, category3: str = "Moisturizers") -> ProductTaxonomyResult:
-        return ProductTaxonomyNormalizer().classify(self._row(title, category3=category3))
+        return ProductTaxonomyNormalizer().classify(
+            ProductTaxonomyInput(
+                raw_title=title,
+                display_title=title,
+                category3=category3,
+            )
+        )
 
     def _row(self, title: str, *, category3: str = "Moisturizers") -> ProductCandidateRow:
         return ProductCandidateRow(

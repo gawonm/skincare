@@ -3,8 +3,9 @@
 `config.yaml`의 `database.url` 대상 DB(`app`)의 전체 테이블. 모델 정의는 `models/*.py`,
 공통 컬럼(`id`/`created_at`/`updated_at`)은 `core/database.py`의 `EntityBase`.
 
-작성 기준: 2026-09-10, `migrations/versions/` 기준 8개 테이블 적용 완료
-(`0001_extensions` ~ `7b85bd9f1045_add_product_table`, `993200358dfb`로 브랜치 병합).
+작성 기준: 2026-09-11, `migrations/versions/` 기준 8개 테이블 적용 완료
+(`0001_extensions` ~ `b518f9fd7cf7_add_gender_age_group_terms_agreed_`, `993200358dfb`로
+브랜치 병합). `app_user`에 회원가입 확장 필드(`gender`/`age_group`/`terms_agreed*`) 추가.
 
 ## 전체 관계도
 
@@ -15,6 +16,10 @@ erDiagram
         text email UK
         text hashed_password
         text name
+        text gender
+        text age_group
+        boolean terms_agreed
+        timestamptz terms_agreed_at
         boolean is_active
         timestamptz created_at
         timestamptz updated_at
@@ -188,10 +193,19 @@ erDiagram
 | email | text | N | - | UK. 로그인 전 소문자 정규화 |
 | hashed_password | text | N | - | argon2id 해시만 저장 |
 | name | text | N | - | 표시 이름 |
+| gender | text(enum) | N | - | `female`/`male`/`unspecified`. 가입 시 필수(피그마 시안 기준) |
+| age_group | text(enum) | N | - | `10s`/`20s`/`30s`/`40s`/`50s_plus`. 가입 시 필수 |
+| terms_agreed | boolean | N | `false` | 가입 게이트. `false`로는 가입 자체가 안 되므로 실제로는 항상 `true`만 저장됨 |
+| terms_agreed_at | timestamptz | Y | - | 동의 시각. 동의 이력 감사용. `terms_agreed=false`일 땐 NULL |
 | is_active | boolean | N | `true` | 비활성 계정은 로그인 거부 |
 | created_at / updated_at | timestamptz | N | `now()` | 공통 |
 
 키: PK `id`, UK `email`.
+
+`gender`/`age_group`/`terms_agreed`는 별도 프로필 테이블로 분리하지 않고 `app_user`에 직접
+둔다. 지금은 로그인 계정과 1:1로만 쓰이고, 다른 테이블이 이 값을 참조하지도 않는다 —
+분리해서 얻는 이점(선택적 로딩, 독립적 스키마 변경) 없이 조인만 하나 늘어난다. "05 · 사용자
+프로필" 화면이 실제로 나와서 더 많은 프로필 필드가 필요해지면 그때 분리를 재검토한다.
 
 ### ingredient_master
 
@@ -265,8 +279,8 @@ erDiagram
 | maker | text | Y | - | 제조사 |
 | category1 | text | N | - | 대분류 |
 | category2 / category3 | text | Y | - | 중/소분류 |
-| product_type_normalized | varchar(40), enum | Y | NULL | 제품 세부 유형. 아래 확장 초안, 미적용 |
-| service_category | varchar(20), enum | Y | NULL | 화면용 제품 그룹. 아래 확장 초안, 미적용 |
+| product_type_normalized | varchar(40), enum | Y | NULL | 제품 세부 유형. 로컬 적용, 배포 미적용 |
+| service_category | varchar(20), enum | Y | NULL | 화면용 제품 그룹. 로컬 적용, 배포 미적용 |
 | lowest_price / highest_price | int | N | - | 올리브영: 할인가/정가 |
 | price_band | text(enum) | N | - | lowest_price 기준 가격대 |
 | volume_value | numeric | Y | - | 단일 용량. 미확정이면 NULL(0 아님) |
@@ -275,7 +289,7 @@ erDiagram
 | local_image_path | text | N | - | 수집 시점 로컬 저장 경로(포터블 아님) |
 | shopping_url | text | N | - | 상세 페이지 URL |
 | mall_name | text | N | - | 판매처명 |
-| product_type | text | N | - | 관측값 1종뿐이라 Enum 미도입 |
+| product_type | text | N | - | source merchandise type. 로컬 1,838건 모두 `GENERAL_PRODUCT` |
 | observed_at | timestamptz | N | - | 크롤러 관측 시각 |
 | match_status | text(enum) | N | - | 수집 직후 항상 `manual_review_required` |
 | review_reasons | text[] | N | `{}` | 검토 사유 목록 |
@@ -284,12 +298,14 @@ erDiagram
 키: PK `id`, UK `(source, source_product_id)`. FK 없음(아래 참고).
 
 
-#### 상품 분류 확장안 — 2026-09-11, 사용자 확인 완료·DB 미적용
+#### 상품 분류 확장 — 2026-09-11, 로컬 적용·배포 미적용
 
-위 PRODUCT 관계도와 컬럼 표의 `product_type_normalized`, `service_category`는 제안 스키마다.
-나머지 기존 스키마 설명과 구분하며, 모델·마이그레이션은 아직 변경하지 않았다.
+위 PRODUCT 관계도와 컬럼 표의 `product_type_normalized`, `service_category`는 로컬 개발 DB에서
+먼저 검증하고 배포 DB에는 별도 승인 후 적용하는 스키마다.
 
 - 기존 `product_type`(쇼핑몰 상품 구분)과 `category1/2/3`(원본 분류)는 보존한다.
+- 2026-09-11 로컬 DB 확인 결과 상품 1,838건의 `product_type`은 모두
+  `GENERAL_PRODUCT`다. 이 관측값은 정규화 유형으로 재사용하지 않는다.
 - 두 필드는 기존 모델의 `native_enum=False` 관례를 따라 VARCHAR에 Enum 값을 저장한다.
 - NULL은 미처리 또는 근거 부족·충돌로 유형을 확정하지 못한 상태다. 분류 실행 여부와
   미분류 사유는 미리보기 보고서로 구분한다. 이를 위해 별도 DB 컬럼을 추가하지 않는다.
@@ -315,8 +331,29 @@ erDiagram
 예를 들어 각질 제거 패드는 무조건 토너 패드로 넣지 않고, 복합 구성·비화장품·충돌하는
 상품명은 미분류 보고서로 남긴다. 실제 분류 규칙의 우선순위는 샘플 검증 후 확정한다.
 
-새 마이그레이션은 구현 시 head를 다시 확인하고 두 컬럼만 추가한다.
-기존 데이터 분류·갱신은 별도 실행으로 분리하며, 기존 RAG 인덱스와 테이블은 변경하지 않는다.
+분류의 최종 판정 신호는 `raw_title`과 원본 `category3`다. `display_title`은 번역 결과에만
+키워드가 생기는 경우를 찾는 진단 신호로 사용할 수 있지만 저장 분류를 바꾸지 않는다.
+2026-09-11 로컬 DB의 번역 상태는 translated 82건, untranslated 1,756건이며
+`display_title != raw_title`도 82건이다. 번역 갱신과 taxonomy backfill은 별도 작업으로 실행한다.
+
+개발·배포 환경 기준은 다음과 같다.
+
+- `skincare`: 로컬 개발 환경. migration과 backfill을 먼저 실행하고 검증한다.
+- `skincare-verify`: 실제 배포 환경. 별도 영속 볼륨을 사용하며 임의 초기화·restore·재생성을 하지 않는다.
+- 2026-09-11 조회 당시 두 환경의 revision은 `7b85bd9f1045`였다. 로컬 `product`는 1,838건,
+  배포의 product·ingredient·evidence·RAG 관련 테이블은 모두 0건이고 `app_user`는 2건이었다.
+  배포 직전 실제 규모와 revision을 다시 조회한다.
+
+마이그레이션은 nullable 컬럼 두 개만 추가하므로 기존 데이터가 있는 DB와 상품이 없는 새 DB에서
+같이 적용할 수 있다. 기존 데이터 분류·갱신은 migration과 별도 실행으로 분리하고,
+taxonomy backfill은 두 분류 컬럼만 갱신한다. 번역 backfill은 `display_title`, `title_source` 등
+번역 소유 컬럼만 갱신한다. 기존 RAG 인덱스와 테이블은 변경하지 않는다.
+
+현재 `skincare-verify`에는 보존하거나 backfill할 기존 상품 데이터가 없다. 로컬에서 taxonomy,
+translation, data pipeline을 완성한 뒤 배포 DB에는 migration을 먼저 적용하고, 확정된 pipeline으로
+데이터를 처음부터 적재한다. 적재 후 테이블별 최종 건수와 FK·유니크 제약 무결성을 검증한다.
+배포의 기존 `app_user` 2건에는 `b518f9fd7cf7`의 필수 성별·연령대 값을 자동으로 정할 근거가
+없으므로, 전체 `upgrade head` 전에 backend 담당자가 기존 계정 처리 방식을 별도로 확정해야 한다.
 
 ### product_ingredient_snapshot
 

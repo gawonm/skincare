@@ -12,6 +12,22 @@ export enum AuthEndpoint {
   Login = "/auth/login",
 }
 
+// TODO(contract): 아래 두 enum 은 `docs/contracts/front-to-backend.md` "회원가입 확장" 절의
+// 제안일 뿐, backend 와 합의 전이다(규칙 16). 값이 바뀌면 여기와 회원가입 화면만 고치면 된다.
+export enum Gender {
+  Female = "female",
+  Male = "male",
+  Unspecified = "unspecified",
+}
+
+export enum AgeGroup {
+  Teens = "10s",
+  Twenties = "20s",
+  Thirties = "30s",
+  Forties = "40s",
+  FiftiesPlus = "50s_plus",
+}
+
 // 비밀번호: 백엔드 `PasswordStr`(min 8 / max 1024)와 동일하게 맞춘다.
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 1024;

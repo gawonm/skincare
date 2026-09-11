@@ -5,12 +5,13 @@
 아니므로 여기서 호출한다.
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import User
+from models import AgeGroup, Gender, User
 
 
 class UserRepository:
@@ -34,9 +35,30 @@ class UserRepository:
         result = await self._session.execute(select(User.id).where(User.email == email).limit(1))
         return result.first() is not None
 
-    async def create(self, *, email: str, hashed_password: str, name: str) -> User:
-        """새 계정을 INSERT하고 서버 기본값이 채워진 인스턴스를 돌려준다."""
-        user = User(email=email, hashed_password=hashed_password, name=name)
+    async def create(
+        self,
+        *,
+        email: str,
+        hashed_password: str,
+        name: str,
+        gender: Gender,
+        age_group: AgeGroup,
+        terms_agreed_at: datetime,
+    ) -> User:
+        """새 계정을 INSERT하고 서버 기본값이 채워진 인스턴스를 돌려준다.
+
+        `terms_agreed`는 여기서 항상 True다 — 서비스가 `SignupRequest.terms_agreed`를
+        `Literal[True]`로 검증한 뒤에만 이 메서드를 호출하기 때문이다.
+        """
+        user = User(
+            email=email,
+            hashed_password=hashed_password,
+            name=name,
+            gender=gender,
+            age_group=age_group,
+            terms_agreed=True,
+            terms_agreed_at=terms_agreed_at,
+        )
         self._session.add(user)
         # id·created_at 같은 서버 기본값을 이 자리에서 채워 호출자가 바로 응답에 쓸 수 있게 한다.
         await self._session.flush()

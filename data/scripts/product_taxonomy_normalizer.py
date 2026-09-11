@@ -24,6 +24,25 @@ class TaxonomyDecisionBasis(StrEnum):
     UNCLASSIFIED = "unclassified"
 
 
+class ProductTaxonomyInput(BaseModel):
+    """CSV와 DB 상품이 분류기에 공통으로 넘기는 최소 입력."""
+
+    model_config = ConfigDict(frozen=True)
+
+    raw_title: str
+    display_title: str
+    category3: str | None = None
+
+
+class ProductTaxonomyTitleSignal(BaseModel):
+    """표시명에서 발견했지만 최종 저장값에는 사용하지 않는 진단 신호."""
+
+    model_config = ConfigDict(frozen=True)
+
+    product_type_normalized: ProductTypeNormalized
+    matched_keyword: str
+
+
 class ProductTaxonomyResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -31,6 +50,7 @@ class ProductTaxonomyResult(BaseModel):
     service_category: ServiceCategory | None
     basis: TaxonomyDecisionBasis
     matched_keyword: str | None = None
+    display_title_signal: ProductTaxonomyTitleSignal | None = None
 
 
 class ProductTaxonomyRule(BaseModel):
@@ -209,32 +229,41 @@ class ProductTaxonomyNormalizer:
         ProductTypeNormalized.ALL_IN_ONE: ServiceCategory.OTHER,
     }
 
-    def classify(self, row: ProductCandidateRow) -> ProductTaxonomyResult:
-        title = self._normalize(f"{row.raw_title} {row.display_title}")
-        for rule in self._RULES:
-            matched_keyword = self._matches_rule(title, rule)
-            if matched_keyword is not None:
-                return self._result(
-                    product_type=rule.product_type,
-                    basis=TaxonomyDecisionBasis.TITLE,
-                    matched_keyword=matched_keyword,
-                )
+    def classify(self, input_: ProductTaxonomyInput) -> ProductTaxonomyResult:
+        # 번역 여부가 저장 분류를 바꾸지 않도록 최종 판정에는 수집 원문만 사용한다.
+        raw_title_signal = self._title_signal(input_.raw_title)
+        display_title_signal = self._display_title_signal(input_)
+        if raw_title_signal is not None:
+            return self._result(
+                product_type=raw_title_signal.product_type_normalized,
+                basis=TaxonomyDecisionBasis.TITLE,
+                matched_keyword=raw_title_signal.matched_keyword,
+                display_title_signal=display_title_signal,
+            )
 
-        if self._normalize(row.category3) == "cleansers":
+        if self._normalize(input_.category3 or "") == "cleansers":
             return self._result(
                 product_type=ProductTypeNormalized.CLEANSER,
                 basis=TaxonomyDecisionBasis.SOURCE_CATEGORY,
-                matched_keyword=row.category3,
+                matched_keyword=input_.category3 or "",
+                display_title_signal=display_title_signal,
             )
 
         return ProductTaxonomyResult(
             product_type_normalized=None,
             service_category=None,
             basis=TaxonomyDecisionBasis.UNCLASSIFIED,
+            display_title_signal=display_title_signal,
         )
 
     def apply(self, row: ProductCandidateRow) -> ProductCandidateRow:
-        result = self.classify(row)
+        result = self.classify(
+            ProductTaxonomyInput(
+                raw_title=row.raw_title,
+                display_title=row.display_title,
+                category3=row.category3,
+            )
+        )
         return row.model_copy(
             update={
                 "product_type_normalized": result.product_type_normalized,
@@ -251,13 +280,34 @@ class ProductTaxonomyNormalizer:
         product_type: ProductTypeNormalized,
         basis: TaxonomyDecisionBasis,
         matched_keyword: str,
+        display_title_signal: ProductTaxonomyTitleSignal | None,
     ) -> ProductTaxonomyResult:
         return ProductTaxonomyResult(
             product_type_normalized=product_type,
             service_category=self.service_category(product_type),
             basis=basis,
             matched_keyword=matched_keyword,
+            display_title_signal=display_title_signal,
         )
+
+    def _title_signal(self, title: str) -> ProductTaxonomyTitleSignal | None:
+        normalized_title = self._normalize(title)
+        for rule in self._RULES:
+            matched_keyword = self._matches_rule(normalized_title, rule)
+            if matched_keyword is not None:
+                return ProductTaxonomyTitleSignal(
+                    product_type_normalized=rule.product_type,
+                    matched_keyword=matched_keyword,
+                )
+        return None
+
+    def _display_title_signal(
+        self,
+        input_: ProductTaxonomyInput,
+    ) -> ProductTaxonomyTitleSignal | None:
+        if self._normalize(input_.display_title) == self._normalize(input_.raw_title):
+            return None
+        return self._title_signal(input_.display_title)
 
     def _normalize(self, value: str) -> str:
         unescaped = html.unescape(value).casefold()
