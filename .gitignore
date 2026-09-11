@@ -13,6 +13,7 @@ wheels/
 # 비밀 값이 들어가는 설정 파일. 절대 커밋하지 않는다.
 # 대신 값이 비어 있는 config.yaml.sample 과 .env.example 을 커밋한다.
 config.yaml
+config.prod.yaml
 .env
 .env.*
 !.env.example
@@ -29,7 +30,6 @@ config.yaml
 htmlcov/
 
 # 에디터, 운영체제
-.DS_Store
 .vscode/
 .idea/
 # Claude Code 로컬 설정(launch.json 등). 개인 실행 환경이라 공유하지 않는다.
@@ -74,7 +74,3 @@ models_cache/
 # 위의 data/ 규칙이 경로와 무관하게 docs/data/ 까지 잡아서 문서가 빠지는 사고가 있었다.
 !docs/
 !docs/**
-
-
-# YK
-KG_skincare/
