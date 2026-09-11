@@ -23,6 +23,7 @@ from core.redis import RedisConfig
 
 DEFAULT_OPENAI_EMBEDDING_DIMENSIONS = 1536
 DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE = 100
+DEFAULT_OPENAI_FREE_TEXT_MIN_VECTOR_SIMILARITY = 0.45
 
 
 class CookieSameSite(StrEnum):
@@ -110,8 +111,8 @@ class OpenAiConfig(PydanticBaseModel):
 class EmbeddingSettings(PydanticBaseModel):
     model_config = ConfigDict(frozen=True)
 
-    # 기존 설정 파일이 명시적으로 바뀌기 전에는 외부 API 호출로 전환되지 않게 로컬이 기본이다.
-    provider: EmbeddingProvider = EmbeddingProvider.LOCAL
+    # 현재 rag_chunk vector(1536)와 맞는 모델이 기본이어야 설정 누락이 DB 오류로 이어지지 않는다.
+    provider: EmbeddingProvider = EmbeddingProvider.OPENAI
     openai_model: OpenAiEmbeddingModel = OpenAiEmbeddingModel.TEXT_EMBEDDING_3_SMALL
     openai_dimensions: Annotated[int, Field(ge=1)] = DEFAULT_OPENAI_EMBEDDING_DIMENSIONS
     openai_batch_size: Annotated[int, Field(ge=1)] = DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE
@@ -136,7 +137,7 @@ class LocalRerankerSettings(PydanticBaseModel):
 class RagRetrievalSettings(PydanticBaseModel):
     model_config = ConfigDict(frozen=True)
 
-    # BGE-M3 검증 전 임계값을 임의 기본값으로 적용하지 않기 위해 명시 입력을 요구한다.
+    # None이면 OpenAI는 검증된 기존값을 쓰고, BGE-M3는 별도 검증값 입력을 요구한다.
     free_text_min_vector_similarity: Annotated[float | None, Field(ge=-1, le=1)] = None
     rrf_k: Annotated[int, Field(gt=0)] = 60
     rerank_candidate_limit: Annotated[int, Field(ge=1)] = 30
