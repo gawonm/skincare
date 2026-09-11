@@ -118,10 +118,10 @@ event: error    data: {"detail": "..."}
 
 # front → backend: 회원가입 확장 (성별·연령대·약관동의)
 
-호출하는 쪽(front)이 쓴 초안이다. 확정 전이며, 아래 "아직 안 정한 것" 은 backend 담당과
-합의한 뒤 채운다. **합의 전에는 이 형태로 구현하지 않는다 (규칙 16).** 프론트 화면(UI)은
-피그마 시안대로 먼저 만들되, 아래 새 필드는 합의 전까지 실제로 `POST /auth/signup` 에
-실어 보내지 않는다 — 지금 계약(email/password/name)만 그대로 보낸다.
+**확정됨 (2026-09-11).** 호출하는 쪽(front)이 쓴 초안을 backend가 구현까지 마쳤다. 아래
+"확정된 내용"이 최종 형태다. front는 `frontend/src/schemas/auth.ts`를 이 문서와 맞춰
+갱신하고, `POST /auth/signup` 요청에 새 필드(`gender`/`age_group`/`terms_agreed`)를 실제로
+실어 보내도 된다 — 더 이상 email/password/name만 보낼 필요 없다.
 
 ## 배경
 
@@ -138,23 +138,25 @@ event: error    data: {"detail": "..."}
 
 ## 입력
 
-- 타입 소유: 불리는 쪽(backend)이 소유한다 (규칙 11). 아래는 front 가 제안하는 형태이고,
-  최종 정의는 `backend/schemas/auth.py` 에 backend 가 작성한다.
+- 타입 소유: 불리는 쪽(backend)이 소유한다 (규칙 11). 실제 정의는
+  `backend/schemas/auth.py`의 `SignupRequest`이고 `Gender`/`AgeGroup`은
+  `models/user.py`에 있다(DB 컬럼 타입과 API 입력 타입을 하나로 공유). 아래는 그 형태를
+  그대로 옮긴 것이다 — 어긋나면 `backend/schemas/auth.py`가 최신이다.
 
 ```python
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, StringConstraints, field_validator
-from typing import Annotated
 
 
-class Gender(StrEnum):
+class Gender(StrEnum):  # models/user.py
     FEMALE = "female"
     MALE = "male"
     UNSPECIFIED = "unspecified"
 
 
-class AgeGroup(StrEnum):
+class AgeGroup(StrEnum):  # models/user.py
     TEENS = "10s"
     TWENTIES = "20s"
     THIRTIES = "30s"
@@ -162,16 +164,20 @@ class AgeGroup(StrEnum):
     FIFTIES_PLUS = "50s_plus"
 
 
-class SignupRequest(BaseModel):
+class SignupRequest(BaseModel):  # backend/schemas/auth.py
     email: EmailStr
     password: PasswordStr  # 기존 정의 재사용
     name: NameStr  # 기존 정의 재사용
     gender: Gender
     age_group: AgeGroup
-    # 체크박스를 안 누르면 프론트가 제출 버튼을 막지만, 서버도 값 자체는 받아서
-    # True 가 아니면 거부한다 — 클라이언트 검증을 서버가 못 믿는다는 전제(규칙 7 취지).
-    terms_agreed: bool
+    # Literal[True]라 false나 누락이면 이 필드 자체에서 422가 난다 — 클라이언트 검증을
+    # 서버가 못 믿는다는 전제(규칙 7 취지)와, "terms_agreed=false 저장"이 애초에 불가능하다는
+    # 걸 타입으로 드러낸다.
+    terms_agreed: Literal[True]
 ```
+
+두 필드 모두 **가입 시 필수**다. 나중에 프로필 화면에서 값을 바꿀 수 있게 할지는 이 계약
+범위 밖(그때 별도 `PATCH` 계약이 필요하다).
 
 ### 예시
 
@@ -188,39 +194,48 @@ class SignupRequest(BaseModel):
 
 ## 출력
 
-- 기존 `UserResponse` 그대로 쓸지, `gender`/`age_group` 도 응답에 포함할지는 미정
-  (아래 "아직 안 정한 것" 참고).
+`UserResponse`에 `gender`/`age_group`을 포함한다. `terms_agreed`/`terms_agreed_at`은
+포함하지 않는다(내부 감사용 데이터라 화면에 노출할 이유가 없다).
+
+```json
+{
+  "id": "...",
+  "email": "user@example.com",
+  "name": "홍길동",
+  "gender": "female",
+  "age_group": "20s",
+  "is_active": true,
+  "created_at": "..."
+}
+```
 
 ## 실패했을 때 (규칙 7)
 
 - `terms_agreed: false` 또는 누락: `422` (Pydantic 검증 실패로 자연히 발생).
+- `gender`/`age_group`에 정의되지 않은 값: `422`.
 - 그 외 실패는 기존 계약과 동일 (이메일 중복 `409` 등).
 
-## 아직 안 정한 것
+## 확정된 내용 (2026-09-11, backend·사용자 승인 완료)
 
-임의로 채우지 않는다 (규칙 3). backend 담당과 합의 후 기록한다.
-
-- **DB 스키마 변경 필요 여부**: `gender`, `age_group` 을 `models.User` 컬럼으로 저장할지,
-  아니면 별도 프로필 테이블(피그마 "05 · 사용자 프로필" 화면과 연결되는 확장 정보)로
-  분리할지. 기존 테이블에 컬럼을 추가하거나 새 테이블을 만들면 규칙 14에 따라
-  `docs/erd/app.md` 를 먼저 고쳐서 사용자 확인을 받아야 한다 — 이 계약 문서만으로는
-  `models/` 를 만들지 않는다.
-- `terms_agreed` 를 DB에 값(true/false, 동의 시각)으로 남길지, 아니면 가입 게이트로만
-  쓰고 저장은 안 할지.
-- `UserResponse` 에 `gender`/`age_group` 포함 여부.
-- `gender`/`age_group` 이 필수 입력인지, 나중에 프로필에서 채워도 되는 선택 입력인지.
-  피그마 시안은 기본값이 이미 선택된 상태(여성·10대)로 보이지만, 실제로 필수로 강제할지는
-  UX 논의가 더 필요할 수 있다.
+- **DB 스키마**: 별도 프로필 테이블이 아니라 `app_user`에 컬럼 4개(`gender`, `age_group`,
+  `terms_agreed`, `terms_agreed_at`)를 추가했다. 근거는
+  [docs/erd/app.md](../erd/app.md)의 `app_user` 절. 마이그레이션:
+  `migrations/versions/b518f9fd7cf7_...`.
+- **`terms_agreed`**: 값을 저장한다(게이트로만 쓰고 버리지 않음). `terms_agreed_at`에
+  동의 시각(서버가 요청을 받은 시각)도 같이 남겨 나중에 분쟁·감사 대응이 가능하게 했다.
+- **필수 여부**: 가입 시 필수. 프로필에서 나중에 채우는 흐름은 없다.
+- **응답 포함**: `gender`/`age_group`은 `UserResponse`에 포함, `terms_agreed*`는 미포함.
 
 ## 절차 (규칙 16)
 
 1. (완료) front 가 이 초안을 작성한다.
-2. backend 담당에게 설명한다: 새로 필요한 3개 필드(gender, age_group, terms_agreed)와
-   그로 인한 잠재적 DB 스키마 변경(규칙 14 ERD 선행 필요)을 공유한다.
-3. "아직 안 정한 것" 을 논의해 확정한다. DB 변경이 필요하면 ERD 문서 승인까지 마친다.
-4. 확정 후 구현한다. backend 가 `backend/schemas/auth.py` 를 먼저 확장하고, front 가
-   `frontend/src/schemas/auth.ts` 를 그에 맞춰 미러링한 뒤 실제 제출 로직을 연결한다.
-5. front·backend 양쪽 `README.md` "관련 문서" 에 이 파일 링크를 건다.
+2. (완료) backend 담당에게 설명하고 합의했다.
+3. (완료) "아직 안 정한 것"을 확정했다 — 위 "확정된 내용" 참고. ERD 문서 승인 완료.
+4. (완료, backend) `backend/schemas/auth.py`·`models/user.py`·마이그레이션 구현 및 검증.
+5. **(front 남음)** `frontend/src/schemas/auth.ts`·`frontend/src/pages/SignupPage.tsx`를
+   이 문서에 맞춰 갱신하고, 지금은 안 보내고 있는 `gender`/`age_group`/`terms_agreed`를
+   실제로 `POST /auth/signup`에 실어 보내도록 연결한다(`passwordConfirm`은 여전히
+   서버로 보내지 않는다 — 클라이언트 전용 검증).
 
 ## 관련 문서
 

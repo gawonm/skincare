@@ -3,8 +3,9 @@
 `config.yaml`의 `database.url` 대상 DB(`app`)의 전체 테이블. 모델 정의는 `models/*.py`,
 공통 컬럼(`id`/`created_at`/`updated_at`)은 `core/database.py`의 `EntityBase`.
 
-작성 기준: 2026-09-10, `migrations/versions/` 기준 8개 테이블 적용 완료
-(`0001_extensions` ~ `7b85bd9f1045_add_product_table`, `993200358dfb`로 브랜치 병합).
+작성 기준: 2026-09-11, `migrations/versions/` 기준 8개 테이블 적용 완료
+(`0001_extensions` ~ `b518f9fd7cf7_add_gender_age_group_terms_agreed_`, `993200358dfb`로
+브랜치 병합). `app_user`에 회원가입 확장 필드(`gender`/`age_group`/`terms_agreed*`) 추가.
 
 ## 전체 관계도
 
@@ -15,6 +16,10 @@ erDiagram
         text email UK
         text hashed_password
         text name
+        text gender
+        text age_group
+        boolean terms_agreed
+        timestamptz terms_agreed_at
         boolean is_active
         timestamptz created_at
         timestamptz updated_at
@@ -186,10 +191,19 @@ erDiagram
 | email | text | N | - | UK. 로그인 전 소문자 정규화 |
 | hashed_password | text | N | - | argon2id 해시만 저장 |
 | name | text | N | - | 표시 이름 |
+| gender | text(enum) | N | - | `female`/`male`/`unspecified`. 가입 시 필수(피그마 시안 기준) |
+| age_group | text(enum) | N | - | `10s`/`20s`/`30s`/`40s`/`50s_plus`. 가입 시 필수 |
+| terms_agreed | boolean | N | `false` | 가입 게이트. `false`로는 가입 자체가 안 되므로 실제로는 항상 `true`만 저장됨 |
+| terms_agreed_at | timestamptz | Y | - | 동의 시각. 동의 이력 감사용. `terms_agreed=false`일 땐 NULL |
 | is_active | boolean | N | `true` | 비활성 계정은 로그인 거부 |
 | created_at / updated_at | timestamptz | N | `now()` | 공통 |
 
 키: PK `id`, UK `email`.
+
+`gender`/`age_group`/`terms_agreed`는 별도 프로필 테이블로 분리하지 않고 `app_user`에 직접
+둔다. 지금은 로그인 계정과 1:1로만 쓰이고, 다른 테이블이 이 값을 참조하지도 않는다 —
+분리해서 얻는 이점(선택적 로딩, 독립적 스키마 변경) 없이 조인만 하나 늘어난다. "05 · 사용자
+프로필" 화면이 실제로 나와서 더 많은 프로필 필드가 필요해지면 그때 분리를 재검토한다.
 
 ### ingredient_master
 
