@@ -16,7 +16,7 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 | 경로 | 역할 |
 | --- | --- |
 | `agent/service.py` | 채팅 진입점, 권한·히스토리 계약 호출, 요청 중복 및 저장 재시도 조정 |
-| `agent/factory.py` | GPT-4o mini·로컬 BGE 운영 조립, 개발용 조립과 체크포인트 직렬화 설정 |
+| `agent/factory.py` | GPT-4o mini·선택형 임베딩·로컬 BGE 리랭커 운영 조립과 개발용 조립 |
 | `agent/schemas.py`, `agent/ports.py` | 채팅·세션 입출력 모델과 외부 조회·저장 계약 |
 | `agent/graph.py`, `agent/nodes.py` | LangGraph 상태 전이와 작업 처리 |
 | `agent/context.py` | 제한된 LLM 문맥과 대화 요약 구성 |
@@ -58,7 +58,8 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 `ProductionAgentFactory`는 Intent·답변 생성에 `gpt-4o-mini`, 기본 운영 임베딩에
 `text-embedding-3-small` 1536차원, 재정렬에 로컬 `BAAI/bge-reranker-v2-m3`를 연결한다.
 `config.yaml`의 `agent.embedding.provider`를 `local`로 바꾸면 `BAAI/bge-m3`도 선택할 수
-있다. 로컬 모델 객체는 첫 사용 시 지연 로드한다.
+있다. 다만 현재 Backend는 DB가 1536차원인 동안 1024차원 로컬 임베더 선택을 조립 단계에서
+거부한다. 로컬 모델 객체는 첫 사용 시 지연 로드한다.
 Backend의 `AgentConfigurationAssembler`가 `config.yaml`을 운영 설정으로 변환한다.
 다만 히스토리·상품·성분·루틴·체크포인터 구현이 모두 준비되지 않아
 `ProductionAgentFactory`를 완성된 애플리케이션 lifespan에서 호출하는 단계는 남아 있다.
@@ -115,7 +116,8 @@ main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거
 - 현재 운영 선택인 `text-embedding-3-small`이 질의·적재 모두 1536차원을 반환하고 기존
   `rag_chunk.embedding vector(1536)` 및 `embedding_model` 값과 일치하는지 확인한다.
 - 향후 `provider: local`로 바꿀 때만 BGE-M3의 1024차원에 맞춘 ERD 확인, 마이그레이션,
-  전체 재임베딩과 별도 유사도 임계값 검증을 하나의 배포 절차로 합의한다.
+  전체 재임베딩과 별도 유사도 임계값 검증을 하나의 배포 절차로 합의한다. 현재 Backend는
+  이 차원 불일치를 DB 접근 전에 명확한 설정 오류로 중단한다.
 - 애플리케이션 설정은 `config.yaml`만 사용한다. Backend가 OpenAI API 키와
   `gpt-4o-mini` 모델 설정을 읽어 `ProductionAgentConfig`에 주입하고, agent는 `.env`나
   환경변수를 직접 읽지 않는다. `.env`는 Docker Compose 변수에만 사용한다.
@@ -131,8 +133,8 @@ main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거
 .venv/bin/python -m agent.demo
 ```
 
-2026-09-11 agent 테스트 54개 통과를 확인했다. 기존 34개에 동적 분류 10개, RAG 계약 6개,
-임베딩 선택·차원 검사 4개를 추가했다. DB 없는 대화 흐름·방 격리·후보 참조·실패 복구·데이터
+2026-09-11 agent 테스트 55개 통과를 확인했다. 기존 34개에 동적 분류 10개, RAG 계약 6개,
+임베딩 선택·차원 검사 5개를 추가했다. DB 없는 대화 흐름·방 격리·후보 참조·실패 복구·데이터
 DTO 변환 외에도 신규 분류,
 제형·사용감 분리, 폐기된 코드 차단, 조건 누락 후보 제외, 실제 상품 표시, 청킹→검색 통합→
 인용·조건 검증을 검사한다. 실제 DB 검색, 임베딩 API, 운영 연결의 검증은 아니다.

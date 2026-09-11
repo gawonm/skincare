@@ -387,7 +387,8 @@ main의 `models/rag_chunk.py`는 `text-embedding-3-small` 기준 1536차원으�
 
 선택 가능한 BGE-M3 dense 벡터는 1024차원이다. 향후 `provider: local`로 운영 전환할 때는
 ERD 합의, 차원 마이그레이션, 전체 재임베딩, HNSW 재생성과 별도 임계값 검증을 먼저 완료해야
-한다. 현재 1536차원 DB에서 로컬 provider를 바로 사용하지 않는다.
+한다. 현재 Backend 설정 조립은 1536차원 DB에서 로컬 provider를 선택하면 DB 접근 전에
+명확한 차원 불일치 오류로 중단한다.
 
 `HybridSearchBackend.search` 구현은 다음을 보장해야 한다.
 
