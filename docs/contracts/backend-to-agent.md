@@ -52,11 +52,39 @@ class OpenAiChatModel(StrEnum):
     GPT_4O_MINI = "gpt-4o-mini"
 
 
+class LlmProvider(StrEnum):
+    OPENAI = "openai"
+    OLLAMA = "ollama"
+    LOCAL = "local"
+
+
 class OpenAiChatConfig(RagModel):
     api_key: SecretStr
     model: OpenAiChatModel = OpenAiChatModel.GPT_4O_MINI
     timeout_seconds: float = Field(default=30, gt=0)
     max_retries: int = Field(default=1, ge=0)
+
+
+class LocalChatConfig(RagModel):
+    base_url: str = "http://localhost:11434/v1"
+    model: str = "qwen 3.5:9B"
+    api_key: SecretStr = SecretStr("ollama")
+    timeout_seconds: float = Field(default=60, gt=0)
+    max_retries: int = Field(default=1, ge=0)
+
+
+class ChatModelConfig(RagModel):
+    """채팅 의도 파싱 및 답변 생성에서 사용할 LLM 설정."""
+
+    provider: LlmProvider = LlmProvider.OPENAI
+    openai: OpenAiChatConfig | None = None
+    local: LocalChatConfig = Field(default_factory=LocalChatConfig)
+
+    @model_validator(mode="after")
+    def validate_provider(self) -> Self:
+        if self.provider is LlmProvider.OPENAI and self.openai is None:
+            raise ValueError("OpenAI LLM을 선택하면 OpenAI 채팅 설정이 필요합니다.")
+        return self
 
 
 class EmbeddingProvider(StrEnum):
@@ -128,14 +156,14 @@ class RagRetrievalPolicy(RagModel):
 
 
 class ProductionAgentConfig(AgentModel):
-    openai: OpenAiChatConfig
+    chat: ChatModelConfig
     embedding: TextEmbeddingConfig
     reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
     retrieval_policy: RagRetrievalPolicy
 ```
 
-OpenAI API 키는 채팅과 OpenAI 임베딩 설정에 같은 `config.yaml` 값을 주입한다.
-`OpenAiChatConfig`·임베딩 선택·로컬 모델·검색 정책은 `agent/rag/schemas.py`,
+OpenAI API 키는 OpenAI를 선택했을 때만 필요하며, Ollama/로컬 LLM을 선택하면 OpenAI 키 없이도 동작한다.
+`ChatModelConfig`·`OpenAiChatConfig`·임베딩 선택·로컬 모델·검색 정책은 `agent/rag/schemas.py`,
 `ProductionAgentConfig`는 `agent/factory.py`가 소유한다. 샘플 설정에는 실제 API 키를 넣지 않는다.
 Backend는 `TextEmbeddingConfig.output_dimensions()`와 현재 `rag_chunk.embedding` 차원을
 조립 단계에서 비교한다. 일치하지 않으면 DB 검색·적재 전에 `RuntimeError`로 중단한다.
