@@ -4,7 +4,10 @@ from pydantic import SecretStr
 
 from agent.factory import ProductionAgentConfig
 from agent.rag.schemas import (
+    ChatModelConfig,
     EmbeddingProvider,
+    LlmProvider as AgentLlmProvider,
+    LocalChatConfig,
     LocalEmbeddingConfig,
     LocalEmbeddingModel,
     LocalRerankerConfig,
@@ -25,6 +28,7 @@ from core.config import (
     OpenAiConfig,
 )
 from core.config import EmbeddingProvider as CoreEmbeddingProvider
+from core.config import LlmProvider as CoreLlmProvider
 from core.config import LocalModelDevice as CoreLocalModelDevice
 from models.rag_chunk import EMBEDDING_DIMENSION
 
@@ -37,16 +41,11 @@ class AgentConfigurationAssembler:
         openai: OpenAiConfig | None,
         agent: AgentSettings,
     ) -> ProductionAgentConfig:
-        if openai is None:
-            raise RuntimeError("config.yaml에 openai 블록이 없어 Agent를 조립할 수 없습니다.")
+        chat = self.create_chat(openai, agent)
         threshold = self._retrieval_threshold(agent)
         return ProductionAgentConfig(
-            openai=OpenAiChatConfig(
-                api_key=SecretStr(openai.api_key),
-                model=OpenAiChatModel(openai.chat_model.value),
-                timeout_seconds=openai.timeout_seconds,
-                max_retries=openai.max_retries,
-            ),
+            chat=chat,
+            openai=chat.openai,
             embedding=self.create_embedding(openai, agent),
             reranker=LocalRerankerConfig(
                 model=LocalRerankerModel(agent.reranker.model.value),
@@ -61,6 +60,39 @@ class AgentConfigurationAssembler:
                 rrf_k=agent.retrieval.rrf_k,
                 rerank_candidate_limit=agent.retrieval.rerank_candidate_limit,
             ),
+        )
+
+    def create_chat(
+        self,
+        openai: OpenAiConfig | None,
+        agent: AgentSettings,
+    ) -> ChatModelConfig:
+        provider = AgentLlmProvider(agent.chat.provider.value)
+        openai_chat = self._openai_chat(openai, agent) if provider is AgentLlmProvider.OPENAI else None
+        return ChatModelConfig(
+            provider=provider,
+            openai=openai_chat,
+            local=LocalChatConfig(
+                base_url=agent.chat.local.base_url,
+                model=agent.chat.local.model,
+                api_key=SecretStr(agent.chat.local.api_key),
+                timeout_seconds=agent.chat.local.timeout_seconds,
+                max_retries=agent.chat.local.max_retries,
+            ),
+        )
+
+    def _openai_chat(
+        self,
+        openai: OpenAiConfig | None,
+        agent: AgentSettings,
+    ) -> OpenAiChatConfig:
+        if openai is None:
+            raise RuntimeError("OpenAI 채팅을 선택했지만 config.yaml에 openai 블록이 없습니다.")
+        return OpenAiChatConfig(
+            api_key=SecretStr(openai.api_key),
+            model=OpenAiChatModel(openai.chat_model.value),
+            timeout_seconds=openai.timeout_seconds,
+            max_retries=openai.max_retries,
         )
 
     def create_embedding(

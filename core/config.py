@@ -108,6 +108,29 @@ class OpenAiConfig(PydanticBaseModel):
     max_retries: Annotated[int, Field(ge=0)] = 1
 
 
+class LlmProvider(StrEnum):
+    OPENAI = "openai"
+    OLLAMA = "ollama"
+    LOCAL = "local"
+
+
+class LocalChatSettings(PydanticBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    base_url: Annotated[str, Field(min_length=1)] = "http://localhost:11434/v1"
+    model: Annotated[str, Field(min_length=1)] = "qwen 3.5:9B"
+    api_key: Annotated[str, Field(min_length=1)] = "ollama"
+    timeout_seconds: Annotated[float, Field(gt=0)] = 60.0
+    max_retries: Annotated[int, Field(ge=0)] = 1
+
+
+class LlmChatSettings(PydanticBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    provider: LlmProvider = LlmProvider.OPENAI
+    local: LocalChatSettings = LocalChatSettings()
+
+
 class EmbeddingSettings(PydanticBaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -146,6 +169,7 @@ class RagRetrievalSettings(PydanticBaseModel):
 class AgentSettings(PydanticBaseModel):
     model_config = ConfigDict(frozen=True)
 
+    chat: LlmChatSettings = LlmChatSettings()
     embedding: EmbeddingSettings = EmbeddingSettings()
     reranker: LocalRerankerSettings = LocalRerankerSettings()
     retrieval: RagRetrievalSettings = RagRetrievalSettings()

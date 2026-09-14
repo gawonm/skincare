@@ -52,11 +52,39 @@ class OpenAiChatModel(StrEnum):
     GPT_4O_MINI = "gpt-4o-mini"
 
 
+class LlmProvider(StrEnum):
+    OPENAI = "openai"
+    OLLAMA = "ollama"
+    LOCAL = "local"
+
+
 class OpenAiChatConfig(RagModel):
     api_key: SecretStr
     model: OpenAiChatModel = OpenAiChatModel.GPT_4O_MINI
     timeout_seconds: float = Field(default=30, gt=0)
     max_retries: int = Field(default=1, ge=0)
+
+
+class LocalChatConfig(RagModel):
+    base_url: str = "http://localhost:11434/v1"
+    model: str = "qwen 3.5:9B"
+    api_key: SecretStr = SecretStr("ollama")
+    timeout_seconds: float = Field(default=60, gt=0)
+    max_retries: int = Field(default=1, ge=0)
+
+
+class ChatModelConfig(RagModel):
+    """채팅 의도 파싱 및 답변 생성에서 사용할 LLM 설정."""
+
+    provider: LlmProvider = LlmProvider.OPENAI
+    openai: OpenAiChatConfig | None = None
+    local: LocalChatConfig = Field(default_factory=LocalChatConfig)
+
+    @model_validator(mode="after")
+    def validate_provider(self) -> Self:
+        if self.provider is LlmProvider.OPENAI and self.openai is None:
+            raise ValueError("OpenAI LLM을 선택하면 OpenAI 채팅 설정이 필요합니다.")
+        return self
 
 
 class EmbeddingProvider(StrEnum):
@@ -128,19 +156,40 @@ class RagRetrievalPolicy(RagModel):
 
 
 class ProductionAgentConfig(AgentModel):
-    openai: OpenAiChatConfig
+    chat: ChatModelConfig
     embedding: TextEmbeddingConfig
     reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
     retrieval_policy: RagRetrievalPolicy
 ```
 
-OpenAI API 키는 채팅과 OpenAI 임베딩 설정에 같은 `config.yaml` 값을 주입한다.
-`OpenAiChatConfig`·임베딩 선택·로컬 모델·검색 정책은 `agent/rag/schemas.py`,
+OpenAI API 키는 OpenAI를 선택했을 때만 필요하며, Ollama/로컬 LLM을 선택하면 OpenAI 키 없이도 동작한다.
+`ChatModelConfig`·`OpenAiChatConfig`·임베딩 선택·로컬 모델·검색 정책은 `agent/rag/schemas.py`,
 `ProductionAgentConfig`는 `agent/factory.py`가 소유한다. 샘플 설정에는 실제 API 키를 넣지 않는다.
 Backend는 `TextEmbeddingConfig.output_dimensions()`와 현재 `rag_chunk.embedding` 차원을
 조립 단계에서 비교한다. 일치하지 않으면 DB 검색·적재 전에 `RuntimeError`로 중단한다.
 검색 임계값이 `null`이면 OpenAI provider에서만 기존 검증값 `0.45`를 적용하고, 로컬 provider는
 모델별 검증값을 명시하도록 오류로 중단한다.
+
+### 로컬 임베딩(BGE-M3, 1024차원) 전환 절차 (3단계 후속 작업)
+
+현재 Agent 계층은 `LocalBgeM3Embedder`와 `TextEmbedderFactory`를 통해 로컬 임베딩을 완벽히 지원하며,
+DB의 `rag_chunk` 테이블은 기존 1536차원 벡터 데이터(65,196건)를 유지하고 있다.
+따라서 **향후 로컬 임베딩으로의 전환은 Agent 코드의 추가 수정 없이, Backend/Data 쪽에서 설정을 주입하고
+DB 마이그레이션·재임베딩을 주도하여 수정하면 된다.** 최종 전환 절차는 다음과 같다.
+
+1. **ERD 문서 갱신 및 합의 (규칙 14)**:
+   `docs/erd/app.md`에서 `rag_chunk.embedding`의 타입을 `vector(1536)`에서 `vector(1024)`로 수정 합의한다.
+2. **DB 모델 및 마이그레이션 생성 (Data 파트)**:
+   `models/rag_chunk.py`의 `EMBEDDING_DIMENSION = 1024`로 수정하고, `vector(1024)` 컬럼 변환 및
+   HNSW 코사인 인덱스(`ix_rag_chunk_embedding_hnsw`) 재생성 Alembic 마이그레이션을 생성한다.
+3. **기존 65,196건 청크의 인플레이스(in-place) 재임베딩**:
+   DB 원본 테이블이 없는 `nia_qa`(45,002건)의 유실을 방지하기 위해 테이블을 TRUNCATE하지 않고,
+   기존 `rag_chunk.content` 텍스트를 배치 단위로 읽어 BGE-M3(`BAAI/bge-m3`)로 1024차원 벡터를 계산한 뒤
+   `embedding` 컬럼을 UPDATE하는 전용 스크립트로 안전하게 재임베딩한다.
+   *(CPU 환경 시 약 1~2시간 소요 예상, GPU 확보 시 10~15분 내외)*
+4. **설정 및 임계값 전환**:
+   `config.yaml`의 `agent.embedding.provider: local`로 변경하고, BGE-M3 기준의
+   `agent.retrieval.free_text_min_vector_similarity` 검증값을 반영한다.
 
 ## 3. 사용자 요청 호출
 

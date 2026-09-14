@@ -49,6 +49,14 @@ openai:
   max_retries: 1
 
 agent:
+  chat:
+    # openai | ollama | local
+    provider: openai
+    local:
+      base_url: http://localhost:11434/v1
+      model: "qwen 3.5:9B"
+      timeout_seconds: 60
+      max_retries: 1
   embedding:
     # 현재 DB vector(1536)와 기존 색인을 그대로 사용한다.
     provider: openai

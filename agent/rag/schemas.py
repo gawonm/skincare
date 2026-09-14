@@ -270,6 +270,12 @@ class OpenAiChatModel(StrEnum):
     GPT_4O_MINI = "gpt-4o-mini"
 
 
+class LlmProvider(StrEnum):
+    OPENAI = "openai"
+    OLLAMA = "ollama"
+    LOCAL = "local"
+
+
 class EmbeddingProvider(StrEnum):
     OPENAI = "openai"
     LOCAL = "local"
@@ -399,6 +405,35 @@ class OpenAiChatConfig(RagModel):
     model: OpenAiChatModel = OpenAiChatModel.GPT_4O_MINI
     timeout_seconds: float = Field(default=30, gt=0)
     max_retries: int = Field(default=1, ge=0)
+
+
+class LocalChatConfig(RagModel):
+    base_url: str = Field(default="http://localhost:11434/v1", min_length=1)
+    model: str = Field(default="qwen 3.5:9B", min_length=1)
+    api_key: SecretStr = Field(default=SecretStr("ollama"))
+    timeout_seconds: float = Field(default=60, gt=0)
+    max_retries: int = Field(default=1, ge=0)
+
+
+class ChatModelConfig(RagModel):
+    """채팅 의도 파싱 및 답변 생성에서 사용할 LLM 설정."""
+
+    provider: LlmProvider = LlmProvider.OPENAI
+    openai: OpenAiChatConfig | None = None
+    local: LocalChatConfig = Field(default_factory=LocalChatConfig)
+
+    @model_validator(mode="after")
+    def validate_provider(self) -> Self:
+        if self.provider is LlmProvider.OPENAI and self.openai is None:
+            raise ValueError("OpenAI LLM을 선택하면 OpenAI 채팅 설정이 필요합니다.")
+        return self
+
+    def active_model(self) -> str:
+        if self.provider is LlmProvider.OPENAI:
+            if self.openai is None:
+                raise ValueError("OpenAI 채팅 설정이 없습니다.")
+            return self.openai.model.value
+        return self.local.model
 
 
 class OpenAiEmbeddingConfig(RagModel):
