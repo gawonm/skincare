@@ -11,7 +11,8 @@ from types import ModuleType
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
+from typing import Self
 
 import agent.rag.schemas as rag_schemas
 import agent.schemas as agent_schemas
@@ -26,7 +27,7 @@ from agent.adapters import (
 )
 from agent.context import ContextBuilder, ConversationSummarizer
 from agent.graph import AgentGraphFactory, AgentGraphRouter
-from agent.llm import OpenAiLlmClient
+from agent.llm import LlmClientFactory, OpenAiLlmClient
 from agent.nodes import AgentNodes
 from agent.ports import (
     ChatHistoryRepository,
@@ -38,12 +39,14 @@ from agent.ports import (
 from agent.prompts import PromptCatalog
 from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.generation.answer_generator import AnswerGenerator
-from agent.rag.generation.openai_generator import OpenAiClaimGenerator
+from agent.rag.generation.openai_generator import ClaimGeneratorFactory, OpenAiClaimGenerator
 from agent.rag.pipeline import EvidenceApplicabilityEvaluator, EvidencePipeline
 from agent.rag.ports import EvidenceReranker, EvidenceRetriever, HybridSearchBackend, TextEmbedder
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
 from agent.rag.schemas import (
+    ChatModelConfig,
+    LlmProvider,
     LocalRerankerConfig,
     OpenAiChatConfig,
     ProductTaxonomy,
@@ -117,11 +120,25 @@ class AgentFactory:
 class ProductionAgentConfig(AgentModel):
     """운영 모델 선택과 검색 정책. OpenAI 키는 SecretStr 상태로만 전달한다."""
 
-    openai: OpenAiChatConfig
+    chat: ChatModelConfig | None = None
+    openai: OpenAiChatConfig | None = None
     # DB 차원과 외부 API 사용 여부가 달라지므로 운영 호출자가 명시적으로 선택해야 한다.
     embedding: TextEmbeddingConfig
     reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
     retrieval_policy: RagRetrievalPolicy
+
+    @model_validator(mode="after")
+    def validate_chat_config(self) -> Self:
+        if self.chat is None:
+            if self.openai is None:
+                raise ValueError("chat 또는 openai 설정이 반드시 필요합니다.")
+            self.chat = ChatModelConfig(
+                provider=LlmProvider.OPENAI,
+                openai=self.openai,
+            )
+        elif self.openai is None and self.chat.openai is not None:
+            self.openai = self.chat.openai
+        return self
 
 
 class ProductionAgentDependencies(AgentModel):
@@ -150,7 +167,7 @@ class ProductionAgentApplication(AgentModel):
 
 
 class ProductionAgentFactory:
-    """GPT 호출과 설정에서 선택한 검색 모델을 한 지점에서 명시적으로 조립한다."""
+    """설정에서 선택한 LLM 및 검색 모델을 한 지점에서 명시적으로 조립한다."""
 
     def create(
         self,
@@ -170,11 +187,11 @@ class ProductionAgentFactory:
         evidence_pipeline = EvidencePipeline(
             retriever=evidence_retriever,
             evaluator=EvidenceApplicabilityEvaluator(),
-            generator=AnswerGenerator(OpenAiClaimGenerator(config.openai)),
+            generator=AnswerGenerator(ClaimGeneratorFactory().create(config.chat)),
         )
         service = AgentFactory().create(
             AgentDependencies(
-                llm=OpenAiLlmClient(config.openai),
+                llm=LlmClientFactory().create(config.chat),
                 history=dependencies.history,
                 products=dependencies.products,
                 product_taxonomy=dependencies.product_taxonomy,
