@@ -59,6 +59,14 @@ openai:
 # 현재 DB vector(1536)를 유지하도록 OpenAI 임베딩을 선택한다. local로 바꾸면 DB 차원 전환이 필요하다.
 # 리랭커는 항상 로컬에서 실행하며 모델 파일은 최초 실행 때 캐시에 내려받는다.
 agent:
+  chat:
+    # openai | ollama | local
+    provider: openai
+    local:
+      base_url: http://localhost:11434/v1
+      model: "qwen 3.5:9B"
+      timeout_seconds: 60
+      max_retries: 1
   embedding:
     provider: openai
     openai_model: text-embedding-3-small
