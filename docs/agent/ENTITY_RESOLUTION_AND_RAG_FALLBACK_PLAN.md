@@ -65,7 +65,7 @@
 
 스킨케어 에이전트 CLI 및 대화 테스트 환경에서 사용자가 다음과 같은 일반적인 질문을 입력했을 때, 정상적인 근거 검색이나 답변 생성이 진행되지 못하고 즉시 대화가 차단되는 현상이 발생했습니다.
 
-> **사용자 입력**: `"나이아신아마이드와 비타민C의 효능"`  
+> **사용자 입력**: `"나이아신아마이드와 비타민C의 효능"`<br>
 > **에이전트 응답**: `"성분명을 하나의 후보로 식별하지 못했습니다. 정확한 표시 명칭을 알려주세요."` (`ChatStatus.NEEDS_INPUT`)
 
 본 작업 예정서는 해당 현상의 근본 원인을 분석하고, 사용자가 선택한 **방안 C(방안 A: RAG 자유 텍스트 검색 폴백 + 방안 B: 일상 성분 통칭 사전 매핑 결합)**를 시스템에 안정적으로 적용하기 위한 상세 설계와 실행 계획을 정의합니다.
@@ -80,20 +80,20 @@
 flowchart TD
     A["사용자 입력: '나이아신아마이드와 비타민C의 효능'"] --> B["understand_request<br/>(LLM 의도 파싱)"]
     B -->|intents: EVIDENCE_QA<br/>ingredient_mentions: ['나이아신아마이드', '비타민C']| C["resolve_entities<br/>(성분 식별 노드)"]
-    
+
     C -->|나이아신아마이드| D["DB 성분 검색 성공<br/>(ingredient_ids에 추가)"]
     C -->|비타민C| E["DB 성분 검색 실패 (NO_RESULTS)<br/>unresolved_names.append('비타민C')"]
-    
+
     D --> F["assess_information<br/>(정보 평가 노드)"]
     E --> F
-    
+
     F -->|❌ unresolved_names 존재 확인| G["clarification_question 생성<br/>'성분명을 하나의 후보로 식별하지 못했습니다...'"]
     G --> H["after_information 라우터<br/>-> ASK_USER 분기"]
     H --> I["ask_user 노드<br/>ChatStatus.NEEDS_INPUT 반환 및 강제 종료"]
-    
+
     style G fill:#ffcccc,stroke:#ff0000,stroke-width:2px
     style I fill:#ffcccc,stroke:#ff0000,stroke-width:2px
-    
+
     subgraph "정상 도달해야 할 RAG 파이프라인 (완전 차단됨)"
         J["process_task (_process_evidence)"]
         K["SqlAlchemyHybridSearchBackend<br/>(ParadeDB BM25 + pgvector 코사인 검색)"]
@@ -132,7 +132,7 @@ flowchart TD
 소비자 일상 언어를 포용하면서도 시스템의 신뢰성과 피부 안전성을 훼손하지 않도록 **2중 안전망(Defense-in-Depth)** 구조로 설계합니다.
 
 ```
-[사용자 입력] 
+[사용자 입력]
      │
      ▼
 [1차 안전망: 방안 B] 일상 성분 통칭 사전 (IngredientAliasMapper)
