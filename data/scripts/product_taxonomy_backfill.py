@@ -100,7 +100,9 @@ class ProductTaxonomyBackfillPlanner:
             before_pairs.append(current_pair)
 
             # main 병합 이후 classify()는 category3를 nullable로 받지 않으므로 빈 문자열로 채운다.
-            result = self._normalizer.classify(row.model_copy(update={"category3": row.category3 or ""}))
+            result = self._normalizer.classify(
+                row.model_copy(update={"category3": row.category3 or ""})
+            )
             expected_pair = (result.product_type_normalized, result.service_category)
             after_pairs.append(expected_pair)
 
