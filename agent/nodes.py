@@ -4,9 +4,11 @@ from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid5
 
 from agent.context import ContextBuilder
+from agent.evidence_query_policy import EvidenceQueryPolicy
 from agent.ports import IngredientRepository, LlmClient, ProductRepository, RoutinePlanner
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.rag.pipeline import EvidencePipeline
+from agent.rag.retrieval.ingredient_alias_mapper import CommonIngredientAliasMapper
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.schemas import (
     ApplicabilityStatus,
@@ -91,6 +93,8 @@ class AgentNodes:
         self._prompt_catalog = prompt_catalog
         self._product_taxonomy = product_taxonomy.model_copy(deep=True)
         self._product_filters = ProductFilterValidator(self._product_taxonomy)
+        self._ingredient_aliases = CommonIngredientAliasMapper()
+        self._evidence_query_policy = EvidenceQueryPolicy()
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
         self._require_turn_fields(state)
@@ -269,11 +273,26 @@ class AgentNodes:
             ingredient_result = await self._ingredient_repository.resolve(
                 self._ingredient_request(mention)
             )
-            if ingredient_result.status is LookupStatus.ERROR:
-                self._add_tool_failure(state, ingredient_result.error_message)
+            alias_request = self._ingredient_aliases.map_request(self._ingredient_request(mention))
+            if (
+                ingredient_result.status is LookupStatus.NO_RESULTS
+                and alias_request.name != mention
+            ):
+                if not self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):
+                    break
+                # DB의 원문 식별·모호성·오류를 별칭으로 덮어쓰지 않고 무결과일 때만 재조회한다.
+                ingredient_result = self._ingredient_aliases.validate_result(
+                    alias_request, await self._ingredient_repository.resolve(alias_request)
+                )
+            if ingredient_result.status in (LookupStatus.ERROR, LookupStatus.UNSUPPORTED):
+                self._add_tool_failure(
+                    state,
+                    ingredient_result.error_message
+                    or f"성분 조회를 수행하지 못했습니다: {mention} ({ingredient_result.status.value})",
+                )
             elif ingredient_result.ambiguous_candidates:
                 unresolved_names.append(mention)
-            elif ingredient_result.ingredient:
+            elif ingredient_result.status is LookupStatus.SUCCESS and ingredient_result.ingredient:
                 ingredient_ids.append(ingredient_result.ingredient.ingredient_id)
             elif parsed.ingredient_mentions:
                 unresolved_names.append(mention)
@@ -287,6 +306,7 @@ class AgentNodes:
         )
         if (
             needs_products
+            and not unresolved_names
             and not parsed.unsupported_product_conditions
             and self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES)
         ):
@@ -380,7 +400,7 @@ class AgentNodes:
             question = "성분 확인, 상품 추천, 루틴 만들기 중 어떤 도움이 필요한가요?"
             target_field = "intent"
             reason = "질문 목적을 추측해서 다른 작업을 실행하지 않습니다."
-        elif state.resolved_entities.unresolved_names:
+        elif self._evidence_query_policy.requires_clarification(state):
             question = "성분명을 하나의 후보로 식별하지 못했습니다. 정확한 표시 명칭을 알려주세요."
             target_field = "ingredient_name"
             reason = "모호한 후보들을 서로 다른 확정 성분으로 취급하면 안 됩니다."
@@ -705,6 +725,9 @@ class AgentNodes:
 
     async def _process_evidence(self, state: AgentState) -> None:
         parsed = self._require_parsed(state)
+        if self._evidence_query_policy.has_lookup_failure(state):
+            state.response_parts.append("성분·대상 조회가 실패해 근거 검색을 진행하지 못했습니다.")
+            return
         if not self._reserve_tool_call(state, GraphNode.PROCESS_TASK):
             return
         products = list(state.resolved_entities.products)
@@ -737,18 +760,25 @@ class AgentNodes:
                 value = getattr(parsed.known_conditions, field)
                 if value is not None:
                     setattr(known_conditions, field, value)
-        # 자료가 없더라도 최근에 명확히 식별한 대상을 유지해야 이전 주제로 되돌아가지 않는다.
-        state.task_context.evidence_target_ids = target_ids
-        state.task_context.evidence_combination_target_ids = combination_target_ids
-        state.task_context.evidence_conditions = known_conditions.model_copy(deep=True)
-        bundle = await self._evidence_pipeline.run(
+        request = self._evidence_query_policy.search_request(
+            state,
             EvidenceSearchRequest(
                 query=parsed.query,
                 target_ids=target_ids,
                 known_conditions=known_conditions,
                 combination_target_ids=combination_target_ids,
-            )
+            ),
         )
+        if self._evidence_query_policy.allows_fallback(state):
+            limitation = self._evidence_query_policy.limitation(state)
+            state.status = ChatStatus.PARTIAL
+            state.unresolved.append(limitation)
+            state.response_parts.append(limitation.detail)
+        # 폴백 대상의 일부 ID를 저장하면 다음 '그 성분'이 다른 성분으로 잘못 복원된다.
+        state.task_context.evidence_target_ids = list(request.target_ids)
+        state.task_context.evidence_combination_target_ids = list(request.combination_target_ids)
+        state.task_context.evidence_conditions = known_conditions.model_copy(deep=True)
+        bundle = await self._evidence_pipeline.run(request)
         if bundle.search.status is LookupStatus.ERROR:
             self._add_tool_failure(state, bundle.search.error_message)
             state.response_parts.append("근거 검색 도구가 실패해 확인 가능한 범위만 반환합니다.")

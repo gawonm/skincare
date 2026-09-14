@@ -9,10 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from data.scripts.product_candidate_schemas import ProductTypeNormalized, ServiceCategory
-from data.scripts.product_taxonomy_normalizer import (
-    ProductTaxonomyInput,
-    ProductTaxonomyNormalizer,
-)
+from data.scripts.product_taxonomy_normalizer import ProductTaxonomyNormalizer
 
 
 class ProductTaxonomyBackfillConflictError(ValueError):
@@ -102,13 +99,8 @@ class ProductTaxonomyBackfillPlanner:
             self._validate_current_pair(row)
             before_pairs.append(current_pair)
 
-            result = self._normalizer.classify(
-                ProductTaxonomyInput(
-                    raw_title=row.raw_title,
-                    display_title=row.display_title,
-                    category3=row.category3,
-                )
-            )
+            # main 병합 이후 classify()는 category3를 nullable로 받지 않으므로 빈 문자열로 채운다.
+            result = self._normalizer.classify(row.model_copy(update={"category3": row.category3 or ""}))
             expected_pair = (result.product_type_normalized, result.service_category)
             after_pairs.append(expected_pair)
 

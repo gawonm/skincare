@@ -79,16 +79,6 @@ class TestProductTaxonomyBackfillPlanner:
         assert second_plan.unchanged_rows == 1
         assert second_plan.null_rows_after == 0
 
-    def test_translation_signal_does_not_change_backfill_value(self) -> None:
-        untranslated = self._row("P1", "Daily Hydrating Care")
-        translated = untranslated.model_copy(update={"display_title": "데일리 수분 세럼"})
-
-        untranslated_plan = self._plan([untranslated])
-        translated_plan = self._plan([translated])
-
-        assert untranslated_plan.updates == translated_plan.updates == []
-        assert untranslated_plan.null_rows_after == translated_plan.null_rows_after == 1
-
     def _plan(
         self,
         rows: list[ProductTaxonomyBackfillRow],

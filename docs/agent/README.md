@@ -115,9 +115,12 @@ main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거
   후보 개수 계약을 구현한다. 실제 DB 통합 테스트는 아직 필요하다.
 - 현재 운영 선택인 `text-embedding-3-small`이 질의·적재 모두 1536차원을 반환하고 기존
   `rag_chunk.embedding vector(1536)` 및 `embedding_model` 값과 일치하는지 확인한다.
-- 향후 `provider: local`로 바꿀 때만 BGE-M3의 1024차원에 맞춘 ERD 확인, 마이그레이션,
-  전체 재임베딩과 별도 유사도 임계값 검증을 하나의 배포 절차로 합의한다. 현재 Backend는
-  이 차원 불일치를 DB 접근 전에 명확한 설정 오류로 중단한다.
+- 향후 `provider: local`로 바꿀 때 BGE-M3의 1024차원에 맞춘 ERD 갱신(`docs/erd/app.md`), 마이그레이션,
+  기존 65,196건 청크(특히 DB 원본 테이블이 없는 `nia_qa` 45,002건 유실 방지를 위한 content 인플레이스
+  UPDATE) 재임베딩과 별도 유사도 임계값 검증을 후속 절차(3단계)로 진행한다.
+  Agent 계층은 이미 `LocalBgeM3Embedder`와 1024차원 조립을 완벽히 지원하므로, 이 전환은 Agent 코드 수정 없이
+  Backend/Data 파트 쪽에서 설정 주입과 DB 전환을 주도하여 수정하면 된다. 현재 Backend는
+  이 차원 불일치를 DB 접근 전에 명확한 설정 오류로 중단하여 데이터 안전을 보장한다.
 - 애플리케이션 설정은 `config.yaml`만 사용한다. Backend가 OpenAI API 키와
   `gpt-4o-mini` 모델 설정을 읽어 `ProductionAgentConfig`에 주입하고, agent는 `.env`나
   환경변수를 직접 읽지 않는다. `.env`는 Docker Compose 변수에만 사용한다.
