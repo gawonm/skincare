@@ -170,6 +170,26 @@ Backend는 `TextEmbeddingConfig.output_dimensions()`와 현재 `rag_chunk.embedd
 검색 임계값이 `null`이면 OpenAI provider에서만 기존 검증값 `0.45`를 적용하고, 로컬 provider는
 모델별 검증값을 명시하도록 오류로 중단한다.
 
+### 로컬 임베딩(BGE-M3, 1024차원) 전환 절차 (3단계 후속 작업)
+
+현재 코드는 `LocalBgeM3Embedder`와 `TextEmbedderFactory`를 통해 로컬 임베딩을 완벽히 지원하지만,
+DB의 `rag_chunk` 테이블은 기존 1536차원 벡터 데이터(65,196건)를 유지하고 있다. 로컬 임베딩으로의
+최종 전환은 아래 절차에 따라 후속 작업(3단계)으로 진행한다.
+
+1. **ERD 문서 갱신 및 합의 (규칙 14)**:
+   `docs/erd/app.md`에서 `rag_chunk.embedding`의 타입을 `vector(1536)`에서 `vector(1024)`로 수정 합의한다.
+2. **DB 모델 및 마이그레이션 생성 (Data 파트)**:
+   `models/rag_chunk.py`의 `EMBEDDING_DIMENSION = 1024`로 수정하고, `vector(1024)` 컬럼 변환 및
+   HNSW 코사인 인덱스(`ix_rag_chunk_embedding_hnsw`) 재생성 Alembic 마이그레이션을 생성한다.
+3. **기존 65,196건 청크의 인플레이스(in-place) 재임베딩**:
+   DB 원본 테이블이 없는 `nia_qa`(45,002건)의 유실을 방지하기 위해 테이블을 TRUNCATE하지 않고,
+   기존 `rag_chunk.content` 텍스트를 배치 단위로 읽어 BGE-M3(`BAAI/bge-m3`)로 1024차원 벡터를 계산한 뒤
+   `embedding` 컬럼을 UPDATE하는 전용 스크립트로 안전하게 재임베딩한다.
+   *(CPU 환경 시 약 1~2시간 소요 예상, GPU 확보 시 10~15분 내외)*
+4. **설정 및 임계값 전환**:
+   `config.yaml`의 `agent.embedding.provider: local`로 변경하고, BGE-M3 기준의
+   `agent.retrieval.free_text_min_vector_similarity` 검증값을 반영한다.
+
 ## 3. 사용자 요청 호출
 
 ### 부르는 대상
