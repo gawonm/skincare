@@ -172,9 +172,10 @@ Backend는 `TextEmbeddingConfig.output_dimensions()`와 현재 `rag_chunk.embedd
 
 ### 로컬 임베딩(BGE-M3, 1024차원) 전환 절차 (3단계 후속 작업)
 
-현재 코드는 `LocalBgeM3Embedder`와 `TextEmbedderFactory`를 통해 로컬 임베딩을 완벽히 지원하지만,
-DB의 `rag_chunk` 테이블은 기존 1536차원 벡터 데이터(65,196건)를 유지하고 있다. 로컬 임베딩으로의
-최종 전환은 아래 절차에 따라 후속 작업(3단계)으로 진행한다.
+현재 Agent 계층은 `LocalBgeM3Embedder`와 `TextEmbedderFactory`를 통해 로컬 임베딩을 완벽히 지원하며,
+DB의 `rag_chunk` 테이블은 기존 1536차원 벡터 데이터(65,196건)를 유지하고 있다.
+따라서 **향후 로컬 임베딩으로의 전환은 Agent 코드의 추가 수정 없이, Backend/Data 쪽에서 설정을 주입하고
+DB 마이그레이션·재임베딩을 주도하여 수정하면 된다.** 최종 전환 절차는 다음과 같다.
 
 1. **ERD 문서 갱신 및 합의 (규칙 14)**:
    `docs/erd/app.md`에서 `rag_chunk.embedding`의 타입을 `vector(1536)`에서 `vector(1024)`로 수정 합의한다.
