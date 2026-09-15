@@ -10,7 +10,8 @@
 
 ## Session A — Claim RAG
 
-**Branch**: `feature/claim-rag` (worktree, `feature/rag-pipeline`의 `ea54117`에서 분기 — 아래 "Git 작업 구조" 참고)
+**Branch**: `feature/claim-rag` (worktree, `feature/rag-pipeline`의 `086a969`에서 분기 —
+Session B의 핸드오프 커밋이 이미 origin에 반영됨, 아래 "Git 작업 구조" 참고)
 
 **Owner**: (새 세션 배정 시 기록)
 
@@ -18,7 +19,8 @@
 
 **Do not edit**: [CLAIM_RAG_SESSION_HANDOFF.md](CLAIM_RAG_SESSION_HANDOFF.md) §14
 
-**Current task**: (아직 시작 전)
+**Current task**: `CLAIM_RAG_INGESTION_DESIGN.md` §10 실행 대기 — 인계 자료 전부
+`origin/feature/rag-pipeline`(`086a969`)에 이미 있으므로 worktree만 만들면 바로 시작 가능
 
 **Status**: `NOT_STARTED`
 
@@ -34,7 +36,7 @@
 
 ## Session B — Evidence / Existing Session
 
-**Branch**: `feature/rag-pipeline` (현재 실제 branch, origin과 동기화됨, 최신 커밋 `ea54117`)
+**Branch**: `feature/rag-pipeline` (origin과 동기화됨, 최신 커밋 `086a969`)
 
 **Owner**: 이 세션(기존 세션, 전체 맥락 보유)
 
@@ -66,18 +68,26 @@ data/processed/ingredient_full.csv, product_candidates.csv, product_ingredient_m
 `data/processed/nia_qa_10s_30s.jsonl`, `docs/data/NIA_ANNOTATION_JSON_GUIDE.md`,
 `docs/data/CLAIM_RAG_INGESTION_DESIGN.md`
 
-**Current task**: Claim RAG 세션 handoff 작성 완료. 다음은 §5(아래 "Session B 재정의된
-작업 범위") 진행.
+**Current task**: 없음 — 이 세션은 여기서 종료한다. Claim RAG handoff 작성 및
+인계 파일 커밋·푸시까지 완료했고, 이후 Evidence RAG/product 작업은 후속 세션이
+`feature/rag-pipeline`에서 이어받는다(이 세션 자체는 더 이상 진행하지 않음).
 
-**Status**: `IN_PROGRESS`
+**Status**: `SESSION_ENDED` (handoff 완료 후 종료 — 후속 작업은 새 세션이 `feature/rag-pipeline`에서 재개)
 
-**Last update**: 2026-09-15 (이 문서 작성 시점)
+**Last update**: 2026-09-15 — 커밋 `086a969`(`chore(rag): checkpoint claim-rag handoff state`)로
+§13 목록 전체(NIA 스크립트, 테스트, coordination/설계 문서)를 push 완료, `origin/feature/rag-pipeline`과 동기화됨
 
-**Changed files** (이번 handoff 작업에서):
+**Changed files** (이 세션 전체 기준, `086a969` 커밋 내용):
 ```
-docs/coordination/CLAIM_RAG_SESSION_HANDOFF.md  (신규)
-docs/coordination/CLAUDE_SESSION_BOARD.md        (신규)
+data/scripts/nia_*.py (전체), data/scripts/nia_labeling_parser.py / nia_labeling_schemas.py
+  (data/manual_review 원본은 유지한 채 .gitignore상 커밋 가능한 data/scripts/로 사본 추가)
+tests/unit/test_nia_*.py (전체)
+docs/coordination/CLAIM_RAG_SESSION_HANDOFF.md, CLAUDE_SESSION_BOARD.md
+docs/data/CLAIM_RAG_INGESTION_DESIGN.md, EVIDENCE_COVERAGE_AUDIT.md, EVIDENCE_RAG_DESIGN.md,
+  NIACINAMIDE_EVIDENCE_VERTICAL_SLICE.md, NIA_ANNOTATION_JSON_GUIDE.md,
+  POC_DATASET_HANDOFF.md, rag_pipeline_handoff.md (일부 갱신)
 ```
+(`data/processed/*.csv`, `*.jsonl` 등 산출물은 `.gitignore`로 커밋 대상 아님 — 로컬에만 존재)
 
 **Needs from Session A**:
 - `claim_chunk` 컬럼 초안 공유 시 Evidence 쪽 embedding 모델/차원과 일치시킬지 여부 확인 요청
@@ -112,10 +122,8 @@ docs/coordination/CLAUDE_SESSION_BOARD.md        (신규)
 
 ## Merge Order
 
-1. Session B가 현재 로컬에 쌓인 미커밋 Claim RAG 관련 파일(§13 목록과 동일)을
-   `feature/rag-pipeline`에 먼저 커밋·푸시한다(Session A의 시작점을 만들기 위함 —
-   아래 "Git 작업 구조" 참고). **이 handoff 문서만으로는 그 파일들이 아직 Session A의
-   worktree에 없다.**
+1. ✅ **완료** — Session B가 §13 목록 파일을 `feature/rag-pipeline`에 커밋(`086a969`)·
+   푸시했다. `origin/feature/rag-pipeline`이 이제 Session A의 시작점이다.
 2. Session A는 그 커밋을 포함한 `origin/feature/rag-pipeline`에서 `feature/claim-rag`를 분기한다
 3. Session A는 `feature/claim-rag`에서 작업하며 주기적으로 `origin/feature/rag-pipeline`을
    merge(또는 rebase 대신 merge — 이 저장소 관례상 공유 브랜치에 force-push 금지)해 최신
@@ -126,15 +134,12 @@ docs/coordination/CLAUDE_SESSION_BOARD.md        (신규)
 5. `feature/claim-rag` → `feature/rag-pipeline` PR은 Session A의 Definition of Done
    충족 후, squash merge로 진행(저장소 관례)
 
-## Git 작업 구조 (제안, 아직 실행 안 함)
+## Git 작업 구조
 
 ```bash
-# Session B가 먼저(이 handoff 이후 별도 승인 시):
-git add <§13에 나열된 미커밋 파일들>
-git commit -m "feat(data): NIA claim pipeline 1차 완료 (Session A 인계 지점)"
-git push origin feature/rag-pipeline
+# Session B 커밋·푸시 — 완료됨(086a969)
 
-# 그 다음 Session A가:
+# Session A가 이어서 실행:
 git worktree add ../skincare-claim-rag -b feature/claim-rag origin/feature/rag-pipeline
 ```
 
