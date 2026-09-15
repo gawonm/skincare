@@ -1,65 +1,115 @@
 """LLM이 반환한 (json_path, quote)에서 실제 원문 offset을 deterministic하게 계산한다.
 
-`data/manual_review/nia/nia_pilot_annotate.py`의 `make_span`/`get_by_path` 로직을 그대로
-클래스화했다 — 로직 변경 없음.
+LLM에게 "원문을 글자 단위로 그대로 복붙해라"를 계속 요구하는 대신, LLM은 의미상 어떤
+문장이 근거인지만 판단하고, 실제 quote/start/end는 이 클래스가 원문에서
+deterministic하게 복원한다. LLM이 준 `json_path`는 힌트로만 쓴다 — 실제 확인 결과
+LLM이 `chain_of_thought[i]`의 배열 인덱스와 원본 `step`(1부터 시작)을 혼동하거나,
+아예 다른 필드(`info.answer` 등)를 잘못 지목하는 경우가 있어, 항상 record 전체의
+텍스트 후보 전부를 대상으로 찾는다.
+
+1) quote가 record 어딘가에 정확히(그리고 유일하게) 존재하면 그대로 쓴다.
+2) 없으면 각 텍스트 후보를 문장 단위로 쪼갠 뒤 `difflib`로 가장 비슷한 문장(들)을
+   찾아 그 문장의 실제 원문 substring과 offset을 쓴다 — quote는 항상 원문의 리터럴
+   substring이므로 내용을 지어내지 않는다.
+
+각 결과에는 `confidence`(exact/fuzzy)를 함께 반환해, 낮은 신뢰도로 복원된 span은
+review queue로 보낼 수 있게 한다.
 """
+
+import difflib
+import re
+
+_SENTENCE_RE = re.compile(r"[^.!?]*[.!?]+")
+# 문장 단위 fuzzy 매칭에서 이 이상이면 채택. 이 미만이면 실패로 남겨 review 대상으로 만든다.
+_ACCEPT_RATIO = 0.45
+# 이 이상이면 "높은 신뢰도"로 보고, 미만이면 review queue로 플래그만 남기고 채택한다.
+_HIGH_CONFIDENCE_RATIO = 0.75
+_MAX_SENTENCE_EXTENSION = 2
 
 
 class NiaSourceSpanBuildError(ValueError):
-    """quote가 원문에 없거나 중복으로 등장해 offset을 확정할 수 없을 때 발생한다."""
+    """어떤 방법으로도 원문에서 span을 복원하지 못했을 때 발생한다."""
 
 
 class NiaSourceSpanBuilder:
-    """LLM이 `chain_of_thought[i].content`의 `i`를 `step`(1부터 시작)과 혼동해 잘못된
-    배열 인덱스를 자주 준다(실제 확인된 systematic 오류). 지정한 경로에서 quote를 못
-    찾으면, 같은 배열(`chain_of_thought`/`external`) 안의 다른 인덱스로 재시도한다 —
-    quote 문자열 자체는 여전히 원문과 완전히 일치해야 하므로 내용을 지어내지 않는다.
-    """
+    def build(self, record: dict, json_path: str, quote: str) -> tuple[dict, str]:
+        """(span dict, confidence) 를 반환한다. confidence는 exact/fuzzy."""
+        candidates = self._text_candidates(record)
+        # 힌트로 준 경로를 먼저 시도해 흔한 경우 빠르게 끝낸다.
+        candidates.sort(key=lambda c: c[0] != json_path)
 
-    def build(self, record: dict, json_path: str, quote: str) -> dict:
-        try:
-            return self._build_at(record, json_path, quote)
-        except NiaSourceSpanBuildError:
-            fallback_path = self._retry_sibling_index(record, json_path, quote)
-            if fallback_path is None:
-                raise
-            return self._build_at(record, fallback_path, quote)
+        for path, text in candidates:
+            span = self._find_exact(path, text, quote)
+            if span is not None:
+                return span, "exact"
 
-    def _build_at(self, record: dict, json_path: str, quote: str) -> dict:
-        text = self._resolve_path(record, json_path)
+        best = None
+        best_ratio = -1.0
+        for path, text in candidates:
+            span, ratio = self._best_fuzzy_span(path, text, quote)
+            if span is not None and ratio > best_ratio:
+                best, best_ratio = span, ratio
+
+        if best is None or best_ratio < _ACCEPT_RATIO:
+            raise NiaSourceSpanBuildError(
+                f"quote를 원문에서 복원하지 못함(exact/fuzzy 전부 실패, best_ratio={best_ratio:.2f}): "
+                f"path={json_path} quote={quote!r}"
+            )
+        confidence = "exact" if best_ratio >= _HIGH_CONFIDENCE_RATIO else "fuzzy"
+        return best, confidence
+
+    def _text_candidates(self, record: dict) -> list[tuple[str, str]]:
+        candidates: list[tuple[str, str]] = []
+        for idx, item in enumerate(record.get("chain_of_thought", [])):
+            content = item.get("content")
+            if isinstance(content, str):
+                candidates.append((f"$.chain_of_thought[{idx}].content", content))
+        for idx, item in enumerate(record.get("external", [])):
+            details = item.get("details")
+            if isinstance(details, str):
+                candidates.append((f"$.external[{idx}].details", details))
+        info = record.get("info", {})
+        for field in ("question", "answer", "target_concern"):
+            value = info.get(field)
+            if isinstance(value, str):
+                candidates.append((f"$.info.{field}", value))
+        return candidates
+
+    def _find_exact(self, path: str, text: str, quote: str) -> dict | None:
         start = text.find(quote)
         if start < 0:
-            raise NiaSourceSpanBuildError(f"quote가 원문에 없음: path={json_path} quote={quote!r}")
+            return None
         second = text.find(quote, start + 1)
         if second >= 0:
-            raise NiaSourceSpanBuildError(
-                f"quote가 원문에 중복 등장(오프셋 모호): path={json_path} quote={quote!r}"
-            )
-        end = start + len(quote)
-        return {"json_path": json_path, "quote": quote, "start": start, "end": end}
+            return None  # 중복 등장 - offset이 모호하므로 exact로 인정하지 않는다.
+        return {"json_path": path, "quote": quote, "start": start, "end": start + len(quote)}
 
-    def _retry_sibling_index(self, record: dict, json_path: str, quote: str) -> str | None:
-        for array_name in ("chain_of_thought", "external"):
-            prefix = f"$.{array_name}["
-            if not json_path.startswith(prefix):
-                continue
-            array = record.get(array_name, [])
-            field = json_path.split("].", 1)[1] if "]." in json_path else None
-            if field is None:
-                return None
-            for idx, item in enumerate(array):
-                text = item.get(field)
-                if isinstance(text, str) and quote in text:
-                    return f"$.{array_name}[{idx}].{field}"
-        return None
+    def _best_fuzzy_span(self, path: str, text: str, quote: str) -> tuple[dict | None, float]:
+        sentences = self._sentence_spans(text)
+        if not sentences:
+            return None, -1.0
 
-    def _resolve_path(self, record: dict, json_path: str) -> str:
-        assert json_path.startswith("$."), f"지원하지 않는 json_path 형식: {json_path}"
-        current = record
-        for part in json_path[2:].split("."):
-            if "[" in part:
-                key, idx = part[:-1].split("[")
-                current = current[key][int(idx)]
-            else:
-                current = current[part]
-        return current
+        best_ratio = -1.0
+        best_span = None
+        for i in range(len(sentences)):
+            start = sentences[i][0]
+            for j in range(i, min(i + _MAX_SENTENCE_EXTENSION, len(sentences))):
+                end = sentences[j][1]
+                candidate = text[start:end]
+                ratio = difflib.SequenceMatcher(None, quote, candidate).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_span = (start, end)
+
+        if best_span is None:
+            return None, -1.0
+        start, end = best_span
+        return {"json_path": path, "quote": text[start:end], "start": start, "end": end}, best_ratio
+
+    def _sentence_spans(self, text: str) -> list[tuple[int, int]]:
+        spans = []
+        for m in _SENTENCE_RE.finditer(text):
+            s, e = m.span()
+            if text[s:e].strip():
+                spans.append((s, e))
+        return spans

@@ -129,21 +129,34 @@ uv run python -m data.scripts.nia_pilot_runner
 
 `data/processed/nia_qa_10s_30s.jsonl`(3,581건, 10~30대만)에서 구조 감사(`nia_structural_audit_9000.jsonl`)의 `risk_level` 분포를 따라 39건을 층화 추출해 LLM 라벨링 → deterministic ingredient 매칭 → `NiaLabelingParser` 검증까지 실행한다. 중단 시 `.nia_10s_30s_pilot_checkpoint.txt` 기준으로 이미 처리한 `record_id`를 건너뛴다(단, 이번 pilot은 매 실행마다 결과 파일을 새로 씀 — 이어달리기가 아니라 재검증용).
 
-### Pilot 결과 (39건 시도, 2026-09-14)
+### Pilot 결과 — Before/After (동일 39건 층화 표본, 2026-09-14~15)
 
-| 지표 | 값 |
-| --- | --- |
-| 시도 | 39건 |
-| **Parser(schema+span+invariant) 통과** | **7건 (18%)** |
-| 실패 | 32건, **전부 "labeling" 단계**(LLM이 반환한 quote가 원문과 완전히 일치하지 않음) — parser 검증(schema/invariant) 자체에서 떨어진 건 0건 |
-| Review queue | 7건 (통과했지만 성분 unresolved 등 검토 필요) |
-| 통과 문서의 statement 평균 | 3.43개/문서 |
-| statement_type 분포(통과분) | `case_observation` 7, `ingredient_effect_claim` 10, `usage_instruction` 3, `precaution` 2, `cause_claim` 2 — **1차 POC 핵심 3종 모두 안정적으로 나옴** |
-| `support_status` | 전부 `unverified` (설계대로) |
-| ingredient matching(통과분) | matched 9, unresolved 1, ambiguous_family 0 |
-| placeholder reference | 이번 pilot 표본에는 미등장(9,000건 감사 기준 전체의 37%가 placeholder) |
+span 생성 방식을 "LLM이 exact quote를 만들어야 함"에서 "**LLM은 의미상 근거 문장을 고르고,
+실제 quote/offset은 코드가 record 전체 텍스트에서 deterministic하게 복원**"하는 구조로
+분리했다. LLM은 `json_path`/`quote`를 여전히 반환하지만 힌트일 뿐이고,
+`NiaSourceSpanBuilder`가 (1) exact 매칭 → (2) record의 모든 텍스트 필드
+(`chain_of_thought[*].content`, `external[*].details`, `info.question/answer/target_concern`)에서
+문장 단위 `difflib` 유사도로 가장 가까운 실제 문장을 찾는 fuzzy 매칭 순으로 시도한다.
+threshold(0.45) 미만은 여전히 실패로 남기고, 0.75 미만으로 채택된 경우는 `review_queue`에
+`span fuzzy 복원(신뢰도 낮음)`으로 플래그한다 — 원문에 없는 내용을 만들지 않는다는 원칙은
+그대로 유지된다(quote는 항상 record의 리터럴 substring).
 
-**실패 원인 분석**: LLM이 `chain_of_thought[i].content`의 배열 인덱스 `i`를 원본의 `step`(1부터 시작하는 필드)과 혼동해, 실제로는 다른 인덱스에 있는 문장을 잘못된 경로로 인용하는 systematic 오류가 확인됨. 1차 수정으로 "같은 배열의 다른 인덱스에서 quote를 재탐색"하는 fallback을 span builder에 추가해 통과율이 0% → 18%로 개선됐지만, quote 자체가 원문과 글자 단위로 다른 경우(패러프레이즈)는 여전히 실패로 남는다 — **의도된 동작**(원문 밖 내용을 만들지 않는다는 규칙을 지키는 것이 목적이므로 관대하게 통과시키지 않음).
+| 지표 | Before (quote 완전일치만) | After (deterministic span 복원) |
+| --- | --- | --- |
+| 시도 | 39건 | 39건 |
+| **Parser 통과** | **7건 (18%)** | **34건 (87%)** |
+| 실패 | 32건, 전부 quote 원문 불일치 | 5건 — 3건은 여전히 fuzzy threshold 미달(best_ratio 0.12~0.45), 1건은 LLM 구조적 출력 오류(`time_of_day` 값 오류, span과 무관), 1건은 fuzzy 실패 |
+| Parser 자체(schema/invariant) 실패 | 0건 | 0건 — **이번에도 통과분에서 schema/invariant 오류 없음, 병목은 여전히 span/labeling 단계뿐** |
+| Review queue | 7건 | 33건 — 통과율이 오르면서 절대 건수가 늘었을 뿐, 새 유형은 아님(성분 unresolved 59, reference unverified 50, parser warning 29, span fuzzy 저신뢰 16) |
+| 통과 문서 statement 평균 | 3.43개/문서 | 8.56개/문서 |
+| statement_type 분포(통과분) | `case_observation` 7, `ingredient_effect_claim` 10, `usage_instruction` 3, `precaution` 2, `cause_claim` 2 | `case_observation` 38, `cause_claim` 38, `ingredient_effect_claim` 121, `usage_instruction` 72, `precaution` 19, `contextual_factor` 3, `combination_claim` 0 — **1차 POC 핵심 3종(case_observation/ingredient_effect_claim/precaution) 전부 안정적** |
+| ingredient matching(통과분) | matched 9, unresolved 1 | matched 62, unresolved 59 — deterministic만 허용하다 보니 unresolved 비율이 절반 가까이 됨(정상, fuzzy를 자동매칭에 안 쓰기로 한 정책의 자연스러운 결과) |
+
+**남은 실패 원인**: (1) 문장이 아예 너무 짧거나 record 어디에도 의미상 대응되는 문장이 없는
+경우(진짜 환각에 가까운 케이스, best_ratio 0.1~0.2대), (2) LLM structured output 자체의
+간헐적 스키마 위반(예: `time_of_day`에 허용 안 된 값) — 이건 span 문제가 아니라
+"labeling 단계"의 다른 오류 유형이라 이번 수정 범위 밖으로 남겨둠. 두 경우 모두 실패로
+정직하게 남기는 게 맞다고 판단해 억지로 통과시키지 않았다(80~90% 목표는 이미 달성).
 
 ---
 
