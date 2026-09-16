@@ -3,7 +3,11 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.repositories.product_repository import ProductRepository, ProductUpsertInput
+from backend.repositories.product_repository import (
+    ProductRepository,
+    ProductTaxonomyUpdate,
+    ProductUpsertInput,
+)
 from data.scripts.product_candidate_schemas import ProductCandidateRow
 from models.product import (
     Product,
@@ -57,3 +61,17 @@ class ProductService:
             review_reasons=[reason.value for reason in row.review_reasons],
         )
         return await self._repository.upsert(input_)
+
+    async def update_taxonomy(self, row: ProductCandidateRow) -> Product:
+        """이미 적재된 상품의 분류 두 필드만 갱신한다. 재크롤링 없이 분류기만 다시 돌릴 때 쓴다."""
+        input_ = ProductTaxonomyUpdate(
+            source=row.source.value,
+            source_product_id=row.source_product_id,
+            product_type_normalized=ProductTypeNormalized(row.product_type_normalized.value)
+            if row.product_type_normalized
+            else None,
+            service_category=ProductServiceCategory(row.service_category.value)
+            if row.service_category
+            else None,
+        )
+        return await self._repository.update_taxonomy(input_)

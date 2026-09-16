@@ -49,6 +49,17 @@ class ProductUpsertInput(BaseModel):
     review_reasons: list[str]
 
 
+class ProductTaxonomyUpdate(BaseModel):
+    """`ProductRepository.update_taxonomy`의 입력. 분류 두 필드만 갱신 대상이다."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source: str
+    source_product_id: str
+    product_type_normalized: ProductTypeNormalized | None
+    service_category: ProductServiceCategory | None
+
+
 class ProductRepository:
     """`Product` 조회·저장 전용. commit은 하지 않는다."""
 
@@ -71,6 +82,27 @@ class ProductRepository:
         product = self._to_row(input_)
         self._session.add(product)
         return product, True
+
+    async def update_taxonomy(self, input_: ProductTaxonomyUpdate) -> Product:
+        """분류 두 필드만 갱신한다. 전체 재적재와 달리 상품명·가격 등은 건드리지 않는다."""
+        existing = await self.find(input_.source, input_.source_product_id)
+        if existing is None:
+            raise LookupError(
+                f"분류 백필 대상 상품을 찾지 못함: source={input_.source}, "
+                f"source_product_id={input_.source_product_id}"
+            )
+
+        # 값이 같으면 대입해도 SQLAlchemy가 dirty로 표시하지 않아 UPDATE가 안 나가지만,
+        # 재실행 시 "정말 안 바뀌었다"는 걸 명시적으로 드러내기 위해 비교부터 한다.
+        if (
+            existing.product_type_normalized == input_.product_type_normalized
+            and existing.service_category == input_.service_category
+        ):
+            return existing
+
+        existing.product_type_normalized = input_.product_type_normalized
+        existing.service_category = input_.service_category
+        return existing
 
     def _apply(self, row: Product, input_: ProductUpsertInput) -> None:
         row.search_query = input_.search_query
