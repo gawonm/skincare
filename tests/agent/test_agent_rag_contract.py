@@ -12,10 +12,9 @@ from agent.rag.pipeline import (
     EvidencePipeline,
     RagIngestionPipeline,
 )
-from agent.rag.ports import ClaimGenerator, HybridSearchBackend, TextEmbedder
+from agent.rag.ports import EvidenceStatementGenerator, HybridSearchBackend, TextEmbedder
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.schemas import (
-    ClaimGenerationRequest,
     EmbeddedChunk,
     EmbeddingRequest,
     EmbeddingResult,
@@ -25,8 +24,9 @@ from agent.rag.schemas import (
     EvidenceReviewStatus,
     EvidenceScope,
     EvidenceSearchRequest,
-    GeneratedClaim,
-    GeneratedClaims,
+    EvidenceStatementGenerationRequest,
+    GeneratedEvidenceStatement,
+    GeneratedEvidenceStatements,
     HybridSearchRequest,
     HybridSearchResult,
     LookupStatus,
@@ -88,16 +88,19 @@ class ContractSearchBackend(HybridSearchBackend):
         )
 
 
-class ContractClaimGenerator(ClaimGenerator):
+class ContractEvidenceStatementGenerator(EvidenceStatementGenerator):
     def __init__(self, mode: GenerationMode = GenerationMode.VALID) -> None:
         self.mode = mode
-        self.requests: list[ClaimGenerationRequest] = []
+        self.requests: list[EvidenceStatementGenerationRequest] = []
 
-    async def generate(self, request: ClaimGenerationRequest) -> GeneratedClaims:
+    async def generate(
+        self,
+        request: EvidenceStatementGenerationRequest,
+    ) -> GeneratedEvidenceStatements:
         self.requests.append(request)
-        return GeneratedClaims(
+        return GeneratedEvidenceStatements(
             claims=[
-                GeneratedClaim(
+                GeneratedEvidenceStatement(
                     sentence=record.text
                     if self.mode is not GenerationMode.OMIT_CONDITION
                     else "조건 누락",
@@ -139,7 +142,11 @@ class RagContractFixture:
             confidence_tier=RagConfidenceTier.STRUCTURED_KNOWLEDGE,
         )
 
-    def pipeline(self, backend: HybridSearchBackend, generator: ClaimGenerator) -> EvidencePipeline:
+    def pipeline(
+        self,
+        backend: HybridSearchBackend,
+        generator: EvidenceStatementGenerator,
+    ) -> EvidencePipeline:
         return EvidencePipeline(
             retriever=HybridEvidenceRetriever(
                 backend=backend,
@@ -162,7 +169,7 @@ class TestRagContract:
         assert chunks[0].draft.evidence == document.evidence
         assert chunks[0].embedding_model == embedder.MODEL
         backend = ContractSearchBackend(chunks)
-        generator = ContractClaimGenerator()
+        generator = ContractEvidenceStatementGenerator()
         result = await fixture.pipeline(backend, generator).run(
             EvidenceSearchRequest(
                 query="성분 효능",
@@ -199,7 +206,7 @@ class TestRagContract:
                 fixture.document(fixture.TARGET_B),
             ]
         )
-        generator = ContractClaimGenerator()
+        generator = ContractEvidenceStatementGenerator()
         pipeline = fixture.pipeline(ContractSearchBackend(chunks), generator)
         request = EvidenceSearchRequest(
             query="두 성분 같이 써도 되는지 효능과 주의사항",
@@ -227,7 +234,7 @@ class TestRagContract:
         )
         for mode in (GenerationMode.OMIT_CONDITION, GenerationMode.UNKNOWN_CITATION):
             result = await fixture.pipeline(
-                ContractSearchBackend(chunks), ContractClaimGenerator(mode)
+                ContractSearchBackend(chunks), ContractEvidenceStatementGenerator(mode)
             ).run(EvidenceSearchRequest(query="효능", target_ids=[fixture.TARGET_A]))
             assert result.generated is not None
             assert (
@@ -237,7 +244,7 @@ class TestRagContract:
 
     async def test_unsupported_search_never_calls_generator(self) -> None:
         fixture = RagContractFixture()
-        generator = ContractClaimGenerator()
+        generator = ContractEvidenceStatementGenerator()
         result = await fixture.pipeline(
             ContractSearchBackend([], LookupStatus.UNSUPPORTED), generator
         ).run(EvidenceSearchRequest(query="효능", target_ids=[fixture.TARGET_A]))
@@ -250,7 +257,7 @@ class TestRagContract:
         document = fixture.document(fixture.TARGET_A)
         document.evidence.review_status = EvidenceReviewStatus.UNREVIEWED
         chunks = await RagIngestionPipeline(FieldChunker(), ContractEmbedder()).run([document])
-        generator = ContractClaimGenerator()
+        generator = ContractEvidenceStatementGenerator()
         result = await fixture.pipeline(ContractSearchBackend(chunks), generator).run(
             EvidenceSearchRequest(query="효능", target_ids=[fixture.TARGET_A])
         )

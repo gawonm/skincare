@@ -2,14 +2,18 @@
 
 import re
 
-from agent.rag.schemas import EvidenceRecord, GeneratedClaim
+from agent.rag.schemas import EvidenceRecord, GeneratedEvidenceStatement
 
 
 class ConditionPreservationChecker:
     _PERCENT = re.compile(r"\d+(?:\.\d+)?\s*%\s*(?:이하|미만|이상|초과)?")
     _JURISDICTIONS = ("한국", "대한민국", "미국", "EU", "유럽", "일본", "중국", "아세안")
 
-    def is_preserved(self, claim: GeneratedClaim, evidence: EvidenceRecord) -> bool:
+    def is_preserved(
+        self,
+        claim: GeneratedEvidenceStatement,
+        evidence: EvidenceRecord,
+    ) -> bool:
         sentence = " ".join(claim.sentence.casefold().split())
         required = [value for value in evidence.conditions.model_dump().values() if value]
         required.extend(

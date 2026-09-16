@@ -485,29 +485,29 @@ class LocalRerankerConfig(RagModel):
     local_files_only: bool = False
 
 
-class GeneratedClaim(RagModel):
+class GeneratedEvidenceStatement(RagModel):
     sentence: str = Field(min_length=1)
     evidence_ids: list[str] = Field(min_length=1)
 
 
-class GeneratedClaims(RagModel):
-    claims: list[GeneratedClaim] = Field(default_factory=list)
+class GeneratedEvidenceStatements(RagModel):
+    claims: list[GeneratedEvidenceStatement] = Field(default_factory=list)
 
 
-class ClaimGenerationRequest(RagModel):
+class EvidenceStatementGenerationRequest(RagModel):
     question: str = Field(min_length=1)
     records: list[EvidenceRecord] = Field(min_length=1)
     known_conditions: EvidenceConditions
     is_combination: bool = False
 
 
-class AnsweredClaim(RagModel):
+class EvidenceBackedStatement(RagModel):
     sentence: str = Field(min_length=1)
     sources: list[EvidenceRecord] = Field(min_length=1)
 
 
 class IngredientVerificationResult(RagModel):
-    claims: list[AnsweredClaim] = Field(default_factory=list)
+    claims: list[EvidenceBackedStatement] = Field(default_factory=list)
     unverifiable_reason: UnverifiableReason | None = None
 
     @property

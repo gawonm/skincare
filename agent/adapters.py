@@ -19,7 +19,19 @@ from agent.ports import (
     RoutinePlanner,
     TurnStorageError,
 )
-from agent.rag.ports import EvidenceRetriever
+from agent.rag.claim_schemas import (
+    ClaimAnnotationStatus,
+    ClaimCaseContext,
+    ClaimConfidence,
+    ClaimHit,
+    ClaimIngredientAnchor,
+    ClaimMatchingStatus,
+    ClaimSearchRequest,
+    ClaimSearchResult,
+    ClaimSourceSpan,
+    IngredientEffectClaimContent,
+)
+from agent.rag.ports import ClaimRetriever, EvidenceRetriever
 from agent.rag.retrieval.ingredient_mention_resolver import IngredientMentionResolver
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.schemas import (
@@ -34,6 +46,7 @@ from agent.rag.schemas import (
     IngredientRecord,
     IngredientResolveRequest,
     IngredientResolveResult,
+    LocalEmbeddingModel,
     LookupStatus,
     ProductCandidateSet,
     ProductCategory,
@@ -72,6 +85,7 @@ from agent.schemas import (
     MessagePageRequest,
     MessageRole,
     ParsedRequest,
+    RagRoute,
     RegisterRoomRequest,
     RoomLookupRequest,
     SaveSummaryRequest,
@@ -170,6 +184,7 @@ class FakeLlmClient(LlmClient):
     )
     _MODIFICATION_KEYWORDS = ("바꿔", "빼줘", "제외", "싫어", "더 가벼운", "수정")
     _EXPERIENCE_KEYWORDS = ("따가", "가려", "붉어", "건조해", "자극")
+    _CONCERN_KEYWORDS = ("피지", "좁쌀", "여드름", "건조", "칙칙", "홍조", "모공")
     _CANDIDATE_PATTERN = re.compile(r"(?P<number>\d+)\s*번")
     _WEEKDAY_KEYWORDS: ClassVar[dict[Weekday, tuple[str, ...]]] = {
         Weekday.MONDAY: ("월요일", "월욜"),
@@ -202,6 +217,8 @@ class FakeLlmClient(LlmClient):
             pending_answer = True
         candidate_number = self._extract_candidate_number(message)
         rejected_numbers = self._extract_rejected_numbers(message, candidate_number)
+        ingredient_mentions = list(dict.fromkeys(self._INGREDIENT_PATTERN.findall(message)))
+        rag_route = self._rag_route(message, intents, ingredient_mentions)
         return ParsedRequest(
             intents=intents,
             query=message,
@@ -216,8 +233,28 @@ class FakeLlmClient(LlmClient):
             ),
             is_modification=self._contains(message, self._MODIFICATION_KEYWORDS),
             pending_answer=pending_answer,
-            ingredient_mentions=list(dict.fromkeys(self._INGREDIENT_PATTERN.findall(message))),
+            ingredient_mentions=ingredient_mentions,
+            rag_route=rag_route,
         )
+
+    def _rag_route(
+        self,
+        message: str,
+        intents: list[Intent],
+        ingredient_mentions: list[str],
+    ) -> RagRoute | None:
+        if ingredient_mentions and Intent.EVIDENCE_QA in intents:
+            return RagRoute.EVIDENCE_ONLY
+        needs_ingredient_discovery = bool(
+            Intent.PRODUCT_DISCOVERY in intents
+            and not ingredient_mentions
+            and self._contains(message, self._CONCERN_KEYWORDS)
+        )
+        if needs_ingredient_discovery:
+            return RagRoute.CLAIM_THEN_EVIDENCE
+        if Intent.EVIDENCE_QA in intents:
+            return RagRoute.EVIDENCE_ONLY
+        return None
 
     def _extract_intents(self, message: str, pending_intents: list[Intent]) -> list[Intent]:
         if "저장" in message:
@@ -443,6 +480,52 @@ class CatalogIngredientRepository(IngredientRepository):
 
     async def resolve(self, request: IngredientResolveRequest) -> IngredientResolveResult:
         return self._resolver.resolve(request)
+
+
+class FixtureClaimRetriever(ClaimRetriever):
+    """개발 그래프에서 Claim과 Evidence의 분리된 흐름만 검증하는 검색기."""
+
+    @property
+    def embedding_model(self) -> LocalEmbeddingModel:
+        return LocalEmbeddingModel.BGE_M3
+
+    async def search(self, request: ClaimSearchRequest) -> ClaimSearchResult:
+        query = " ".join([request.query, *request.skin_concerns]).casefold()
+        if not any(keyword in query for keyword in ("피지", "좁쌀", "여드름", "모공")):
+            return ClaimSearchResult(status=LookupStatus.NO_RESULTS)
+        anchor = ClaimIngredientAnchor(
+            raw_name="NIACINAMIDE",
+            raw_name_ko="나이아신아마이드",
+            ingredient_id="ingredient:niacinamide",
+            matching_status=ClaimMatchingStatus.MATCHED,
+        )
+        return ClaimSearchResult(
+            status=LookupStatus.SUCCESS,
+            hits=[
+                ClaimHit(
+                    statement_id="fixture-claim-niacinamide-1",
+                    record_id="fixture-nia-record-1",
+                    content=IngredientEffectClaimContent(
+                        subject=anchor,
+                        object="피지와 피부 장벽 관련 사례에서 나이아신아마이드가 언급되었습니다.",
+                    ),
+                    source_spans=[
+                        ClaimSourceSpan(
+                            json_path="$.answer",
+                            quote="나이아신아마이드가 언급되었습니다.",
+                            start=0,
+                            end=18,
+                        )
+                    ],
+                    case_context=ClaimCaseContext(
+                        skin_concerns_raw=["여드름/뾰루지", "피지"]
+                    ),
+                    annotation_status=ClaimAnnotationStatus.APPROVED,
+                    confidence=ClaimConfidence.HIGH,
+                    retrieval_score=1.0,
+                )
+            ],
+        )
 
 
 class FixtureEvidenceRetriever(EvidenceRetriever):

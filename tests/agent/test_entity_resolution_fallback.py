@@ -33,7 +33,10 @@ from agent.schemas import (
     UnresolvedKind,
 )
 from tests.agent.test_agent_chat import AgentTestFactory
-from tests.agent.test_agent_rag_contract import ContractClaimGenerator, RagContractFixture
+from tests.agent.test_agent_rag_contract import (
+    ContractEvidenceStatementGenerator,
+    RagContractFixture,
+)
 
 
 class ScriptedUnderstanding(LlmClient):
@@ -86,7 +89,7 @@ class FallbackScenario:
         self.ingredients = RecordingIngredients()
         self.ingredients.register("나이아신아마이드", "test:niacinamide")
         self.search = RecordingSearch()
-        self.claims = ContractClaimGenerator()
+        self.claims = ContractEvidenceStatementGenerator()
 
     def create(self, limits: ExecutionLimits | None = None) -> DevelopmentAgentApplication:
         app = DevelopmentAgentFactory(

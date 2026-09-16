@@ -1,16 +1,16 @@
 """현재 EvidenceRecord 계약을 유지하면서 새 RAG의 문장별 인용·보류 판정을 적용한다."""
 
 from agent.rag.generation.condition_preservation_checker import ConditionPreservationChecker
-from agent.rag.ports import ClaimGenerator
+from agent.rag.ports import EvidenceStatementGenerator
 from agent.rag.retrieval.question_intent_classifier import QuestionIntentClassifier
 from agent.rag.schemas import (
-    AnsweredClaim,
-    ClaimGenerationRequest,
+    EvidenceBackedStatement,
     EvidenceRecord,
     EvidenceReviewStatus,
     EvidenceScope,
     EvidenceSearchRequest,
     EvidenceSearchResult,
+    EvidenceStatementGenerationRequest,
     IngredientVerificationResult,
     PerTargetResult,
     QuestionIntent,
@@ -30,7 +30,7 @@ class AnswerGenerator:
     )
     _INDIVIDUAL_QUERY = "이 대상의 개별 효능과 주의사항을 근거에 따라 설명하세요."
 
-    def __init__(self, client: ClaimGenerator) -> None:
+    def __init__(self, client: EvidenceStatementGenerator) -> None:
         self._client = client
         self._classifier = QuestionIntentClassifier()
         self._checker = ConditionPreservationChecker()
@@ -119,14 +119,14 @@ class AnswerGenerator:
                 raise ValueError("동일 evidence_id에 서로 다른 원문이나 출처가 연결되었습니다.")
             records[evidence.evidence_id] = evidence
         generated = await self._client.generate(
-            ClaimGenerationRequest(
+            EvidenceStatementGenerationRequest(
                 question=request.query,
                 records=list(records.values()),
                 known_conditions=request.known_conditions,
                 is_combination=QuestionIntent.COMBINATION in intents,
             )
         )
-        claims: list[AnsweredClaim] = []
+        claims: list[EvidenceBackedStatement] = []
         for claim in generated.claims:
             ids = list(dict.fromkeys(claim.evidence_ids))
             if not ids or any(evidence_id not in records for evidence_id in ids):
@@ -134,7 +134,7 @@ class AnswerGenerator:
             sources = [records[evidence_id] for evidence_id in ids]
             if not all(self._checker.is_preserved(claim, source) for source in sources):
                 continue
-            claims.append(AnsweredClaim(sentence=claim.sentence, sources=sources))
+            claims.append(EvidenceBackedStatement(sentence=claim.sentence, sources=sources))
         return (
             IngredientVerificationResult(claims=claims)
             if claims

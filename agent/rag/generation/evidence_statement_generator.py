@@ -1,19 +1,19 @@
-"""동기 invoke로 그래프 실행 시간 제한과 다른 방의 요청을 막지 않는다."""
+"""Evidence 검색 결과를 출처 ID가 연결된 검증 문장으로 생성한다."""
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from agent.rag.ports import ClaimGenerator
+from agent.rag.ports import EvidenceStatementGenerator
 from agent.rag.schemas import (
     ChatModelConfig,
-    ClaimGenerationRequest,
-    GeneratedClaims,
+    EvidenceStatementGenerationRequest,
+    GeneratedEvidenceStatements,
     LlmProvider,
     OpenAiChatConfig,
 )
 
 
-class ChatModelClaimGenerator(ClaimGenerator):
+class ChatModelEvidenceStatementGenerator(EvidenceStatementGenerator):
     """OpenAI 및 Ollama/Local OpenAI 호환 엔드포인트를 지원하는 비동기 근거 문장 생성기."""
 
     _SYSTEM = (
@@ -27,7 +27,9 @@ class ChatModelClaimGenerator(ClaimGenerator):
 
     def __init__(self, config: ChatModelConfig) -> None:
         self._config = config
-        self._client = self._build_client(config).with_structured_output(GeneratedClaims)
+        self._client = self._build_client(config).with_structured_output(
+            GeneratedEvidenceStatements
+        )
 
     def _build_client(self, config: ChatModelConfig) -> ChatOpenAI:
         if config.provider is LlmProvider.OPENAI:
@@ -48,27 +50,32 @@ class ChatModelClaimGenerator(ClaimGenerator):
             max_retries=config.local.max_retries,
         )
 
-    async def generate(self, request: ClaimGenerationRequest) -> GeneratedClaims:
+    async def generate(
+        self,
+        request: EvidenceStatementGenerationRequest,
+    ) -> GeneratedEvidenceStatements:
         result = await self._client.ainvoke(
             [
                 SystemMessage(content=self._SYSTEM),
                 HumanMessage(content=request.model_dump_json()),
             ]
         )
-        if not isinstance(result, GeneratedClaims):
-            raise TypeError("답변 생성기가 GeneratedClaims 형식의 응답을 반환하지 않았습니다.")
+        if not isinstance(result, GeneratedEvidenceStatements):
+            raise TypeError(
+                "답변 생성기가 GeneratedEvidenceStatements 형식의 응답을 반환하지 않았습니다."
+            )
         return result
 
 
-class OpenAiClaimGenerator(ChatModelClaimGenerator):
+class OpenAiEvidenceStatementGenerator(ChatModelEvidenceStatementGenerator):
     """OpenAiChatConfig를 받는 기존 생성자 호환 래퍼."""
 
     def __init__(self, config: OpenAiChatConfig) -> None:
         super().__init__(ChatModelConfig(provider=LlmProvider.OPENAI, openai=config))
 
 
-class ClaimGeneratorFactory:
-    """설정에 따라 적절한 ClaimGenerator 구현을 조립한다."""
+class EvidenceStatementGeneratorFactory:
+    """설정에 따라 Evidence 기반 문장 생성 구현을 조립한다."""
 
-    def create(self, config: ChatModelConfig) -> ClaimGenerator:
-        return ChatModelClaimGenerator(config)
+    def create(self, config: ChatModelConfig) -> EvidenceStatementGenerator:
+        return ChatModelEvidenceStatementGenerator(config)
