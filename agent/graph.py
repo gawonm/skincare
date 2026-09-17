@@ -108,6 +108,11 @@ class AgentGraphFactory:
             GraphNode.RESOLVE_CLAIM_INGREDIENTS.value,
             self._rag_nodes.resolve_claim_ingredients,
         )
+        builder.add_node(GraphNode.VERIFY_CLAIMS.value, self._rag_nodes.verify_claims)
+        builder.add_node(
+            GraphNode.BUILD_RECOMMENDATION_CANDIDATES.value,
+            self._rag_nodes.build_recommendation_candidates,
+        )
         builder.add_node(GraphNode.SEARCH_EVIDENCE.value, self._rag_nodes.search_evidence)
         builder.add_node(
             GraphNode.ASSEMBLE_RAG_RESPONSE.value,
@@ -155,7 +160,15 @@ class AgentGraphFactory:
         )
         builder.add_edge(
             GraphNode.RESOLVE_CLAIM_INGREDIENTS.value,
-            GraphNode.SEARCH_EVIDENCE.value,
+            GraphNode.VERIFY_CLAIMS.value,
+        )
+        builder.add_edge(
+            GraphNode.VERIFY_CLAIMS.value,
+            GraphNode.BUILD_RECOMMENDATION_CANDIDATES.value,
+        )
+        builder.add_edge(
+            GraphNode.BUILD_RECOMMENDATION_CANDIDATES.value,
+            GraphNode.ASSEMBLE_RAG_RESPONSE.value,
         )
         builder.add_edge(
             GraphNode.SEARCH_EVIDENCE.value,

@@ -81,19 +81,32 @@ class ClaimEvidenceVerifier:
             if item.target_id in target_ids
         }
         verified_results: list[IngredientVerificationResult] = []
+        records: dict[str, EvidenceRecord] = {}
         if (
             len(target_ids) > 1
             and generated.combination is not None
             and generated.combination.has_verifiable_evidence
         ):
             verified_results.append(generated.combination)
-        elif target_ids and all(
+            records = self._validated_result_records(
+                bundle,
+                generated.combination,
+                request.target.ingredient_ids,
+            )
+        elif len(target_ids) == 1 and all(
             ingredient_id in results and results[ingredient_id].has_verifiable_evidence
             for ingredient_id in target_ids
         ):
-            verified_results.extend(results[ingredient_id] for ingredient_id in target_ids)
+            # 단독 근거를 합쳐 조합 효능·안전성까지 입증한 것으로 확대하지 않도록 단일 대상에만 허용한다.
+            for ingredient_id in request.target.ingredient_ids:
+                result = results[ingredient_id]
+                verified_results.append(result)
+                current = self._validated_result_records(bundle, result, [ingredient_id])
+                if not current:
+                    records = {}
+                    break
+                records.update(current)
 
-        records = self._validated_records(bundle, verified_results, target_ids)
         summaries = list(
             dict.fromkeys(result.answer for result in verified_results if result.answer)
         )
@@ -108,8 +121,13 @@ class ClaimEvidenceVerifier:
             )
 
         reasons = self._unverifiable_reasons(request, generated.per_target)
-        if generated.combination is not None and generated.combination.unverifiable_reason:
-            reasons.append(generated.combination.unverifiable_reason.value)
+        if len(target_ids) > 1:
+            if generated.combination is None:
+                reasons.append(UnverifiableReason.MISSING_COMBINATION_EVIDENCE.value)
+            elif generated.combination.unverifiable_reason is not None:
+                reasons.append(generated.combination.unverifiable_reason.value)
+            elif generated.combination.has_verifiable_evidence and not records:
+                reasons.append(UnverifiableReason.CITATION_VALIDATION_FAILED.value)
         return ClaimVerificationResult(
             statement_id=request.target.statement_id,
             ingredient_ids=request.target.ingredient_ids,
@@ -118,22 +136,22 @@ class ClaimEvidenceVerifier:
             or [UnverifiableReason.NO_EVIDENCE_FOUND.value],
         )
 
-    def _validated_records(
+    def _validated_result_records(
         self,
         bundle: EvidenceBundle,
-        results: list[IngredientVerificationResult],
-        target_ids: set[str],
+        result: IngredientVerificationResult,
+        expected_target_ids: list[str],
     ) -> dict[str, EvidenceRecord]:
         searched = {record.evidence_id: record for record in bundle.search.records}
         records: dict[str, EvidenceRecord] = {}
-        for result in results:
-            for claim in result.claims:
-                for source in claim.sources:
-                    if searched.get(source.evidence_id) != source:
-                        return {}
-                    if not target_ids.intersection(source.target_ids):
-                        return {}
-                    records[source.evidence_id] = source
+        expected = set(expected_target_ids)
+        for claim in result.claims:
+            for source in claim.sources:
+                if searched.get(source.evidence_id) != source:
+                    return {}
+                if not expected.issubset(source.target_ids):
+                    return {}
+                records[source.evidence_id] = source
         return records
 
     def _unverifiable_reasons(
@@ -234,7 +252,7 @@ class IngredientRecommendationSelector:
         return IngredientRecommendationCandidate(
             ingredient_id=ingredient_id,
             basis=basis,
-            statement_ids=list(dict.fromkeys(result.statement_id for result in selected)),
+            statement_ids=list(dict.fromkeys(result.statement_id for result in related)),
             evidence_ids=list(
                 dict.fromkeys(
                     evidence_id for result in supported for evidence_id in result.evidence_ids

@@ -27,6 +27,7 @@ from agent.adapters import (
     InMemoryChatHistoryRepository,
 )
 from agent.citations import EvidenceCitationMapper
+from agent.claim_verification import ClaimEvidenceVerifier, IngredientRecommendationSelector
 from agent.context import ContextBuilder, ConversationSummarizer
 from agent.evidence_query_policy import EvidenceQueryPolicy
 from agent.graph import AgentGraphFactory, AgentGraphRouter, RagWorkflowRouter
@@ -140,6 +141,8 @@ class AgentFactory:
             ),
             runtime=runtime,
             query_policy=evidence_query_policy,
+            claim_verifier=ClaimEvidenceVerifier(dependencies.evidence_pipeline),
+            recommendation_selector=IngredientRecommendationSelector(),
         )
         graph = AgentGraphFactory(
             nodes=nodes,

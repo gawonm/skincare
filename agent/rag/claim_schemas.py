@@ -14,6 +14,7 @@ from agent.rag.schemas import (
     EvidenceConditions,
     EvidenceRecord,
     LookupStatus,
+    ProductRecord,
     RagModel,
 )
 
@@ -340,6 +341,19 @@ class IngredientRecommendationCandidate(RagModel):
 
 class IngredientRecommendationSet(RagModel):
     candidates: list[IngredientRecommendationCandidate] = Field(default_factory=list)
+
+
+class RecommendationProductMatch(RagModel):
+    product: ProductRecord
+    evidence_supported_ingredient_ids: list[str] = Field(default_factory=list)
+    claim_only_ingredient_ids: list[str] = Field(default_factory=list)
+    statement_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+    def basis(self) -> RecommendationBasis:
+        if self.evidence_supported_ingredient_ids:
+            return RecommendationBasis.EVIDENCE_SUPPORTED
+        return RecommendationBasis.CLAIM_ONLY
 
 
 class ClaimBundle(RagModel):

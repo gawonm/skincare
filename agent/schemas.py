@@ -7,7 +7,11 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent.rag.claim_schemas import ClaimBundle
+from agent.rag.claim_schemas import (
+    ClaimBundle,
+    ClaimVerificationBundle,
+    IngredientRecommendationSet,
+)
 from agent.rag.schemas import (
     ApplicabilityAssessment,
     EvidenceBundle,
@@ -138,6 +142,8 @@ class GraphNode(StrEnum):
     ROUTE_RAG = "route_rag"
     SEARCH_CLAIMS = "search_claims"
     RESOLVE_CLAIM_INGREDIENTS = "resolve_claim_ingredients"
+    VERIFY_CLAIMS = "verify_claims"
+    BUILD_RECOMMENDATION_CANDIDATES = "build_recommendation_candidates"
     SEARCH_EVIDENCE = "search_evidence"
     ASSEMBLE_RAG_RESPONSE = "assemble_rag_response"
     PROCESS_TASK = "process_task"
@@ -496,6 +502,8 @@ class AgentState(AgentModel):
     resolved_entities: ResolvedEntities = Field(default_factory=ResolvedEntities)
     rag_route: RagRoute | None = None
     claim_bundle: ClaimBundle | None = None
+    claim_verification_bundle: ClaimVerificationBundle | None = None
+    recommendation_ingredients: IngredientRecommendationSet | None = None
     evidence_bundle: EvidenceBundle | None = None
     task_queue: list[Intent] = Field(default_factory=list)
     current_intent: Intent | None = None

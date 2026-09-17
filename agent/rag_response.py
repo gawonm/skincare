@@ -1,7 +1,12 @@
 """Claim 탐색 결과와 Evidence 검증 결과를 혼동하지 않고 응답 상태에 반영한다."""
 
 from agent.citations import EvidenceCitationMapper
-from agent.rag.claim_schemas import ClaimAnnotationStatus, ClaimConfidence
+from agent.rag.claim_schemas import (
+    ClaimAnnotationStatus,
+    ClaimConfidence,
+    ClaimVerificationResult,
+    ClaimVerificationStatus,
+)
 from agent.rag.schemas import (
     ApplicabilityStatus,
     EvidenceBundle,
@@ -32,6 +37,9 @@ class RagResponseAssembler:
 
     def append(self, state: AgentState) -> None:
         self._append_claim_context(state)
+        if state.rag_route is RagRoute.CLAIM_THEN_EVIDENCE:
+            self._append_claim_verification(state)
+            return
         bundle = state.evidence_bundle
         if bundle is None:
             self._append_missing_evidence_path(state)
@@ -61,6 +69,71 @@ class RagResponseAssembler:
             return
         self._append_records(state, bundle)
         self._append_question_limitations(state)
+
+    def _append_claim_verification(self, state: AgentState) -> None:
+        verification = state.claim_verification_bundle
+        if verification is None or not verification.results:
+            self._append_missing_evidence_path(state)
+            return
+        for result in verification.results:
+            self._append_claim_verification_result(state, result)
+        claim = state.claim_bundle
+        if claim is not None and claim.unresolved_anchors:
+            state.status = ChatStatus.PARTIAL
+            names = list(dict.fromkeys(anchor.raw_name for anchor in claim.unresolved_anchors))
+            detail = "표준 성분을 확정하지 못한 Claim 성분: " + ", ".join(names)
+            state.unresolved.append(
+                UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=detail)
+            )
+            state.response_parts.append(detail)
+
+    def _append_claim_verification_result(
+        self,
+        state: AgentState,
+        result: ClaimVerificationResult,
+    ) -> None:
+        if result.status is ClaimVerificationStatus.SUPPORTED:
+            self._store_evidence(state, result.evidence_records)
+            summary = result.summary or "검증 가능한 공인 근거가 확인됐습니다."
+            state.artifacts.append(
+                EvidenceAnswer(
+                    answer_id=self._runtime.stable_id(
+                        state, f"claim-evidence-answer:{result.statement_id}"
+                    ),
+                    subject=result.statement_id,
+                    summary=summary,
+                    evidence_ids=result.evidence_ids,
+                    is_demo=any(record.is_demo for record in result.evidence_records),
+                )
+            )
+            state.response_parts.append("공인 근거 확인: " + summary)
+            return
+        if result.status is ClaimVerificationStatus.INSUFFICIENT:
+            state.status = ChatStatus.PARTIAL
+            detail = (
+                f"Claim {result.statement_id}: 현재 연결된 공인 근거로 충분히 확인하지 못했습니다."
+            )
+            state.unresolved.append(
+                UnresolvedItem(kind=UnresolvedKind.NO_EVIDENCE, detail=detail)
+            )
+            state.response_parts.append(detail)
+            return
+        if result.status is ClaimVerificationStatus.UNSUPPORTED:
+            state.status = ChatStatus.PARTIAL
+            detail = "; ".join(result.reasons) or "현재 검색기가 이 Claim 검증을 지원하지 않습니다."
+            state.unresolved.append(
+                UnresolvedItem(kind=UnresolvedKind.UNSUPPORTED_CONDITION, detail=detail)
+            )
+            state.response_parts.append(detail)
+            return
+        if result.status is ClaimVerificationStatus.CONTRADICTED:
+            state.status = ChatStatus.PARTIAL
+            detail = "; ".join(result.reasons) or "Claim과 명시적으로 상반되는 근거가 확인됐습니다."
+            state.unresolved.append(UnresolvedItem(kind=UnresolvedKind.CONFLICT, detail=detail))
+            state.response_parts.append(detail)
+            return
+        detail = "; ".join(result.reasons) or "Evidence 검색 도구 오류로 Claim 검증을 보류했습니다."
+        state.response_parts.append(detail)
 
     def _append_claim_context(self, state: AgentState) -> None:
         bundle = state.claim_bundle

@@ -30,7 +30,11 @@ class RagRoutePolicy:
         product_requested = Intent.PRODUCT_DISCOVERY in request.intents
         evidence_requested = Intent.EVIDENCE_QA in request.intents
         has_ingredients = bool(request.ingredient_mentions)
-        has_product_filters = any((request.category, request.texture, request.skin_feel))
+        has_product_filters = bool(
+            any((request.category, request.texture, request.skin_feel))
+            or request.unsupported_product_conditions
+            or request.referenced_candidate_number is not None
+        )
 
         if product_requested and not has_ingredients:
             if concerns or request.rag_route is RagRoute.CLAIM_THEN_EVIDENCE:
