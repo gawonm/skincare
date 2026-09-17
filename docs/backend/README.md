@@ -14,11 +14,15 @@
 `ChatService.handle_turn`이다. 히스토리·상품·성분·루틴·체크포인터 운영 구현은 아직 연결해야
 한다.
 
-## 2-Layer RAG 최신 dump 연동 검토 (2026-09-17)
+## 2-Layer RAG 최신 dump 읽기 연동 (2026-09-17)
 
-> 상태: **구현 전 검토안**
+> 상태: **dump 복원·계약·읽기 전용 smoke 검증 완료**
 >
 > 기준 dump: `data/skincare_latest_2026-09-17.dump`
+
+2026-09-17에 기존 `app` DB를 덮어쓰지 않고 Docker PostgreSQL의 `skincare_latest` DB로
+복원했으며 `pg_restore --exit-on-error`가 정상 완료됐다. 구현 입력·출력과 저장값 매핑은
+[`backend-to-agent.md`](../contracts/backend-to-agent.md)의 9절에 누적한다.
 
 ### 왜 Backend 수정이 필요한가
 
@@ -49,24 +53,29 @@ DB 어댑터가 아직 없기 때문**이다.
 | Claim-only 시나리오 | Evidence 없이 confirmed 상품으로 연결되는 Claim 성분 존재 |
 | 벡터 연산 | pgvector cosine distance 조회 정상 |
 
+`claim_chunk.decision`의 DB 설명은 `ingestible_*`를 운영 검색 대상으로 정의하고,
+`claim_document.production_ready`는 런타임 필수 필터로 강제하지 않는다고 명시한다. 따라서 현재
+5개 Claim은 검색 후보이며 `production_ready=false`는 Claim 차단이 아니라 낮은 confidence로
+보존한다.
+
 기존 이 문서의 `rag_chunk` 1,536차원 설명은 구형 단일 RAG 경로에 대한 것이다. 최신 2-Layer
 경로는 별도 `claim_chunk`, `evidence_chunk`의 BGE-M3 1,024차원 벡터를 사용한다. 두 경로를
 하나의 검색기로 섞지 않는다.
 
-### 최소 구현 범위
+### 구현 범위
 
 마이그레이션과 ORM 모델 동기화 전에도, 복원된 dump를 기준으로 읽기 전용 통합 smoke를 만들 수
 있다. 이 경우 변경 범위는 다음으로 제한한다.
 
-| 계층 | 변경 후보 | 책임 |
+| 계층 | 구현 파일 | 책임 |
 | --- | --- | --- |
-| `backend/repositories/` | Claim 전용 Repository | 허용 Claim, 성분 연결, vector/BM25 조회 |
-| `backend/repositories/` | Evidence 전용 Repository | 성분별 Evidence, 문서·Citation 메타데이터 조회 |
-| `backend/repositories/` | 기존 Product 조회 보완 | `match_acceptance=confirmed`만 상품 후보로 반환 |
-| `backend/services/` | `ClaimRetriever` 어댑터 | DB 결과를 `ClaimSearchResult`로 변환 |
-| `backend/services/` | `HybridSearchBackend` 어댑터 | DB 결과를 `HybridSearchResult`로 변환 |
-| `backend/services/` | dump smoke 실행 조립 | 실제 어댑터를 Agent에 주입하고 한 요청 실행 |
-| `tests/` | DB 통합 smoke | Claim → Evidence → Product 및 Citation 연결 검증 |
+| `backend/repositories/` | `claim_search_repository.py` | `ingestible_*` Claim, 성분 연결, vector 조회 |
+| `backend/repositories/` | `evidence_search_repository.py` | 성분별 Evidence vector/text 조회와 Citation 메타데이터 보존 |
+| `backend/repositories/` | `agent_ingredient_repository.py` | 표준명·정규화명·구명칭 정확 일치 조회 |
+| `backend/repositories/` | `agent_product_repository.py` | `confirmed` 성분 연결만 사용한 상품 조회·중복 제거 |
+| `backend/services/` | `two_layer_rag_adapters.py` | DB 결과를 기존 Agent 포트 DTO로 변환 |
+| `tests/agent/` | `two_layer_rag_dump_smoke.py` | 실제 BGE-M3 기반 결정적 dump smoke 실행기 |
+| `tests/db/` | `test_two_layer_rag_dump.py` | Claim → 미검수 Evidence → Claim-only Product 통합 회귀 검증 |
 
 SQL은 Repository에만 두며, Agent가 `AsyncSession`, SQLAlchemy 모델 또는 Backend 구현을 import하지
 않게 한다. 공개 Agent 포트와 LangGraph 흐름은 최대한 변경하지 않는다.
@@ -84,11 +93,12 @@ SQL은 Repository에만 두며, Agent가 `AsyncSession`, SQLAlchemy 모델 또�
 이 범위는 dump를 이미 복원한 DB를 읽는 통합 검증용이다. 저장소만으로 새 DB를 재현하거나 이후
 스키마 변경을 적용하려면 별도로 모델·ERD·migration 계보를 동기화해야 한다.
 
-### 구현 전에 확정할 항목
+### 확정 정책과 후속 항목
 
 1. **Evidence 검수 상태**
    - 현재 PubMed 3건의 `evidence_document.document_status`가 `NULL`이다.
-   - 안전한 기본값은 `UNREVIEWED`이며, 이 경우 Citation과 `SUPPORTED` 근거로 승격하지 않는다.
+   - `UNREVIEWED`로 변환하며 Citation과 `SUPPORTED` 근거로 승격하지 않는다.
+   - 연결 Claim은 `INSUFFICIENT`가 되지만 `CLAIM_ONLY` 상품 후보로 유지한다.
    - 검증 완료 자료로 사용할 의도라면 Data 파트에서 저장값 또는 명시적인 매핑 규칙을 제공해야 한다.
 2. **Alembic revision**
    - dump의 revision은 `3165318c750d`, 현재 코드 head는 `d4c2a7e91b30`이다.
@@ -97,9 +107,33 @@ SQL은 Repository에만 두며, Agent가 `AsyncSession`, SQLAlchemy 모델 또�
 3. **BGE-M3 설정**
    - dump 검색에는 `agent.embedding.provider: local`, `BAAI/bge-m3`를 사용해야 한다.
    - 기존 OpenAI 1,536차원 임계값 `0.45`를 BGE-M3 기준으로 확정하지 않는다.
-4. **계약 문서 갱신**
-   - 현재 `docs/contracts/backend-to-agent.md`의 기본 운영 경로는 구형 1,536차원 설명을 포함한다.
-   - 구현 전 BGE-M3 2-Layer 조회 입력·출력·실패 상태를 해당 계약에 먼저 반영하고 합의한다.
+4. **계약 문서**
+   - `docs/contracts/backend-to-agent.md` 9절에 BGE-M3 2-Layer 조회 입력·출력·실패 상태를
+     반영했다.
+
+### 실제 BGE-M3 smoke 결과
+
+다음 명령은 외부 LLM을 호출하지 않고 실제 `BAAI/bge-m3`로 Claim/Evidence 질의를 임베딩한 뒤
+복원 DB와 Agent 판정 규칙을 연결한다.
+
+```bash
+uv run python -m tests.agent.two_layer_rag_dump_smoke
+```
+
+2026-09-17 실행 결과:
+
+| 확인 항목 | 결과 |
+| --- | ---: |
+| 검색된 Claim | 5건 |
+| `LOW` confidence Claim | 5건 |
+| 나이아신아마이드 Evidence | 3건 |
+| `UNREVIEWED` Evidence | 3건 |
+| `CLAIM_ONLY` 성분 | 5개 |
+| confirmed 상품이 있는 Claim-only 성분 | 3개 |
+| 중복 제거 후 상품 sample | 10개 |
+
+따라서 `production_ready=false`는 Claim 검색을 막지 않는다. Evidence 검증을 통과하지 못해도
+해당 성분은 `CLAIM_ONLY`로 남고, confirmed 상품 연결이 있으면 최종 상품 후보에 포함된다.
 
 ### 최소 완료 조건
 

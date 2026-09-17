@@ -1028,3 +1028,50 @@ Claim→Ingredient→Product 커버리지는 다음과 같다.
 - 다음 작업:
   - 최신 `origin/main` 반영 여부를 확인한 뒤 브랜치 push 및 PR 준비
   - 도구 호출 예산·성분별 Evidence 배치 정책은 별도 후속 계획으로 분리
+
+### LOG-010 — 2026-09-17 — 최신 dump 읽기 어댑터와 실제 BGE-M3 smoke
+
+- 브랜치: `feature/agent-two-layer-rag-main`
+- 단계: Backend 경계 통합 smoke
+- 상태: `VERIFIED`
+- 기준 파일:
+  - `data/skincare_latest_2026-09-17.dump`
+- 주요 변경 파일:
+  - `backend/repositories/claim_search_repository.py`
+  - `backend/repositories/evidence_search_repository.py`
+  - `backend/repositories/agent_ingredient_repository.py`
+  - `backend/repositories/agent_product_repository.py`
+  - `backend/services/two_layer_rag_adapters.py`
+  - `tests/db/test_two_layer_rag_dump.py`
+  - `tests/agent/two_layer_rag_dump_smoke.py`
+  - `docs/contracts/backend-to-agent.md`
+  - `docs/backend/README.md`
+- 작업 내용:
+  - 기존 `app` DB를 덮어쓰지 않고 dump를 `skincare_latest` DB로 복원했다.
+  - DB 컬럼 설명을 다시 확인해 `production_ready=false`를 Claim 차단 조건으로 사용한 초기
+    계약 초안을 수정했다.
+  - `decision=ingestible_*` Claim을 검색 후보로 전달하고 `production_ready=false`는
+    `ClaimConfidence.LOW`로 보존하도록 매핑했다.
+  - `document_status=NULL` Evidence는 `UNREVIEWED`로 유지하고, 해당 Claim을
+    `INSUFFICIENT → CLAIM_ONLY` 상품 후보로 연결했다.
+  - Product는 `match_acceptance=confirmed` 연결만 사용하고 `product_id` 중복을 제거했다.
+  - `models/`, `migrations/`, 기존 `rag_chunk` 경로는 변경하지 않았다.
+- 실제 BGE-M3 smoke 결과:
+  - Claim 5건 검색, 5건 모두 `LOW` confidence
+  - 나이아신아마이드 Evidence 3건, 모두 `UNREVIEWED`
+  - Claim-only 성분 5개
+  - confirmed 상품이 있는 Claim-only 성분 3개
+  - 중복 제거된 상품 sample 10개
+- 검증:
+  - `uv run pytest tests/db/test_two_layer_rag_dump.py -m integration -q`: 1개 통과
+  - `uv run python -m tests.agent.two_layer_rag_dump_smoke`: 실제 `BAAI/bge-m3` 실행 성공
+  - `uv run pytest tests -q`: 186개 통과, integration 1개 제외
+  - 변경 파일 대상 `ruff`, `pyrefly`: 통과
+  - `git diff --check`: 공백 오류 없음
+- 계약 커밋: `35e6fab` (`docs(backend): 최신 dump 2-Layer 조회 계약 확정`)
+- 구현 커밋: `8537fff` (`feat(backend): 최신 dump 2-Layer 읽기 어댑터 연결`)
+- 테스트 커밋: `7154db3` (`test(agent): 최신 dump Claim-only 통합 smoke 추가`)
+- 후속 항목:
+  - BGE-M3 자유 질의 임계값은 더 많은 평가 데이터로 별도 튜닝
+  - Data 파트가 Evidence `document_status`를 확정하면 `VERIFIED` 승격 경로 재검증
+  - dump migration revision과 현재 Alembic head 동기화는 Data 파트 후속 작업
