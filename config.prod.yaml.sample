@@ -13,6 +13,8 @@ database:
   url: postgresql+asyncpg://app:app@postgres:5432/app
 
   model_modules:
+    - models.claim_chunk
+    - models.claim_document
     - models.evidence
     - models.evidence_chunk
     - models.evidence_document
