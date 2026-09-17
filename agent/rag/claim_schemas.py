@@ -9,7 +9,13 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, FiniteFloat, model_validator
 
-from agent.rag.schemas import DEFAULT_SEARCH_LIMIT, LookupStatus, RagModel
+from agent.rag.schemas import (
+    DEFAULT_SEARCH_LIMIT,
+    EvidenceConditions,
+    EvidenceRecord,
+    LookupStatus,
+    RagModel,
+)
 
 
 class ClaimStatementType(StrEnum):
@@ -34,6 +40,19 @@ class ClaimSupportStatus(StrEnum):
     SUPPORTED = "supported"
     CONTRADICTED = "contradicted"
     INSUFFICIENT = "insufficient"
+
+
+class ClaimVerificationStatus(StrEnum):
+    SUPPORTED = "supported"
+    INSUFFICIENT = "insufficient"
+    CONTRADICTED = "contradicted"
+    UNSUPPORTED = "unsupported"
+    ERROR = "error"
+
+
+class RecommendationBasis(StrEnum):
+    EVIDENCE_SUPPORTED = "evidence_supported"
+    CLAIM_ONLY = "claim_only"
 
 
 class ClaimAnnotationStatus(StrEnum):
@@ -223,6 +242,18 @@ class ClaimHit(RagModel):
             return f"{self.content.subject}: {', '.join(self.content.objects)}"
         return self.content.details_raw
 
+    def verification_query(self) -> str:
+        names = list(
+            dict.fromkeys(
+                anchor.raw_name_ko or anchor.raw_name for anchor in self.ingredient_anchors()
+            )
+        )
+        statement = self.display_text()
+        if not names:
+            return statement
+        # 표시 문구와 달리 Evidence 검색에는 성분명을 명시해 다른 성분의 효능 문서가 섞이지 않게 한다.
+        return f"{' + '.join(names)}: {statement}"
+
 
 class ClaimSearchRequest(RagModel):
     query: str = Field(min_length=1)
@@ -251,7 +282,68 @@ class UnresolvedClaimAnchor(RagModel):
     raw_name: str = Field(min_length=1)
 
 
+class ClaimResolvedTarget(RagModel):
+    statement_id: str = Field(min_length=1)
+    ingredient_ids: list[str] = Field(min_length=1)
+    query: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_ingredients(self) -> Self:
+        if len(self.ingredient_ids) != len(set(self.ingredient_ids)):
+            raise ValueError("Claim 검증 대상의 ingredient_id가 중복되었습니다.")
+        return self
+
+
+class ClaimVerificationRequest(RagModel):
+    target: ClaimResolvedTarget
+    known_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions)
+
+
+class ClaimVerificationResult(RagModel):
+    statement_id: str = Field(min_length=1)
+    ingredient_ids: list[str] = Field(min_length=1)
+    status: ClaimVerificationStatus
+    evidence_ids: list[str] = Field(default_factory=list)
+    evidence_records: list[EvidenceRecord] = Field(default_factory=list)
+    summary: str | None = Field(default=None, min_length=1)
+    reasons: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_evidence_payload(self) -> Self:
+        if len(self.ingredient_ids) != len(set(self.ingredient_ids)):
+            raise ValueError("Claim 검증 결과의 ingredient_id가 중복되었습니다.")
+        record_ids = [record.evidence_id for record in self.evidence_records]
+        if len(record_ids) != len(set(record_ids)):
+            raise ValueError("Claim 검증 결과의 evidence_id가 중복되었습니다.")
+        if self.evidence_ids != record_ids:
+            raise ValueError("Claim 검증 결과의 evidence_ids와 EvidenceRecord가 일치하지 않습니다.")
+        if self.status is ClaimVerificationStatus.SUPPORTED:
+            if not self.evidence_ids or self.summary is None:
+                raise ValueError("SUPPORTED Claim 검증 결과에는 근거와 요약이 필요합니다.")
+        elif self.evidence_ids or self.evidence_records:
+            # 검증에 쓰지 못한 검색 자료가 Citation으로 승격되지 않도록 결과에서 분리한다.
+            raise ValueError("SUPPORTED가 아닌 Claim 결과에는 인용 가능한 근거를 넣을 수 없습니다.")
+        return self
+
+
+class ClaimVerificationBundle(RagModel):
+    results: list[ClaimVerificationResult] = Field(default_factory=list)
+
+
+class IngredientRecommendationCandidate(RagModel):
+    ingredient_id: str = Field(min_length=1)
+    basis: RecommendationBasis
+    statement_ids: list[str] = Field(min_length=1)
+    evidence_ids: list[str] = Field(default_factory=list)
+    limitation: str | None = Field(default=None, min_length=1)
+
+
+class IngredientRecommendationSet(RagModel):
+    candidates: list[IngredientRecommendationCandidate] = Field(default_factory=list)
+
+
 class ClaimBundle(RagModel):
     search: ClaimSearchResult
     target_ids: list[str] = Field(default_factory=list)
+    resolved_targets: list[ClaimResolvedTarget] = Field(default_factory=list)
     unresolved_anchors: list[UnresolvedClaimAnchor] = Field(default_factory=list)
