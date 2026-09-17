@@ -254,3 +254,36 @@ git diff --check
   - 도구 호출 예산과 Evidence 배치 정책
   - Backend의 `match_acceptance=confirmed` 강제 검증
   - 운영 BGE-M3 인덱스와 실제 DB 어댑터 통합 테스트
+
+### LOG-F03 — 2026-09-17 — 최신 dump 기반 실제 LangGraph 실행 확인
+
+- 상태: `VERIFIED`
+- 실행 진입점: `tests/agent/interactive_two_layer_rag_cli.py`
+- 실행 명령:
+
+  ```powershell
+  uv run python -m tests.agent.interactive_two_layer_rag_cli "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?"
+  ```
+
+- 실제 연결:
+  - Intent·답변 모델: OpenAI `gpt-4o-mini`
+  - Claim·Evidence 임베딩: `BAAI/bge-m3` 1,024차원
+  - Evidence 리랭커: `BAAI/bge-reranker-v2-m3`
+  - Claim·Evidence·성분·상품: `skincare_latest` DB
+- 실행 결과:
+  - LangGraph가 질의를 `product_discovery`로 판정하고 `partial` 상태로 완료했다.
+  - Claim 5건을 발굴하고 성분별 Evidence 검색을 5회 수행했다.
+  - 나이아신아마이드 Evidence 3건을 검색했지만 모두 `unreviewed`라 Claim을 공인 근거 지원으로
+    승격하지 않았다.
+  - Evidence가 없거나 검수되지 않은 Claim도 제거하지 않고 `CLAIM_ONLY`로 유지했다.
+  - Claim 기반 상품 후보 13건을 최종 응답에 표시했으며, 상품이 없는 성분 2건은 보류 사유로
+    명시했다.
+- 실행 환경 보완:
+  - 기존 CLI의 이모지가 Windows `cp949` 출력에서 실패하므로 새 CLI 진입점에서만 UTF-8로
+    출력 스트림을 설정했다.
+  - 기존 `tests/agent/interactive_rag_cli.py`와 `config.yaml`은 변경하지 않았다.
+- 검증 결과:
+  - Agent 전체 테스트: 116개 통과
+  - Ruff: 통과
+  - Pyrefly: 오류 없음
+  - `git diff --check`: 통과
