@@ -357,7 +357,6 @@ CSV에 새 컬럼이 없어도 None으로 읽으며, 빈 셀도 None으로 변�
 - 기존 DB 행을 채우는 작업은 전체 카탈로그 재적재와 구분한다. backend 담당자가
   아래 갱신 메서드를 제공하면 기존 상품의 분류 두 필드만 갱신한다.
   상품명·가격·관측 시각·매칭 상태·전성분을 다시 적재하지 않는다.
-
 ```python
 # backend 소유: backend/repositories/product_repository.py
 # ProductUpsertInput 등과 동일하게 models.product의 ORM용 Enum을 사용한다.

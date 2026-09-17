@@ -98,6 +98,35 @@ class IngredientMatchMethod(StrEnum):
     MANUAL_REVIEW = "manual_review"
 
 
+class IngredientDatasetRow(BaseModel):
+    """POC용 성분 전체 데이터셋 CSV 한 행.
+
+    `IngredientMaster` 1건에 `IngredientKnowledgeFact`(0~1건, 다건이면 첫 건만)와
+    `Evidence`(0~N건, 나라별로 여러 건일 수 있어 집계)를 붙인다. 세 테이블을 그대로
+    cross join 하면 성분당 근거 건수만큼 행이 곱해져 왜곡되므로, 성분 1건 = 1행으로
+    고정하고 Evidence 는 집계 문자열로 압축한다.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    ingredient_id: UUID
+    ingredient_code: int
+    standard_name_ko: str
+    standard_name_en: str | None
+    old_names_ko: str = Field(description="'|' 구분 목록")
+    old_names_en: str = Field(description="'|' 구분 목록")
+    source_version: str
+    knowledge_inci_name: str | None = None
+    knowledge_efficacy: str | None = None
+    knowledge_recommended_skin_types: str | None = None
+    knowledge_precautions: str | None = None
+    knowledge_recommended_concentration: str | None = None
+    knowledge_regulatory_confidence: str | None = None
+    evidence_count: int = 0
+    evidence_jurisdictions: str = Field(default="", description="'|' 구분 목록")
+    evidence_claims: str = Field(default="", description="'jurisdiction: claim' '|' 구분 목록")
+
+
 class IngredientMatchResult(BaseModel):
     """성분명 매칭 결과. `MANUAL_REVIEW` 면 `matched_ingredient_id` 가 없다."""
 

@@ -8,7 +8,29 @@
 의존: `core` 만 import 한다.
 """
 
+from models.claim_chunk import (
+    CLAIM_EMBEDDING_DIMENSION,
+    ClaimChunk,
+    ClaimIngestionDecision,
+    ClaimIngredientMatchingStatus,
+    ClaimIngredientRefRole,
+    ClaimPriority,
+    ClaimStatementType,
+    ClaimSupportStatus,
+    claim_chunk_ingredient,
+)
+from models.claim_document import ClaimDatasetSplit, ClaimDocument
 from models.evidence import Evidence, EvidenceRegulateType, EvidenceSourceType, EvidenceTopic
+from models.evidence_chunk import EvidenceChunk, evidence_chunk_ingredient
+from models.evidence_document import (
+    EvidenceClaimTopic,
+    EvidenceDocument,
+    EvidenceDocumentSourceType,
+    EvidenceDocumentStatus,
+    EvidenceFormulationType,
+    EvidenceLevel,
+    EvidenceStudyType,
+)
 from models.ingredient import IngredientMaster
 from models.ingredient_knowledge import IngredientKnowledgeFact, RegulatoryConfidence
 from models.product import (
@@ -35,11 +57,29 @@ from models.rag_chunk import (
 from models.user import AgeGroup, Gender, User
 
 __all__ = [
+    "CLAIM_EMBEDDING_DIMENSION",
     "EMBEDDING_DIMENSION",
     "AgeGroup",
+    "ClaimChunk",
+    "ClaimDatasetSplit",
+    "ClaimDocument",
+    "ClaimIngestionDecision",
+    "ClaimIngredientMatchingStatus",
+    "ClaimIngredientRefRole",
+    "ClaimPriority",
+    "ClaimStatementType",
+    "ClaimSupportStatus",
     "Evidence",
+    "EvidenceChunk",
+    "EvidenceClaimTopic",
+    "EvidenceDocument",
+    "EvidenceDocumentSourceType",
+    "EvidenceDocumentStatus",
+    "EvidenceFormulationType",
+    "EvidenceLevel",
     "EvidenceRegulateType",
     "EvidenceSourceType",
+    "EvidenceStudyType",
     "EvidenceTopic",
     "Gender",
     "IngredientKnowledgeFact",
@@ -60,4 +100,6 @@ __all__ = [
     "RagSourceTable",
     "RegulatoryConfidence",
     "User",
+    "claim_chunk_ingredient",
+    "evidence_chunk_ingredient",
 ]

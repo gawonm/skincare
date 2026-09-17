@@ -3,6 +3,33 @@
 작성 기준: 2026-09-10 (한국시간), 이 세션에서 직접 코드를 작성·실행·검증한 내용만 담는다.
 대상 저장소: `/Users/moon/projects/skincare-rag-pipeline` (워크트리, 브랜치 `feature/rag-pipeline`, 미푸시)
 
+> ## ⚠️ Historical vs Current state (2026-09-15 갱신)
+>
+> 이 문서의 `rag_chunk` 관련 수치(특히 65,196건)는 **위 경로(Mac, `/Users/moon/...`)의
+> 환경**에서 2026-09-10에 실제로 확인된 값이다(historical state) — 하지만 그 환경/DB는
+> 지금 이 저장소에서 접근할 수 없다.
+>
+> **현재(Windows, `C:\Users\Admin\...`) 로컬 DB를 2026-09-15에 직접 조회한 결과
+> `rag_chunk`는 0건이다(current state).** 원인 조사(`docker volume inspect`):
+> `skincare_postgres-data` 볼륨 생성 시각이 **2026-09-11 04:48**로, 이 문서 작성일(09-10)
+> 다음 날이다 — 이 문서가 가리키던 상태가 만들어진 이후 어느 시점에 이 머신의 DB 볼륨이
+> 새로 생성됐고, 그 과정에서 임베딩 인덱스가 소실된 것으로 판단된다(`skincare-verify`
+> DB도 확인했으나 0건). 원본 데이터(Evidence/IngredientKnowledgeFact)는 재적재로 이미
+> 복원돼 있다. 상세 조사 경과는
+> [NIACINAMIDE_EVIDENCE_VERTICAL_SLICE.md](NIACINAMIDE_EVIDENCE_VERTICAL_SLICE.md) 1절 참고.
+>
+> **또한 현재 `backend/services/rag_ingestion_service.py`에는 `sync_evidence()`/
+> `sync_knowledge_facts()`만 있고 NIA Q&A를 적재하는 메서드가 없다** — 아래 §4의
+> NIA 45,002청크 관련 기록은 이 문서 작성 당시 존재했을 수 있는 별도 구현을 가리키는
+> 것으로 보이며, 현재 코드로 재실행하면 Evidence+IngredientKnowledgeFact만 복구되고
+> 65,196에 도달하지 않는다. 과거 수치를 목표값으로 삼지 않는다.
+>
+> **`rag_chunk` 재구축은 현재 보류 중이다.** 과거 `nia_qa` 청크는 원문 필드
+> (question/answer/CoT) 그대로였고, 지금 필요한 건 `NiaLabelingDocument.statements[]`
+> 기준 statement 단위 Claim RAG다 — 입도가 달라 그대로 재사용할 수 없다. Evidence만
+> 먼저 복구하면 Claim RAG 없는 반쪽 상태로 굳어질 위험이 있어, ingestion 경로를 먼저
+> 설계했다. 상세: [CLAIM_RAG_INGESTION_DESIGN.md](CLAIM_RAG_INGESTION_DESIGN.md).
+
 > 이 문서는 [docs/SKINCARE_DATA_RAG_HANDOFF.md](SKINCARE_DATA_RAG_HANDOFF.md)(다른 세션이 작성)가
 > "남은 작업"으로 정리한 항목들을 이 세션에서 이어받아 처리한 뒤의 **현재 상태**를 기록한다.
 > 두 문서가 겹치는 부분(상품/올리브영 파트, 기술 스택 표 등)은 그 문서를 참고하고, 여기서는
