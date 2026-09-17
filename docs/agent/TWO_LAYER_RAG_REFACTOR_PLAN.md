@@ -467,8 +467,8 @@ Claim 종류별로 검증 가능한 문장을 만드는 책임은 클래스 메�
 | P0. 계획 작성 | `VERIFIED` | 범위·정책·테스트·미결정 항목 문서화 | `LOG-001`, `LOG-002` |
 | P0-A. Smoke DB 준비 | `VERIFIED` | 별도 DB 복원 및 포함 데이터·제약 확인 | `LOG-003`, `LOG-004`, `LOG-005` |
 | P1. 정책 결정 | `VERIFIED` | 16절의 5개 항목 사용자 확인 | `LOG-006` |
-| P2. 라우팅 리팩터링 | `IN_PROGRESS` | LLM 경로 누락 시 우회 방지 테스트 통과 | `LOG-006` |
-| P3. Claim별 Evidence 확인 | `PLANNED` | Claim별 상태와 Evidence ID 연결 테스트 통과 | — |
+| P2. 라우팅 리팩터링 | `VERIFIED` | LLM 경로 누락 시 우회 방지 테스트 통과 | `LOG-006`, `LOG-007` |
+| P3. Claim별 Evidence 확인 | `IN_PROGRESS` | Claim별 상태와 Evidence ID 연결 테스트 통과 | `LOG-007` |
 | P4. 추천 후보 분류 | `PLANNED` | Evidence-supported와 Claim-only 모두 상품 후보 포함 | — |
 | P5. LangGraph·응답 정리 | `PLANNED` | 노드 책임 및 근거별 표현·Citation 분리 | — |
 | P6. 회귀 검증 | `PLANNED` | Agent/전체 테스트, Ruff, diff 검사 통과 | — |
@@ -893,7 +893,40 @@ Claim→Ingredient→Product 커버리지는 다음과 같다.
   - Evidence-supported를 Claim-only보다 먼저 표시한다.
   - 명시 성분 단순 상품 검색은 Product RDB로 직행한다.
 - 검증: 구현 완료 후 P2 작업 일지에 기록 예정
-- 커밋: 생성 예정
+- 커밋: `66b65de` (`refactor(agent): RAG 라우팅 정책과 실행 노드 분리`)
 - 다음 작업:
   - 현재 State·TaskPlan·Graph 직렬화 영향을 점검
   - 결정적 `RagRoutePolicy`와 우회 방지 테스트 구현
+
+### LOG-007 — 2026-09-17 — 결정적 RAG 라우팅 정책 분리
+
+- 브랜치: `feature/agent-two-layer-rag-main`
+- 단계: P2. 라우팅 리팩터링, P3. Claim별 Evidence 확인
+- 상태: `VERIFIED`
+- 변경 파일:
+  - `agent/rag_route_policy.py`
+  - `agent/schemas.py`
+  - `agent/prompts.py`
+  - `agent/adapters.py`
+  - `agent/nodes.py`
+  - `agent/graph.py`
+  - `agent/factory.py`
+  - `tests/agent/test_two_layer_rag.py`
+- 작업 내용:
+  - LLM이 제안한 `rag_route`를 그대로 실행하지 않고 `RagRoutePolicy`가 Intent, 명시 성분,
+    피부 고민, 상품 필터를 함께 검사해 최종 경로를 정하도록 분리했다.
+  - `DECIDE_RAG_ROUTE` LangGraph 노드를 추가해 이해 단계와 실행 계획 생성을 분리했다.
+  - 피부 고민 기반 상품 탐색은 LLM이 경로를 누락해도 Claim → Evidence → Product 순서를 유지한다.
+  - 명시 성분 상품 검색은 Claim/Evidence를 거치지 않고 Ingredient Resolution → Product로 직행한다.
+  - 상품 필터만 있는 요청은 문장 전체를 성분명으로 오인하지 않고 Product 조회로 직행한다.
+- 작업 이유:
+  - LLM 출력 누락이나 오분류가 Claim 검증을 우회하거나 불필요한 RAG 호출을 만들지 않게 하기 위해서다.
+  - 라우팅은 재현 가능한 규칙으로 고정하고 LLM은 의도와 사용자 표현 추출에 집중하게 하기 위해서다.
+- 검증:
+  - `uv run pytest tests/agent/test_two_layer_rag.py tests/agent/test_agent_chat.py -q`: 24개 통과
+  - `uv run ruff check agent tests/agent`: 통과
+  - LLM 경로 누락, 잘못된 Claim 경로 제안, 상품 필터 전용 요청을 각각 회귀 테스트로 고정했다.
+- 커밋: `66b65de` (`refactor(agent): RAG 라우팅 정책과 실행 노드 분리`)
+- 다음 작업:
+  - Claim statement별 표준 성분 ID와 Evidence 결과를 보존하는 Pydantic 모델 추가
+  - Claim별 Evidence 확인과 추천 근거 등급 선정을 별도 클래스로 구현
