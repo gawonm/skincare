@@ -220,6 +220,16 @@ class ProductTaxonomyNormalizer:
                     matched_keyword=matched_keyword,
                 )
 
+        if (
+            self._normalize(row.category2) == "suncare"
+            and self._normalize(row.category3) == "sunscreen"
+        ):
+            return self._result(
+                product_type=ProductTypeNormalized.SUNSCREEN,
+                basis=TaxonomyDecisionBasis.SOURCE_CATEGORY,
+                matched_keyword=f"{row.category2}>{row.category3}",
+            )
+
         if self._normalize(row.category3) == "cleansers":
             return self._result(
                 product_type=ProductTypeNormalized.CLEANSER,

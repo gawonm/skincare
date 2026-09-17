@@ -96,6 +96,23 @@ class TestProductTaxonomyNormalizer:
         assert result.product_type_normalized is ProductTypeNormalized.CLEANSER
         assert result.basis is TaxonomyDecisionBasis.SOURCE_CATEGORY
 
+    def test_suncare_sunscreen_category_is_used_as_fallback_without_title_keyword(self) -> None:
+        result = self._classify(
+            "Daily Barrier Stick", category2="Suncare", category3="Sunscreen"
+        )
+
+        assert result.product_type_normalized is ProductTypeNormalized.SUNSCREEN
+        assert result.service_category is ServiceCategory.SUNCARE
+        assert result.basis is TaxonomyDecisionBasis.SOURCE_CATEGORY
+
+    def test_suncare_category_alone_without_sunscreen_subcategory_stays_unclassified(self) -> None:
+        result = self._classify(
+            "Daily Barrier Stick", category2="Suncare", category3="After Sun"
+        )
+
+        assert result.product_type_normalized is None
+        assert result.service_category is None
+
     def test_every_normalized_type_has_service_category(self) -> None:
         normalizer = ProductTaxonomyNormalizer()
 
@@ -113,10 +130,16 @@ class TestProductTaxonomyNormalizer:
             item.value for item in ProductServiceCategory
         }
 
-    def _classify(self, title: str, *, category3: str = "Moisturizers") -> ProductTaxonomyResult:
-        return ProductTaxonomyNormalizer().classify(self._row(title, category3=category3))
+    def _classify(
+        self, title: str, *, category2: str = "Skincare", category3: str = "Moisturizers"
+    ) -> ProductTaxonomyResult:
+        return ProductTaxonomyNormalizer().classify(
+            self._row(title, category2=category2, category3=category3)
+        )
 
-    def _row(self, title: str, *, category3: str = "Moisturizers") -> ProductCandidateRow:
+    def _row(
+        self, title: str, *, category2: str = "Skincare", category3: str = "Moisturizers"
+    ) -> ProductCandidateRow:
         return ProductCandidateRow(
             candidate_id="OYC0001",
             source=DataSource.OLIVEYOUNG_GLOBAL,
@@ -128,7 +151,7 @@ class TestProductTaxonomyNormalizer:
             brand="Test Brand",
             maker="",
             category1="OliveYoungGlobal",
-            category2="Skincare",
+            category2=category2,
             category3=category3,
             lowest_price=10_000,
             highest_price=12_000,
