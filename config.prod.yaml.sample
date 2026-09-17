@@ -81,6 +81,8 @@ agent:
     cache_folder: null
     local_files_only: false
   retrieval:
+    # 배포 DB에 실제 적재된 active Claim annotation version으로 교체한다.
+    claim_annotation_version: set-active-claim-annotation-version
     free_text_min_vector_similarity: 0.45
     rrf_k: 60
     rerank_candidate_limit: 30

@@ -160,6 +160,8 @@ class LocalRerankerSettings(PydanticBaseModel):
 class RagRetrievalSettings(PydanticBaseModel):
     model_config = ConfigDict(frozen=True)
 
+    # 여러 annotation run의 Claim이 섞이지 않도록 운영 Agent 조립 시 반드시 지정한다.
+    claim_annotation_version: Annotated[str | None, Field(min_length=1)] = None
     # None이면 OpenAI는 검증된 기존값을 쓰고, BGE-M3는 별도 검증값 입력을 요구한다.
     free_text_min_vector_similarity: Annotated[float | None, Field(ge=-1, le=1)] = None
     rrf_k: Annotated[int, Field(gt=0)] = 60

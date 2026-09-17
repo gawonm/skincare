@@ -90,6 +90,8 @@ agent:
     cache_folder: null
     local_files_only: false
   retrieval:
+    # Claim 검색 시 사용할 annotation run을 명시해 서로 다른 버전이 섞이지 않게 한다.
+    claim_annotation_version: llm-pilot-2026-09-14-openai-gpt-4o-mini
     # 기존 text-embedding-3-small 검증값. local 전환 시 별도 검증값으로 바꾼다.
     free_text_min_vector_similarity: 0.45
     rrf_k: 60
