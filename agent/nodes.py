@@ -265,6 +265,7 @@ class AgentNodes:
         state.parsed_request = parsed.model_copy(
             deep=True,
             update={
+                "intents": decision.normalized_intents,
                 "rag_route": decision.route,
                 "skin_concerns": decision.normalized_skin_concerns or parsed.skin_concerns,
             },

@@ -438,6 +438,58 @@ class TestTwoLayerRagWorkflow:
         assert output.status is ChatStatus.PARTIAL
         assert calls == [WorkflowCall.CLAIM, WorkflowCall.EVIDENCE, WorkflowCall.PRODUCT]
 
+    async def test_rule_corrects_misclassified_concern_discovery_intent(self) -> None:
+        calls: list[WorkflowCall] = []
+        harness = TwoLayerRagHarness()
+        llm = FixedRequestLlm(
+            ParsedRequest(
+                intents=[Intent.EVIDENCE_QA],
+                query="피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?",
+                skin_concerns=["피지", "좁쌀 여드름"],
+                rag_route=RagRoute.EVIDENCE_ONLY,
+            )
+        )
+        application = harness.create(calls, llm=llm, evidence_no_results=True)
+
+        output = await application.service.handle_turn(
+            harness.request(
+                "rule-misclassified-concern-1",
+                "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?",
+            )
+        )
+
+        assert output.status is ChatStatus.PARTIAL
+        assert output.intents == [Intent.PRODUCT_DISCOVERY]
+        assert calls == [WorkflowCall.CLAIM, WorkflowCall.EVIDENCE, WorkflowCall.PRODUCT]
+        candidate_set = next(
+            artifact for artifact in output.artifacts if isinstance(artifact, ProductCandidateSet)
+        )
+        assert candidate_set.candidates
+        assert CLAIM_ONLY_PRODUCT_LIMITATION in candidate_set.candidates[0].unresolved
+        assert output.citations == []
+
+    async def test_rule_keeps_concern_explanation_as_evidence_question(self) -> None:
+        calls: list[WorkflowCall] = []
+        harness = TwoLayerRagHarness()
+        llm = FixedRequestLlm(
+            ParsedRequest(
+                intents=[Intent.EVIDENCE_QA],
+                query="피지가 많은 원인이 뭐야?",
+                skin_concerns=["피지"],
+                rag_route=RagRoute.EVIDENCE_ONLY,
+            )
+        )
+        application = harness.create(calls, llm=llm)
+
+        output = await application.service.handle_turn(
+            harness.request("rule-concern-evidence-1", "피지가 많은 원인이 뭐야?")
+        )
+
+        assert output.intents == [Intent.EVIDENCE_QA]
+        assert WorkflowCall.CLAIM not in calls
+        assert WorkflowCall.PRODUCT not in calls
+        assert calls == [WorkflowCall.INGREDIENT, WorkflowCall.EVIDENCE]
+
     async def test_rule_skips_rag_for_explicit_ingredient_product_query(self) -> None:
         calls: list[WorkflowCall] = []
         harness = TwoLayerRagHarness()
