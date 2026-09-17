@@ -60,6 +60,21 @@ class ProductTaxonomyUpdate(BaseModel):
     service_category: ProductServiceCategory | None
 
 
+class ProductTitleUpdate(BaseModel):
+    """`ProductRepository.update_title`의 입력. 상품명 두 필드만 갱신 대상이다.
+
+    가격·이미지·URL·카테고리 등 나머지 필드는 이 모델에 없다 — 백필이 title 매핑만
+    가지고 있을 때, 다른 필드를 실수로 덮어쓸 방법 자체를 없앤다.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    source: str
+    source_product_id: str
+    display_title: str
+    title_source: ProductTitleSource
+
+
 class ProductRepository:
     """`Product` 조회·저장 전용. commit은 하지 않는다."""
 
@@ -102,6 +117,29 @@ class ProductRepository:
 
         existing.product_type_normalized = input_.product_type_normalized
         existing.service_category = input_.service_category
+        return existing
+
+    async def update_title(self, input_: ProductTitleUpdate) -> Product:
+        """상품명(`display_title`, `title_source`) 두 필드만 갱신한다.
+
+        `_apply`(전체 재적재)와 달리 가격·이미지·URL·카테고리·raw_title 등은 절대
+        건드리지 않는다 — localization 백필은 raw_title 기준 매핑만 갖고 있고 나머지
+        필드의 최신값을 모르므로, 건드릴 수 있는 필드 자체를 이 두 개로 좁힌다.
+        """
+        existing = await self.find(input_.source, input_.source_product_id)
+        if existing is None:
+            raise LookupError(
+                f"title 백필 대상 상품을 찾지 못함: source={input_.source}, "
+                f"source_product_id={input_.source_product_id}"
+            )
+
+        # update_taxonomy와 같은 이유로 비교부터 한다: 값이 같으면 SQLAlchemy가 dirty로
+        # 표시하지 않아 UPDATE가 안 나가므로, 재실행 시 "정말 안 바뀌었다"를 명시적으로 본다.
+        if existing.display_title == input_.display_title and existing.title_source == input_.title_source:
+            return existing
+
+        existing.display_title = input_.display_title
+        existing.title_source = input_.title_source
         return existing
 
     def _apply(self, row: Product, input_: ProductUpsertInput) -> None:

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.repositories.product_repository import (
     ProductRepository,
     ProductTaxonomyUpdate,
+    ProductTitleUpdate,
     ProductUpsertInput,
 )
 from data.scripts.product_candidate_schemas import ProductCandidateRow
@@ -75,3 +76,13 @@ class ProductService:
             else None,
         )
         return await self._repository.update_taxonomy(input_)
+
+    async def update_title(self, row: ProductCandidateRow) -> Product:
+        """이미 적재된 상품의 상품명 두 필드만 갱신한다. localization 백필 전용."""
+        input_ = ProductTitleUpdate(
+            source=row.source.value,
+            source_product_id=row.source_product_id,
+            display_title=row.display_title,
+            title_source=ProductTitleSource(row.title_source.value),
+        )
+        return await self._repository.update_title(input_)
