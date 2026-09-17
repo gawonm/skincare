@@ -287,3 +287,22 @@ git diff --check
   - Ruff: 통과
   - Pyrefly: 오류 없음
   - `git diff --check`: 통과
+
+### LOG-F04 — 2026-09-17 — 실제 실행 결과 요약 화면 적용
+
+- 상태: `VERIFIED`
+- 변경 내용:
+  - 기본 출력에서는 원문 청크·UUID·검색 점수·리랭커 세부 로그를 숨겼다.
+  - `Claim → Evidence`, 상품 후보, 보류 사유를 구분해 표시한다.
+  - 상품 후보마다 `Evidence 기반` 또는 `Claim 기반·근거 미확인`을 표시한다.
+  - 상품이 없는 효능·안전성 질의는 Agent의 최종 답변 문장을 그대로 표시한다.
+  - 전체 디버그 출력은 기존 정보가 유실되지 않도록 `--verbose` 옵션으로 유지했다.
+- 실행 명령:
+
+  ```powershell
+  # 기본 요약 화면
+  uv run python -m tests.agent.interactive_two_layer_rag_cli "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?"
+
+  # 검색 요청·청크·점수까지 포함한 상세 화면
+  uv run python -m tests.agent.interactive_two_layer_rag_cli "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?" --verbose
+  ```
