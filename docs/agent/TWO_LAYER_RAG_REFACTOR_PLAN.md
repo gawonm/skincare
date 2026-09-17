@@ -468,8 +468,8 @@ Claim 종류별로 검증 가능한 문장을 만드는 책임은 클래스 메�
 | P0-A. Smoke DB 준비 | `VERIFIED` | 별도 DB 복원 및 포함 데이터·제약 확인 | `LOG-003`, `LOG-004`, `LOG-005` |
 | P1. 정책 결정 | `VERIFIED` | 16절의 5개 항목 사용자 확인 | `LOG-006` |
 | P2. 라우팅 리팩터링 | `VERIFIED` | LLM 경로 누락 시 우회 방지 테스트 통과 | `LOG-006`, `LOG-007` |
-| P3. Claim별 Evidence 확인 | `IN_PROGRESS` | Claim별 상태와 Evidence ID 연결 테스트 통과 | `LOG-007` |
-| P4. 추천 후보 분류 | `PLANNED` | Evidence-supported와 Claim-only 모두 상품 후보 포함 | — |
+| P3. Claim별 Evidence 확인 | `VERIFIED` | Claim별 상태와 Evidence ID 연결 테스트 통과 | `LOG-007`, `LOG-008` |
+| P4. 추천 후보 분류 | `IN_PROGRESS` | Evidence-supported와 Claim-only 모두 상품 후보 포함 | `LOG-008` |
 | P5. LangGraph·응답 정리 | `PLANNED` | 노드 책임 및 근거별 표현·Citation 분리 | — |
 | P6. 회귀 검증 | `PLANNED` | Agent/전체 테스트, Ruff, diff 검사 통과 | — |
 | P7. 문서 마감 | `PLANNED` | README·변경점·누적 일지와 실제 코드 일치 | — |
@@ -930,3 +930,35 @@ Claim→Ingredient→Product 커버리지는 다음과 같다.
 - 다음 작업:
   - Claim statement별 표준 성분 ID와 Evidence 결과를 보존하는 Pydantic 모델 추가
   - Claim별 Evidence 확인과 추천 근거 등급 선정을 별도 클래스로 구현
+
+### LOG-008 — 2026-09-17 — Claim별 Evidence 판정 규칙 구현
+
+- 브랜치: `feature/agent-two-layer-rag-main`
+- 단계: P3. Claim별 Evidence 확인, P4. 추천 후보 분류
+- 상태: `VERIFIED`
+- 변경 파일:
+  - `agent/rag/claim_schemas.py`
+  - `agent/claim_verification.py`
+  - `tests/agent/test_claim_verification.py`
+- 작업 내용:
+  - Claim statement와 확정 성분 ID를 함께 보존하는 `ClaimResolvedTarget`을 추가했다.
+  - Claim별 판정 상태를 `SUPPORTED`, `INSUFFICIENT`, `CONTRADICTED`, `UNSUPPORTED`, `ERROR`로
+    분리했다.
+  - 검색 성공만으로 근거가 확인됐다고 보지 않고, 실제 검색 결과 안의 Evidence ID와 일치하는
+    검증 문장이 있을 때만 `SUPPORTED`로 승격한다.
+  - `INSUFFICIENT` 성분은 `CLAIM_ONLY`로 유지하고, 오류·미지원·상반 상태는 추천 후보에서
+    보류하는 `IngredientRecommendationSelector`를 구현했다.
+- 작업 이유:
+  - Evidence 무결과와 도구 실패를 같은 상태로 합치지 않으면서도 Claim 기반 탐색 후보를
+    잃지 않기 위해서다.
+  - LLM 생성문이 검색하지 않은 출처를 참조해도 Citation이나 상품 추천 근거로 승격되지 않게
+    하기 위해서다.
+- 검증:
+  - `uv run pytest tests/agent/test_claim_verification.py tests/agent/test_two_layer_rag.py -q`:
+    12개 통과
+  - `uv run ruff check agent tests/agent`: 통과
+  - 정상 근거, 무결과, 알 수 없는 생성 출처, Claim-only 유지, 오류·상반 보류를 검증했다.
+- 커밋: `5efe9f1` (`feat(agent): Claim별 Evidence 판정 모델과 규칙`)
+- 다음 작업:
+  - `VERIFY_CLAIMS`, `BUILD_RECOMMENDATION_CANDIDATES` 노드를 LangGraph에 연결
+  - 추천 성분별 Product RDB 조회와 근거 등급별 정렬·중복 제거 구현
