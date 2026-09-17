@@ -5,19 +5,17 @@ from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
-from sqlalchemy import bindparam, text
+from sqlalchemy import ARRAY, Text, Uuid, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import TextClause
 
-
-class ClaimSourceSpanRow(BaseModel):
-    """DB JSONB의 Claim 원문 위치 한 건."""
-
-    model_config = ConfigDict(frozen=True)
-
-    json_path: str = Field(min_length=1)
-    quote: str = Field(min_length=1)
-    start: int = Field(ge=0)
-    end: int = Field(ge=1)
+from models.claim_chunk import (
+    ClaimIngestionDecision,
+    ClaimIngredientMatchingStatus,
+    ClaimIngredientRefRole,
+    ClaimStatementType,
+    ClaimSupportStatus,
+)
 
 
 class ClaimIngredientRow(BaseModel):
@@ -27,8 +25,8 @@ class ClaimIngredientRow(BaseModel):
 
     ingredient_id: UUID | None = None
     raw_name: str = Field(min_length=1)
-    matching_status: str = Field(min_length=1)
-    role: str = Field(min_length=1)
+    matching_status: ClaimIngredientMatchingStatus
+    role: ClaimIngredientRefRole
 
 
 class ClaimSearchRow(BaseModel):
@@ -36,16 +34,14 @@ class ClaimSearchRow(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    claim_chunk_id: UUID
     source_record_id: str = Field(min_length=1)
-    production_ready: bool
-    skin_concerns_raw: list[str] = Field(default_factory=list)
+    annotation_version: str = Field(min_length=1)
     statement_id: str = Field(min_length=1)
-    statement_type: str = Field(min_length=1)
+    statement_type: ClaimStatementType
     content: str = Field(min_length=1)
-    source_spans: list[ClaimSourceSpanRow] = Field(min_length=1)
-    decision: str = Field(min_length=1)
-    priority: str = Field(min_length=1)
-    support_status: str = Field(min_length=1)
+    decision: ClaimIngestionDecision
+    support_status: ClaimSupportStatus
     ingredients: list[ClaimIngredientRow] = Field(min_length=1)
     retrieval_score: FiniteFloat
 
@@ -57,6 +53,9 @@ class ClaimVectorSearchRequest(BaseModel):
 
     query_vector: list[float] = Field(min_length=1)
     embedding_model: str = Field(min_length=1)
+    annotation_version: str = Field(min_length=1)
+    statement_types: list[ClaimStatementType] = Field(min_length=1)
+    ingredient_ids: list[UUID] = Field(default_factory=list)
     limit: int = Field(ge=1)
 
 
@@ -65,41 +64,53 @@ class ClaimSearchRepository:
 
     EMBEDDING_DIMENSIONS: ClassVar[int] = 1024
     INGESTIBLE_DECISION_PREFIX: ClassVar[str] = "ingestible_"
-    SUPPORTED_STATEMENT_TYPE: ClassVar[str] = "ingredient_effect_claim"
-    REJECTED_MATCHING_STATUS: ClassVar[str] = "rejected"
+    SUPPORTED_STATEMENT_TYPES: ClassVar[tuple[ClaimStatementType, ...]] = (
+        ClaimStatementType.INGREDIENT_EFFECT_CLAIM,
+        ClaimStatementType.USAGE_INSTRUCTION,
+        ClaimStatementType.COMBINATION_CLAIM,
+    )
+    REJECTED_MATCHING_STATUS: ClassVar[ClaimIngredientMatchingStatus] = (
+        ClaimIngredientMatchingStatus.REJECTED
+    )
     _VECTOR_SQL: ClassVar[str] = """
         WITH ranked_claim AS (
             SELECT
                 cd.source_record_id,
-                cd.production_ready,
-                cd.skin_concerns_raw,
+                cd.annotation_version,
                 cc.id AS claim_chunk_id,
                 cc.statement_id,
                 cc.statement_type,
                 cc.content,
-                cc.source_spans,
                 cc.decision,
-                cc.priority,
                 cc.support_status,
                 1 - (cc.embedding <=> :query_vector) AS retrieval_score
             FROM claim_chunk AS cc
             JOIN claim_document AS cd ON cd.id = cc.claim_document_id
             WHERE cc.embedding_model = :embedding_model
+              AND cd.annotation_version = :annotation_version
               AND left(cc.decision, length(:decision_prefix)) = :decision_prefix
-              AND cc.statement_type = :statement_type
+              AND cc.statement_type = ANY(:statement_types)
+              AND (
+                  :has_ingredient_filter = false
+                  OR EXISTS (
+                      SELECT 1
+                      FROM claim_chunk_ingredient AS filter_ingredient
+                      WHERE filter_ingredient.claim_chunk_id = cc.id
+                        AND filter_ingredient.matching_status = :matched_status
+                        AND filter_ingredient.ingredient_id = ANY(:ingredient_ids)
+                  )
+              )
             ORDER BY cc.embedding <=> :query_vector, cc.statement_id
             LIMIT :limit
         )
         SELECT
+            ranked_claim.claim_chunk_id,
             ranked_claim.source_record_id,
-            ranked_claim.production_ready,
-            ranked_claim.skin_concerns_raw,
+            ranked_claim.annotation_version,
             ranked_claim.statement_id,
             ranked_claim.statement_type,
             ranked_claim.content,
-            ranked_claim.source_spans,
             ranked_claim.decision,
-            ranked_claim.priority,
             ranked_claim.support_status,
             jsonb_agg(
                 jsonb_build_object(
@@ -116,15 +127,13 @@ class ClaimSearchRepository:
           ON claim_ingredient.claim_chunk_id = ranked_claim.claim_chunk_id
          AND claim_ingredient.matching_status <> :rejected_status
         GROUP BY
+            ranked_claim.claim_chunk_id,
             ranked_claim.source_record_id,
-            ranked_claim.production_ready,
-            ranked_claim.skin_concerns_raw,
+            ranked_claim.annotation_version,
             ranked_claim.statement_id,
             ranked_claim.statement_type,
             ranked_claim.content,
-            ranked_claim.source_spans,
             ranked_claim.decision,
-            ranked_claim.priority,
             ranked_claim.support_status,
             ranked_claim.retrieval_score
         ORDER BY ranked_claim.retrieval_score DESC, ranked_claim.statement_id
@@ -139,18 +148,29 @@ class ClaimSearchRepository:
                 "Claim 질의 벡터 차원이 BGE-M3 저장 벡터와 다릅니다: "
                 f"expected={self.EMBEDDING_DIMENSIONS}, actual={len(request.query_vector)}"
             )
-        statement = text(self._VECTOR_SQL).bindparams(
-            bindparam("query_vector", type_=Vector(self.EMBEDDING_DIMENSIONS))
+        statement = self._statement().bindparams(
+            bindparam("query_vector", type_=Vector(self.EMBEDDING_DIMENSIONS)),
+            bindparam("statement_types", type_=ARRAY(Text())),
+            bindparam("ingredient_ids", type_=ARRAY(Uuid(as_uuid=True))),
         )
         result = await self._session.execute(
             statement,
             {
                 "query_vector": request.query_vector,
                 "embedding_model": request.embedding_model,
+                "annotation_version": request.annotation_version,
                 "decision_prefix": self.INGESTIBLE_DECISION_PREFIX,
-                "statement_type": self.SUPPORTED_STATEMENT_TYPE,
-                "rejected_status": self.REJECTED_MATCHING_STATUS,
+                "statement_types": [
+                    statement_type.value for statement_type in request.statement_types
+                ],
+                "ingredient_ids": request.ingredient_ids,
+                "has_ingredient_filter": bool(request.ingredient_ids),
+                "matched_status": ClaimIngredientMatchingStatus.MATCHED.value,
+                "rejected_status": self.REJECTED_MATCHING_STATUS.value,
                 "limit": request.limit,
             },
         )
         return [ClaimSearchRow.model_validate(row) for row in result.mappings().all()]
+
+    def _statement(self) -> TextClause:
+        return text(self._VECTOR_SQL)

@@ -10,17 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agent.ports import IngredientRepository, ProductRepository
 from agent.rag.claim_schemas import (
-    ClaimAnnotationStatus,
-    ClaimCaseContext,
-    ClaimConfidence,
     ClaimHit,
-    ClaimIngredientAnchor,
-    ClaimMatchingStatus,
+    ClaimIngestionDecision,
+    ClaimIngredientMatchingStatus,
+    ClaimIngredientRef,
     ClaimSearchRequest,
     ClaimSearchResult,
-    ClaimSourceSpan,
+    ClaimStatementType,
     ClaimSupportStatus,
-    IngredientEffectClaimContent,
 )
 from agent.rag.ports import ClaimRetriever, HybridSearchBackend, TextEmbedder
 from agent.rag.schemas import (
@@ -93,8 +90,14 @@ class TwoLayerClaimRetriever(ClaimRetriever):
     async def search(self, request: ClaimSearchRequest) -> ClaimSearchResult:
         query = self._QUERY_SEPARATOR.join([request.query, *request.skin_concerns]).strip()
         try:
-            embedding = await self._embedder.embed(EmbeddingRequest(texts=[query]))
-            unsupported = self._embedding_error(embedding.model, embedding.vectors)
+            if request.query_embedding is None:
+                embedding = await self._embedder.embed(EmbeddingRequest(texts=[query]))
+                model = embedding.model
+                vectors = embedding.vectors
+            else:
+                model = self.embedding_model.value
+                vectors = [request.query_embedding]
+            unsupported = self._embedding_error(model, vectors)
             if unsupported is not None:
                 return ClaimSearchResult(
                     status=LookupStatus.UNSUPPORTED,
@@ -103,9 +106,14 @@ class TwoLayerClaimRetriever(ClaimRetriever):
             async with self._session_factory() as session:
                 rows = await ClaimSearchRepository(session).search_by_vector(
                     ClaimVectorSearchRequest(
-                        query_vector=embedding.vectors[0].values,
-                        embedding_model=embedding.model,
-                        limit=request.limit,
+                        query_vector=vectors[0].values,
+                        embedding_model=model,
+                        annotation_version=request.annotation_version,
+                        statement_types=list(ClaimSearchRepository.SUPPORTED_STATEMENT_TYPES),
+                        ingredient_ids=[
+                            UUID(ingredient_id) for ingredient_id in request.ingredient_ids
+                        ],
+                        limit=request.top_k,
                     )
                 )
             hits = [self._to_hit(row) for row in rows]
@@ -135,32 +143,26 @@ class TwoLayerClaimRetriever(ClaimRetriever):
         return None
 
     def _to_hit(self, row: ClaimSearchRow) -> ClaimHit:
-        if len(row.ingredients) != 1:
-            raise ValueError(
-                "ingredient_effect_claim에는 성분 anchor가 하나여야 합니다: "
-                f"statement_id={row.statement_id}, count={len(row.ingredients)}"
-            )
-        ingredient = row.ingredients[0]
         return ClaimHit(
+            claim_chunk_id=str(row.claim_chunk_id),
             statement_id=row.statement_id,
-            record_id=row.source_record_id,
-            content=IngredientEffectClaimContent(subject=self._to_anchor(ingredient), object=row.content),
-            source_spans=[ClaimSourceSpan.model_validate(span.model_dump()) for span in row.source_spans],
-            case_context=ClaimCaseContext(skin_concerns_raw=row.skin_concerns_raw),
-            support_status=ClaimSupportStatus(row.support_status),
-            # decision=ingestible_*가 런타임 검색 허용값이며 production_ready는 필수 필터가 아니다.
-            annotation_status=ClaimAnnotationStatus.APPROVED,
-            confidence=(
-                ClaimConfidence.HIGH if row.production_ready else ClaimConfidence.LOW
-            ),
-            retrieval_score=row.retrieval_score,
+            statement_type=ClaimStatementType(row.statement_type.value),
+            content=row.content,
+            score=row.retrieval_score,
+            ingredient_refs=[
+                self._to_ingredient_ref(ingredient) for ingredient in row.ingredients
+            ],
+            source_record_id=row.source_record_id,
+            annotation_version=row.annotation_version,
+            decision=ClaimIngestionDecision(row.decision.value),
+            support_status=ClaimSupportStatus(row.support_status.value),
         )
 
-    def _to_anchor(self, row: ClaimIngredientRow) -> ClaimIngredientAnchor:
-        return ClaimIngredientAnchor(
+    def _to_ingredient_ref(self, row: ClaimIngredientRow) -> ClaimIngredientRef:
+        return ClaimIngredientRef(
             raw_name=row.raw_name,
             ingredient_id=str(row.ingredient_id) if row.ingredient_id is not None else None,
-            matching_status=ClaimMatchingStatus(row.matching_status),
+            matching_status=ClaimIngredientMatchingStatus(row.matching_status.value),
         )
 
 

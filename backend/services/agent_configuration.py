@@ -4,9 +4,9 @@ from pydantic import SecretStr
 
 from agent.factory import ProductionAgentConfig
 from agent.rag.schemas import (
+    BGE_M3_EMBEDDING_DIMENSIONS,
     ChatModelConfig,
     EmbeddingProvider,
-    LlmProvider as AgentLlmProvider,
     LocalChatConfig,
     LocalEmbeddingConfig,
     LocalEmbeddingModel,
@@ -20,6 +20,9 @@ from agent.rag.schemas import (
     TextEmbeddingConfig,
 )
 from agent.rag.schemas import (
+    LlmProvider as AgentLlmProvider,
+)
+from agent.rag.schemas import (
     LocalModelDevice as AgentLocalModelDevice,
 )
 from core.config import (
@@ -28,7 +31,6 @@ from core.config import (
     OpenAiConfig,
 )
 from core.config import EmbeddingProvider as CoreEmbeddingProvider
-from core.config import LlmProvider as CoreLlmProvider
 from core.config import LocalModelDevice as CoreLocalModelDevice
 from models.rag_chunk import EMBEDDING_DIMENSION
 
@@ -46,7 +48,7 @@ class AgentConfigurationAssembler:
         return ProductionAgentConfig(
             chat=chat,
             openai=chat.openai,
-            embedding=self.create_embedding(openai, agent),
+            embedding=self.create_two_layer_embedding(openai, agent),
             reranker=LocalRerankerConfig(
                 model=LocalRerankerModel(agent.reranker.model.value),
                 device=self._device(agent.reranker.device),
@@ -60,6 +62,7 @@ class AgentConfigurationAssembler:
                 rrf_k=agent.retrieval.rrf_k,
                 rerank_candidate_limit=agent.retrieval.rerank_candidate_limit,
             ),
+            claim_annotation_version=self._claim_annotation_version(agent),
         )
 
     def create_chat(
@@ -115,6 +118,32 @@ class AgentConfigurationAssembler:
         self._validate_storage_dimension(embedding)
         return embedding
 
+    def create_two_layer_embedding(
+        self,
+        openai: OpenAiConfig | None,
+        agent: AgentSettings,
+    ) -> TextEmbeddingConfig:
+        """Claim/Evidence 전용 저장소의 BGE-M3 차원으로 운영 Agent를 검증한다."""
+
+        embedding = TextEmbeddingConfig(
+            provider=EmbeddingProvider(agent.embedding.provider.value),
+            openai=self._openai_embedding(openai, agent),
+            local=LocalEmbeddingConfig(
+                model=LocalEmbeddingModel(agent.embedding.model.value),
+                device=self._device(agent.embedding.device),
+                batch_size=agent.embedding.batch_size,
+                cache_folder=agent.embedding.cache_folder,
+                local_files_only=agent.embedding.local_files_only,
+            ),
+        )
+        if embedding.output_dimensions() != BGE_M3_EMBEDDING_DIMENSIONS:
+            raise RuntimeError(
+                "선택한 임베딩 모델과 2-Layer BGE-M3 Claim/Evidence 벡터 차원이 다릅니다: "
+                f"output={embedding.output_dimensions()}, "
+                f"database={BGE_M3_EMBEDDING_DIMENSIONS}"
+            )
+        return embedding
+
     def _openai_embedding(
         self,
         openai: OpenAiConfig | None,
@@ -152,6 +181,15 @@ class AgentConfigurationAssembler:
             "config.yaml의 agent.retrieval.free_text_min_vector_similarity를 "
             f"{agent.embedding.model.value} 검증값으로 설정해야 합니다."
         )
+
+    def _claim_annotation_version(self, agent: AgentSettings) -> str:
+        annotation_version = agent.retrieval.claim_annotation_version
+        if annotation_version is None:
+            raise RuntimeError(
+                "config.yaml의 agent.retrieval.claim_annotation_version을 "
+                "active Claim annotation 버전으로 설정해야 합니다."
+            )
+        return annotation_version
 
     def _device(self, device: CoreLocalModelDevice | None) -> AgentLocalModelDevice | None:
         if device is None:
