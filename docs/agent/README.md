@@ -90,23 +90,10 @@ main의 다음 구형 파일은 최종 Agent 구성에서 제외했다. NIA 적�
 main의 동기식 구형 `OpenAiEmbedder` 구현은 제거했고, 같은 경로에는 현재 `TextEmbedder` 비동기
 계약을 구현하는 `OpenAiTextEmbedder`를 새로 연결했다.
 
-최신 main을 현재 기능 브랜치에 병합하면 아래 8개 파일에서 실제 텍스트 충돌이 발생한다.
-Git은 충돌을 해결하기 전에는 병합 커밋을 완료할 수 없다. 따라서 **main을 기능 브랜치에 먼저
-병합하고 충돌을 해결한 뒤 검증하는 방향**은 가능하지만, 기능 브랜치를 main에 먼저 병합해
-깨진 상태를 후속 수정하는 방향은 허용하지 않는다.
-
-- `agent/rag/chunking/field_chunker.py`
-- `agent/rag/generation/answer_generator.py`
-- `agent/rag/generation/condition_preservation_checker.py`
-- `agent/rag/pipeline.py`
-- `agent/rag/retrieval/hybrid_retriever.py`
-- `agent/rag/retrieval/ingredient_mention_resolver.py`
-- `agent/rag/retrieval/question_intent_classifier.py`
-- `agent/rag/schemas.py`
-
-충돌하지 않은 파일도 main의 RAG 서비스·테스트가 이전 DTO를 참조하면 연결 수정 대상이다.
-한쪽 파일 전체를 선택하는 방식으로 해결하면 main의 DB 계약이나 현재 agent 계약 중 하나가
-사라지므로 각 공개 타입과 호출부를 함께 확인한다.
+2026-09-17 `origin/main` `190b5c6`을 현재 기능 브랜치에 충돌 없이 병합했다. 이후 main의
+`claim-evidence-rag-interface.md`를 기준으로 `annotation_version`, Claim 최소 DTO,
+unresolved 처리와 세 가지 지원 Claim 타입을 맞췄다. 현재 병합 기준과 검증 기록은
+[통합 작업계획 및 작업 일지](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)에 누적한다.
 
 ## Backend 담당자 확인 항목
 
@@ -116,14 +103,11 @@ main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거
 - `ChatService.handle_turn`을 호출할 API/service와 `ProductionAgentFactory` 생성 위치를 정한다.
 - `ProductionAgentDependencies`의 히스토리·상품·성분·루틴·검색·체크포인터 구현을 주입한다.
 - 구형 `RagQueryService`는 제거했고 `RagIngestionService`는 현재 비동기 포트로 전환했다.
-- `SqlAlchemyHybridSearchBackend.search`가 target 필터, vector/BM25 원점수, 상태 코드와
-  후보 개수 계약을 구현한다. 실제 DB 통합 테스트는 아직 필요하다.
-- Agent가 요구하는 BGE-M3 1024차원에 맞춰 질의·적재 모델과 `embedding_model` 값을 통일한다.
-- BGE-M3의 1024차원에 맞춘 ERD 갱신(`docs/erd/app.md`), 마이그레이션,
-  기존 65,196건 청크(특히 DB 원본 테이블이 없는 `nia_qa` 45,002건 유실 방지를 위한 content 인플레이스
-  UPDATE) 재임베딩과 별도 유사도 임계값 검증을 진행한다.
-  Agent 계층은 `LocalBgeM3Embedder`와 1024차원 조립을 제공하며, Backend/Data 파트는 설정 주입과
-  DB 전환을 담당한다. 현재 Backend 설정은 아직 이 계약으로 전환되지 않았다.
+- 2-Layer 경로는 `TwoLayerEvidenceSearchBackend`가 BGE-M3 1,024차원
+  `evidence_chunk`를 조회하고 실제 DB 통합 테스트도 통과했다. 구형 `rag_chunk` 경로의
+  OpenAI 1,536차원 검증과 섞지 않는다.
+- Claim 검색은 active `annotation_version`을 설정에서 주입하고 SQL에서 정확히 일치하는
+  문서만 조회한다. 여러 버전을 자동 선택하거나 섞지 않는다.
 - 애플리케이션 설정은 `config.yaml`만 사용한다. Backend가 OpenAI API 키와
   `gpt-4o-mini` 모델 설정을 읽어 `ProductionAgentConfig`에 주입하고, agent는 `.env`나
   환경변수를 직접 읽지 않는다. `.env`는 Docker Compose 변수에만 사용한다.
@@ -140,12 +124,13 @@ uv run pytest tests -q
 uv run python -m agent.demo
 ```
 
-2026-09-17 Agent 테스트 116개와 프로젝트 전체 테스트 186개 통과를 확인했다. DB 없는 대화 흐름·방 격리·
+2026-09-17 계약 정합화 후 Agent 및 anchor 테스트 146개와 실제 DB 통합 테스트 2개 통과를
+확인했다. DB 없는 대화 흐름·방 격리·
 후보 참조·실패 복구·데이터
 DTO 변환 외에도 신규 분류,
 제형·사용감 분리, 폐기된 코드 차단, 조건 누락 후보 제외, 실제 상품 표시, 청킹→검색 통합→
-인용·조건 검증, Claim→Evidence 라우팅, 복합 Claim 방어와 동일 상품 병합을 검사한다. 실제 Claim DB 검색, 운영 BGE-M3 모델 로딩,
-임베딩 API, 운영 연결의 검증은 아니다.
+인용·조건 검증, Claim→Evidence 라우팅, 복합 Claim 방어와 동일 상품 병합을 검사한다.
+DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump 조회를 검사한다.
 
 동적 분류 방향은 사용자 선택으로 반영했다. 운영용 분류 코드·지원 목록의 공급,
 상품 버전과 성분 스냅샷의 대응, 조회 어댑터, 실제 근거 문서 매핑·색인,
@@ -155,9 +140,8 @@ DTO 변환 외에도 신규 분류,
 ## 관련 문서
 
 - [2026-09-17 17:51 피부 고민형 Intent 라우팅 보정](2026-09-17_1751_INTENT_ROUTING_UPDATE.md)
-- [2-Layer RAG Agent 리팩터링 작업계획](TWO_LAYER_RAG_REFACTOR_PLAN.md)
-- [2-Layer RAG Agent 후속 보완 작업계획](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
-- [2-Layer RAG Agent — main 대비 변경점](TWO_LAYER_RAG_MAIN_DIFF.md)
+- [2-Layer RAG Agent 통합 작업계획 및 작업 일지](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
+- [Claim → Evidence RAG 인터페이스 계약](../contracts/claim-evidence-rag-interface.md)
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
 - [현재 구조·연결 계약 검토](AGENT_INTEGRATION_REVIEW.md)
 - [DB·히스토리 연동 요청서](RAG_YK/LLM_RAG_DB_CONTRACT.md)

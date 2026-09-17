@@ -39,7 +39,7 @@ partial | evidence_qa
 | 지원 상품 필터만 지정 | `product_discovery` | RAG 없이 Product 검색 |
 
 LLM은 의미 해석을 담당하지만, 실행 Intent와 RAG 상태 전이는 Rule이 최종 확정한다. 이는
-`TWO_LAYER_RAG_REFACTOR_PLAN.md`의 `DEC-010` 원칙을 따른다.
+`TWO_LAYER_RAG_FOLLOWUP_PLAN.md`의 현재 확정 정책을 따른다.
 
 ## 4. 코드 변경
 
@@ -108,4 +108,3 @@ uv run pyrefly check agent tests/agent
 - BGE-M3 및 리랭커 모델 설정
 - Evidence 검수 기준과 Citation 생성 규칙
 - 명시 성분 효능 질문의 `evidence_only` 정책
-

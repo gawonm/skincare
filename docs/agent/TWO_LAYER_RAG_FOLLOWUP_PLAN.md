@@ -1,17 +1,35 @@
-# 2-Layer RAG Agent 후속 보완 작업계획
+# 2-Layer RAG Agent 통합 작업계획 및 작업 일지
 
 ## 1. 문서 목적과 기준
 
-이 문서는 현재 구현 중인 2-Layer RAG Agent에서 아래 두 항목을 보완하기 위한 실행계획이다.
+이 문서는 2-Layer RAG Agent의 확정 정책, 구현 단계와 검증 이력을 한곳에 누적하는 기준 문서다.
+초기에는 아래 두 항목의 보완 계획으로 시작했으며, 이후 Claim/Evidence 저장소 연결, 실제 dump
+검증과 main 계약 정합화 작업까지 같은 문서에 이어서 기록한다.
 
 1. 복합 성분 Claim이 개별 성분 Evidence만으로 `SUPPORTED`가 되는 경로 차단
 2. 여러 성분 검색에서 같은 상품이 반환될 때의 중복 제거 동작 검증
 
-정책의 최상위 기준은
-[`TWO_LAYER_RAG_REFACTOR_PLAN.md`](TWO_LAYER_RAG_REFACTOR_PLAN.md)이다. 이 문서는 기존 정책을
-대체하지 않고, 해당 문서의 P4·P5를 완료하기 위한 후속 계획과 작업 이력을 누적한다.
+이 문서가 현재 2-Layer RAG Agent 정책의 단일 기준이다. 이전
+`TWO_LAYER_RAG_REFACTOR_PLAN.md`와 `TWO_LAYER_RAG_MAIN_DIFF.md`는 최신 구현과 중복되므로
+삭제하고, 계속 유효한 결정만 아래에 보존한다.
 
-현재 상태는 `VERIFIED`다. 사용자 승인 후 계획의 P1~P5 구현과 검증을 완료했다.
+현재 상태는 `VERIFIED`다. 초기 P1~P5, 실제 dump 검증과 최신 main의
+`claim-evidence-rag-interface.md` 정합화 P6까지 완료했다. 프로젝트 전체 테스트는 main에서
+유입된 Data 파트 import 누락 1건을 제외하면 통과하며, 해당 오류는 아래 LOG-F06에 기록한다.
+
+### 현재 확정 정책
+
+- 피부 고민·제품 추천 질의는 `Claim → Ingredient → Evidence → Product` 경로를 사용한다.
+- 명시 성분 효능·안전성 질의는 Claim 검색 없이 Evidence로 직행할 수 있다.
+- Claim과 Evidence는 별도 DTO와 State로 유지하며 서로의 신뢰도를 섞지 않는다.
+- Evidence가 없거나 검수되지 않아도 Claim은 `CLAIM_ONLY`로 유지하고 상품 후보에 포함한다.
+- 검색 오류, 지원 불가 또는 명시적 상반 근거는 Claim-only 유지가 아닌 차단 상태로 처리한다.
+- 복합 Claim은 전체 조합을 직접 지원하는 Evidence가 있을 때만 `SUPPORTED`로 승격한다.
+- 동일 상품은 `product_id` 기준으로 병합하며 Evidence-supported 연결을 우선한다.
+- Citation은 검색된 Evidence 메타데이터로만 만들고 LLM이 출처를 생성하지 않는다.
+- Claim/Evidence 운영 임베딩은 `BAAI/bge-m3`, 1,024차원을 사용한다.
+- LLM은 의도 해석과 문장 생성을 담당하되, 경로·검증·인용·상품 포함 여부는 결정적 규칙으로
+  확정한다.
 
 ## 2. 작업 범위
 
@@ -185,7 +203,6 @@ git diff --check
 | `agent/rag/claim_schemas.py` | 판정에 필요한 정보가 부족할 때만 최소 보완 |
 | `tests/agent/test_claim_verification.py` | 복합 Claim 판정 회귀 테스트 |
 | `tests/agent/test_two_layer_rag.py` | 동일 상품 병합·중복 제거 통합 테스트 |
-| `docs/agent/TWO_LAYER_RAG_REFACTOR_PLAN.md` | 단계 상태와 누적 작업 일지 갱신 |
 | `docs/agent/TWO_LAYER_RAG_FOLLOWUP_PLAN.md` | 이번 작업의 실행 결과와 결정 누적 |
 
 `agent/rag/claim_schemas.py`는 현재 DTO로 충분하면 수정하지 않는다. 상품 중복 제거 구현 파일도
@@ -220,7 +237,7 @@ git diff --check
 ### LOG-F01 — 2026-09-17 — 후속 보완 계획 작성
 
 - 상태: `AWAITING_APPROVAL`
-- 기준 문서: `TWO_LAYER_RAG_REFACTOR_PLAN.md`
+- 기준 문서: 당시 `TWO_LAYER_RAG_REFACTOR_PLAN.md`였으며, 현재 결정은 이 문서로 이관됨
 - 작성 내용:
   - 복합 Claim은 조합 자체의 검증 가능한 Evidence가 있을 때만 `SUPPORTED`로 판정하도록 계획했다.
   - 개별 성분 Evidence는 복합 Claim의 지원 근거나 Citation으로 승격하지 않도록 했다.
@@ -323,3 +340,38 @@ git diff --check
   - Ruff: 통과
   - Pyrefly: 오류 없음
   - 실제 OpenAI/BGE-M3/최신 dump LangGraph 실행: `product_discovery`, Claim-only 상품 13건
+
+### LOG-F06 — 2026-09-17 19:04~20:17 KST — main Claim/Evidence 계약 정합화
+
+- 상태: `VERIFIED`
+- 기준 계약: `docs/contracts/claim-evidence-rag-interface.md`
+- main 반영:
+  - `origin/main` `190b5c6`을 현재 `feature/agent-two-layer-rag-main`에 충돌 없이 병합했다.
+  - 계약 문서가 구현 전 상태를 설명하고 있어 실제 구현 완료 항목은 작업 종료 시 갱신한다.
+- 사용자 확정 범위:
+  1. `ClaimSearchRequest.annotation_version`을 필수로 만들고 DB 조회에도 같은 값을 강제한다.
+  2. `matching_status=matched`인 성분만 Evidence anchor로 사용한다. unresolved 성분은 Agent가
+     이름으로 다시 추론하지 않고 보류한다.
+  3. `ingredient_effect_claim`, `usage_instruction`, `combination_claim`을 계약상 지원 타입으로
+     맞춘다.
+  4. `EvidenceQueryAnchor`와 관련 Enum·검증 규칙을 Agent 공개 타입으로 구현한다.
+- 구현 결과:
+  1. Agent에 `EvidenceQueryAnchor`와 최소 `ClaimHit`/`ClaimIngredientRef` 계약을 구현했다.
+  2. LangGraph Claim 해소 단계에서 unresolved 재매칭을 제거하고 결정적 anchor 변환을 사용한다.
+  3. Backend Claim 조회에 `annotation_version`, 지원 statement type과 선택적 성분 필터를 적용했다.
+  4. `agent.retrieval.claim_annotation_version`을 설정과 운영 조립 계층에 연결했다.
+  5. Claim/Evidence 생산 조립은 BGE-M3 1,024차원을 검증하고, 구형 `rag_chunk` 1,536차원 검증과
+     분리했다.
+  6. 계약 문서 후반의 미구현 설명을 실제 호환 구현과 후속 항목 기준으로 갱신했다.
+- 검증 결과:
+  - Agent 및 anchor 테스트: 146개 통과
+  - 최신 dump DB 통합 테스트: 2개 통과
+  - 실제 BGE-M3 dump smoke: Claim 5건, Evidence 3건, Claim-only 성분 5개,
+    상품 연결 성분 3개, 중복 제거 상품 sample 10개
+  - Data 파트 테스트 1개를 제외한 프로젝트 테스트: 317개 통과, 2개 선택 제외
+  - Ruff: 통과
+  - Pyrefly: 오류 없음
+- 확인된 범위 밖 문제:
+  - 전체 테스트 수집 시 `data.scripts.nia_production_annotation_run`이 저장소에 없는
+    `data.manual_review.nia_labeling_schemas`를 import해 중단된다.
+  - main에서 유입된 Data 파트 경로 문제이므로 이번 Agent/Backend 계약 작업에서는 수정하지 않았다.

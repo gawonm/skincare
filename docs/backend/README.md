@@ -3,8 +3,8 @@
 ## Agent 통합
 
 - `agent_configuration.py`: `config.yaml`의 OpenAI·로컬 모델·검색 설정을 Agent Pydantic
-  설정으로 변환하고 선택한 임베딩 출력 차원이 현재 DB의 1536차원과 같은지 검증한다. OpenAI
-  검색 임계값을 생략하면 기존 검증값 `0.45`를 사용한다.
+  설정으로 변환한다. 구형 `rag_chunk` 경로는 1,536차원을, 2-Layer Claim/Evidence 경로는
+  BGE-M3 1,024차원과 active `annotation_version`을 각각 검증한다.
 - `rag_search_backend.py`: repository의 pgvector/BM25 결과를 현재 Agent 검색 DTO로 변환한다.
 - `rag_ingestion_service.py`: DB 트랜잭션을 유지하면서 설정에서 선택한 비동기 임베딩 파이프라인을
   호출한다.
@@ -55,8 +55,8 @@ DB 어댑터가 아직 없기 때문**이다.
 
 `claim_chunk.decision`의 DB 설명은 `ingestible_*`를 운영 검색 대상으로 정의하고,
 `claim_document.production_ready`는 런타임 필수 필터로 강제하지 않는다고 명시한다. 따라서 현재
-5개 Claim은 검색 후보이며 `production_ready=false`는 Claim 차단이 아니라 낮은 confidence로
-보존한다.
+5개 Claim은 검색 후보이며 `production_ready=false`여도 검색에서 제외하지 않는다. Agent로
+전달하는 최소 `ClaimHit`에는 이 저장 전용 필드를 복제하지 않는다.
 
 기존 이 문서의 `rag_chunk` 1,536차원 설명은 구형 단일 RAG 경로에 대한 것이다. 최신 2-Layer
 경로는 별도 `claim_chunk`, `evidence_chunk`의 BGE-M3 1,024차원 벡터를 사용한다. 두 경로를
@@ -125,7 +125,6 @@ uv run python -m tests.agent.two_layer_rag_dump_smoke
 | 확인 항목 | 결과 |
 | --- | ---: |
 | 검색된 Claim | 5건 |
-| `LOW` confidence Claim | 5건 |
 | 나이아신아마이드 Evidence | 3건 |
 | `UNREVIEWED` Evidence | 3건 |
 | `CLAIM_ONLY` 성분 | 5개 |
@@ -150,8 +149,8 @@ uv run python -m tests.agent.two_layer_rag_dump_smoke
 
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
 - [Agent 통합 검토](../agent/AGENT_INTEGRATION_REVIEW.md)
-- [2-Layer RAG Agent 리팩터링 기준](../agent/TWO_LAYER_RAG_REFACTOR_PLAN.md)
-- [2-Layer RAG main 대비 변경점](../agent/TWO_LAYER_RAG_MAIN_DIFF.md)
+- [2-Layer RAG Agent 통합 작업계획 및 작업 일지](../agent/TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
+- [Claim → Evidence RAG 인터페이스 계약](../contracts/claim-evidence-rag-interface.md)
 - [front → backend 계약](../contracts/front-to-backend.md): AI 채팅(미정), 회원가입 확장
   (성별·연령대·약관동의 — 확정 및 구현 완료. `models/user.py`, `backend/schemas/auth.py`)
 

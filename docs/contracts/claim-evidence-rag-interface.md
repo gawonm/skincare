@@ -1,30 +1,34 @@
 # Claim → Evidence 2-Layer RAG Interface Contract
 
-> **상태: PROPOSED(설계 문서).** 이 문서가 정의하는 `EvidenceQueryAnchor`/`ClaimHit`/
-> `ClaimRetriever`(`ClaimPort`)/`EvidenceChunk 조회 경로`/citation rendering은 전부
-> 코드가 없다([NOT_IMPLEMENTED]). 이번 작업은 Agent 구현 전에 Data/RAG ↔ Agent 사이 계약을
-> 확정하는 것만 목표로 한다 - 코드는 쓰지 않았다.
+> **상태: PARTIALLY_IMPLEMENTED.**
 >
-> **조사 방법 정정 기록**: 이 문서의 초안은 `C:/Users/Admin/Documents/MCP/skincare`
+> **업데이트: 2026-09-17 20:17 KST.**
+> `origin/main` `190b5c6`을 반영한 `feature/agent-two-layer-rag-main` 기준으로
+> `EvidenceQueryAnchor`, `ClaimHit`, `ClaimRetriever`, Claim→Evidence LangGraph 경로와
+> `claim_chunk`/`evidence_chunk` 읽기 어댑터를 구현했다. 별도 `EvidenceChunkPort`와 완전한
+> 구조화 Citation DTO는 아직 구현하지 않았고 기존 `EvidenceRetriever`/`EvidenceRecord`를
+> 호환 경계로 재사용한다.
+>
+> **초기 조사 기록(현재 구현으로 대체됨)**: 이 문서의 초안은 `C:/Users/Admin/Documents/MCP/skincare`
 > 워크트리에서 작성됐는데, 그 워크트리의 `agent/rag/schemas.py`에는 **커밋된 적 없는
 > 로컬 미커밋 변경**(`EvidenceQueryAnchor`/`EvidenceQueryOrigin`/`IngredientScope` 등)이
 > 있어 초안이 이를 [CURRENT]로 잘못 표기했다. 이 문서(전용 worktree
 > `skincare-claim-evidence-contract`, `origin/main` 기준)에서 실제 커밋된 코드를 다시
 > 확인한 결과 **`EvidenceQueryAnchor`를 포함해 그 타입들은 main에 전혀 존재하지 않는다**
 > (`git log --oneline -- agent/rag/schemas.py`의 마지막 커밋은 `353223b`, PR #21). 아래
-> "Current State"는 이 worktree에서 다시 검증한 내용이며, `EvidenceQueryAnchor`도 이
-> 문서가 새로 제안하는 타입으로 다룬다.
+> 당시 "Current State"는 그 worktree에서 다시 검증한 내용이었다. 아래 현재 상태 표는
+> 2026-09-17 구현 결과로 갱신했다.
 >
 > 태그 정의:
 > ```
-> [CURRENT]        origin/main에 실제로 커밋돼 있고 동작한다
+> [CURRENT]        현재 통합 브랜치에 구현돼 있고 테스트로 동작을 확인했다
 > [PROPOSED]        이 문서가 제안하는 신규 타입/인터페이스
 > [NOT_IMPLEMENTED] 코드가 없다(주석/설계 문서에만 있는 경우 포함)
 > ```
 
 ---
 
-## 1. Current State — 실제 코드 조사 결과 (origin/main 기준, 커밋 4e590c7)
+## 1. Current State — 2026-09-17 계약 정합화 구현 기준
 
 ### Storage (DB)
 
@@ -38,26 +42,27 @@
 
 | 대상 | 상태 | 근거 |
 |---|---|---|
-| `EvidenceQueryAnchor`/`EvidenceQueryOrigin`/`IngredientScope`/`IngredientMatchMode` | [NOT_IMPLEMENTED] - `agent/rag/schemas.py`에 없음. `docs/data/EVIDENCE_RAG_DESIGN.md` D절에 **설계 문서로만** 존재(코드 아님) | `grep -n "class EvidenceQueryAnchor" agent/rag/schemas.py` → 무결과. `git log --oneline -- agent/rag/schemas.py` 최종 커밋 `353223b`(PR #21), 이후 변경 없음 |
+| `EvidenceQueryAnchor`/`EvidenceQueryOrigin`/`IngredientScope`/`IngredientMatchMode` | [CURRENT] origin·단일/다중 범위·중복·match mode validation 구현 | `agent/rag/schemas.py` |
 | `EvidenceRetriever`(포트) | [CURRENT] | `agent/rag/ports.py` |
 | `HybridEvidenceRetriever`(구현) | [CURRENT], `HybridSearchBackend`에 실제 조회를 위임하는 범용 어댑터 - 이 클래스 자체는 어느 테이블도 하드코딩하지 않음 | `agent/rag/retrieval/hybrid_retriever.py:51` |
-| `SqlAlchemyHybridSearchBackend`(`HybridSearchBackend` 구현) | [CURRENT] **`RagChunkRepository`(`rag_chunk`) + `EvidenceRepository`(레거시 `evidence` 테이블, `evidence_document` 아님) + `IngredientKnowledgeFactRepository`만 조회한다. `evidence_chunk`/`evidence_document`를 조회하는 코드는 어디에도 없다** | `backend/services/rag_search_backend.py:8-28` (import 목록), `search()` 본문 |
-| `EvidenceSearchRequest`/`EvidenceSearchResult`/`EvidenceRecord`/`RetrievedChunk`/`RagChunkDraft` | [CURRENT] 전부 레거시 `rag_chunk`+`evidence`(구) 스키마 모양 - `pmid`/`doi`/`page`/`section`/`document_date`/`publisher` 필드가 없다 | `agent/rag/schemas.py:225-240, 250-256, 323-364, 533-539` |
-| `EvidenceClaimTopic`/`EvidenceDocumentSourceType`(agent 재선언) | [NOT_IMPLEMENTED] - `models/evidence_document.py`에는 있지만(line 30, 81) `agent/rag/schemas.py`에는 없음. agent는 models를 import하지 않으므로(계층 규칙) 이 문서가 쓸 값은 agent 쪽에 재선언이 필요하다(8절) | `grep -n "class EvidenceClaimTopic" agent/rag/schemas.py` → 무결과 |
-| `AgentNodes`(orchestration) | [CURRENT] parsed intent/entity → `EvidenceSearchRequest` 생성 → evidence 검색 호출. Claim 단계 없음(Intent 분석 직후 바로 Evidence로 감) | `agent/nodes.py:71` (`class AgentNodes`), `:765` (`EvidenceSearchRequest(` 호출부) |
-| `ClaimHit` | [NOT_IMPLEMENTED] 코드·주석 어디에도 없음(`grep -rn "ClaimHit" agent/ backend/` 무결과, 이 worktree 기준) | - |
-| `ClaimPort`/`ClaimRetriever` | [NOT_IMPLEMENTED] `agent/rag/ports.py`에 없음(`EvidenceRetriever`/`TextEmbedder`/`HybridSearchBackend`/`EvidenceReranker`/`ClaimGenerator` 5개뿐) | `agent/rag/ports.py` |
+| `TwoLayerEvidenceSearchBackend`(`HybridSearchBackend` 구현) | [CURRENT] `evidence_chunk`/`evidence_document`/`evidence_chunk_ingredient` 전용 vector/text 조회 | `backend/services/two_layer_rag_adapters.py`, `backend/repositories/evidence_search_repository.py` |
+| `EvidenceSearchRequest`/`EvidenceSearchResult`/`EvidenceRecord` | [CURRENT, COMPATIBILITY] 기존 타입을 2-Layer Evidence 어댑터에도 재사용. PMID/DOI는 `source_reference`, section/index는 `locator`로 결정적 조합 | `agent/rag/schemas.py`, `backend/services/two_layer_rag_adapters.py` |
+| `EvidenceClaimTopic` | [CURRENT] models import 없이 Agent Enum으로 재선언 | `agent/rag/schemas.py` |
+| Claim orchestration | [CURRENT] route→Claim 검색→anchor 변환→Evidence 검증→추천 후보→응답 조립 | `agent/graph.py`, `agent/rag_workflow.py` |
+| `ClaimHit`/`ClaimSearchRequest` | [CURRENT] `annotation_version`, provenance, decision, statement type, 성분 ref를 분리 보존 | `agent/rag/claim_schemas.py` |
+| `ClaimRetriever` | [CURRENT] Agent 포트와 BGE-M3 Backend 구현이 존재 | `agent/rag/ports.py`, `backend/services/two_layer_rag_adapters.py` |
+| `ClaimHitToEvidenceQueryAnchorAdapter` | [CURRENT] matched 성분만 anchor로 승격하며 unresolved 재추론 금지 | `agent/rag/claim_anchor_adapter.py` |
 
 ### 결론
 
-`evidence_chunk`/`claim_chunk`가 둘 다 live지만 **Agent의 실제 검색 경로는 여전히
-`rag_chunk`+레거시 `evidence` 테이블만 본다.** `EvidenceQueryAnchor`를 포함한 2-layer
-검색 관련 타입은 지금까지 설계 문서(`EVIDENCE_RAG_DESIGN.md`)로만 존재했고 코드로 커밋된
-적이 없다 - 이 문서가 그 설계를 실제 구현 가능한 인터페이스 계약으로 확정하는 첫 단계다.
+Claim과 Evidence 저장소는 실제 Agent 경로에 연결됐다. 피부 고민형 질의는 Claim을 먼저 찾고
+`matching_status=matched`인 성분만 `EvidenceQueryAnchor`로 변환한다. 명시 성분 질의는 기존
+Evidence 직행 경로를 유지한다. Evidence가 없거나 미검수여도 오류·상반 상태가 아니라면 Claim은
+`CLAIM_ONLY` 상품 후보로 남는다.
 
 ---
 
-## 2. `EvidenceQueryAnchor` Contract [PROPOSED]
+## 2. `EvidenceQueryAnchor` Contract [CURRENT]
 
 `docs/data/EVIDENCE_RAG_DESIGN.md` D절의 설계를 코드 계약으로 옮긴다(그 문서가 이미 상세
 근거를 담고 있어 여기서는 결과만 정리한다).
@@ -94,12 +99,13 @@ class EvidenceQueryAnchor(RagModel):
     limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
 ```
 
-기존 `EvidenceSearchRequest`(1절, 레거시 `rag_chunk` 전용)는 그대로 두고 확장하지 않는다 -
-`EvidenceQueryAnchor`는 신규 `evidence_chunk` 경로(6절) 전용 요청 타입이다.
+`EvidenceQueryAnchor`는 Claim 검증 경로에서 실제로 사용한다. 현재 Evidence pipeline은 기존
+`EvidenceSearchRequest`를 호환 DTO로 유지하며 anchor의 `query_text`, `ingredient_refs`와 다중
+성분 여부를 해당 요청으로 결정적으로 변환한다.
 
 ---
 
-## 3. `ClaimHit` Contract [PROPOSED]
+## 3. `ClaimHit` Contract [CURRENT]
 
 `claim_chunk`/`claim_document`/`claim_chunk_ingredient`의 모든 컬럼을 그대로 노출하지 않는다
 - Agent가 실제로 쓰는 필드만 최소로 정의한다.
@@ -138,7 +144,7 @@ class ClaimHit(RagModel):
 
 ---
 
-## 4. `ClaimRetriever` / `ClaimPort` Contract [PROPOSED]
+## 4. `ClaimRetriever` Contract [CURRENT]
 
 ```python
 class ClaimSearchRequest(RagModel):
@@ -147,16 +153,17 @@ class ClaimSearchRequest(RagModel):
     annotation_version: str = Field(min_length=1)     # 필수 - 아래 정책
     top_k: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
     ingredient_ids: list[str] = Field(default_factory=list)  # optional filter, 비어있으면 전체
+    skin_concerns: list[str] = Field(default_factory=list)    # 사용자 profile 고민을 검색문에 보강
 
 
-class ClaimPort(ABC):
+class ClaimRetriever(ABC):
     @abstractmethod
-    async def search(self, request: ClaimSearchRequest) -> list[ClaimHit]:
+    async def search(self, request: ClaimSearchRequest) -> ClaimSearchResult:
         raise NotImplementedError
 ```
 
-`agent/rag/ports.py`의 기존 5개 인터페이스(`EvidenceRetriever` 등)와 같은 자리에 나란히
-추가하는 것을 제안한다 - 새 파일을 만들 이유가 없다.
+검색 없음·지원 불가·오류를 빈 성공 결과와 구분해야 하므로 기존 Agent 포트 관례에 맞춰
+`list[ClaimHit]` 대신 `ClaimSearchResult(status, hits, error_message)`를 반환한다.
 
 ### Active annotation_version 정책 (사용자 확정 사항)
 
@@ -164,8 +171,8 @@ class ClaimPort(ABC):
   (`claim_document` UNIQUE가 `(source_record_id, annotation_version)`인 이유,
   `docs/data/CLAIM_STORAGE_ERD.md` 참고).
 - **`ClaimSearchRequest.annotation_version`은 필수 필드다** - 없으면 여러 run의 claim_chunk가
-  뒤섞여 검색된다. 어떤 값을 쓸지는 **운영 설정**(`config.yaml`류, 이번 범위 밖)이 정하고,
-  `ClaimPort` 호출부(`AgentNodes` 또는 상위 조립 계층)가 주입한다.
+  뒤섞여 검색된다. 어떤 값을 쓸지는 **운영 설정**
+  (`agent.retrieval.claim_annotation_version`)이 정하고 `RagWorkflowNodes`가 요청에 주입한다.
 - `production_ready`는 provenance로만 쓰고 **retrieval 필수 필터로 쓰지 않는다**(사용자
   확정). `decision IN ('ingestible_structured', 'ingestible_free_text')`(Shared Decisions
   #6)만 SQL WHERE에 넣는다.
@@ -174,7 +181,7 @@ class ClaimPort(ABC):
 
 ---
 
-## 5. `ClaimHit` → `EvidenceQueryAnchor` Mapping [PROPOSED]
+## 5. `ClaimHit` → `EvidenceQueryAnchor` Mapping [CURRENT]
 
 ```python
 class ClaimHitToEvidenceQueryAnchorAdapter:
@@ -198,16 +205,21 @@ class ClaimHitToEvidenceQueryAnchorAdapter:
         ]
         if not matched_ids:
             return None  # NO_ANCHOR - unresolved raw_name을 임의로 ingredient_id로 추론하지 않음
+        if hit.statement_type is ClaimStatementType.COMBINATION_CLAIM and len(matched_ids) < 2:
+            return None  # 일부만 매칭된 조합 Claim을 단일 성분 Claim으로 축소하지 않음
 
         return EvidenceQueryAnchor(
-            anchor_id=str(uuid4()),
+            anchor_id=str(uuid5(NAMESPACE_URL, f"claim-anchor:{request_id}:{hit.statement_id}")),
             request_id=request_id,
             origin=EvidenceQueryOrigin.CLAIM_HIT,
             origin_ref=hit.statement_id,
             ingredient_scope=IngredientScope.SINGLE if len(matched_ids) == 1 else IngredientScope.MULTI,
             ingredient_refs=matched_ids,
+            ingredient_match_mode=(
+                None if len(matched_ids) == 1 else IngredientMatchMode.ALL
+            ),
             claim_topic=topic,
-            query_text=hit.content,
+            query_text=hit.verification_query(),
         )
 ```
 
@@ -231,208 +243,130 @@ class ClaimHitToEvidenceQueryAnchorAdapter:
 - `matching_status == MATCHED`인 것만 사용한다.
 - `unresolved`/`unresolved_ambiguous_family`를 자동으로 특정 `ingredient_id`로 추론하지
   않는다(사용자 지시) - adapter는 이 경우 `None`(anchor 없음)을 반환하고, 호출부는 기존
-  `UnverifiableReason` 계열([CURRENT], `agent/rag/schemas.py`)로 처리한다(구체 값은 Agent
-  구현 시점에 결정, 이번 설계 범위 밖).
+  `UnresolvedClaimAnchor`로 보존해 응답의 연결 정보 부족 항목에 표시한다.
 
 ---
 
-## 6. Query Embedding Reuse [PROPOSED, 설계만]
+## 6. Query Embedding Reuse [PARTIAL]
 
-Claim(`claim_chunk`)과 Evidence(`evidence_chunk`) 둘 다 `BAAI/bge-m3`(local)/1024차원으로
-이미 통일돼 있다(storage 확정 사항, 변경하지 않음). 그래서 **같은 사용자 query 텍스트를
-한 번만 임베딩해서 두 검색에 재사용할 수 있다** - storage contract는 건드리지 않는다(사용자
-지시, premature optimization 금지).
+Claim(`claim_chunk`)과 Evidence(`evidence_chunk`)는 `BAAI/bge-m3` 1,024차원으로 통일돼 있다.
+`ClaimSearchRequest.query_embedding`과 `TwoLayerClaimRetriever`의 재사용 경로는 구현했다.
 
-제안: `ClaimSearchRequest`(4절)와 `EvidenceChunkSearchRequest`(7절) 둘 다
-`query_embedding: EmbeddingVector | None` 필드를 갖는다 - `None`이면 그 포트 구현이 내부에서
-`TextEmbedder.embed()`를 호출하고, 값이 있으면 그대로 재사용한다(중복 계산 안 함). 호출부
-(`AgentNodes` 또는 새 orchestration 단계)가 사용자 query를 **한 번** 임베딩해서 양쪽
-요청에 넣어주는 구조를 제안한다 - `ClaimPort`/`EvidenceChunkPort` 인터페이스 자체에 캐시
-로직을 넣지 않는다(단일 책임 유지).
-
-이 구조가 필요한 근거는 "Evidence가 BGE니까 Claim도"가 아니라(이미 `CLAIM_STORAGE_ERD.md`
-5절에서 같은 이유로 확정) **한 사용자 질문 안에서 같은 텍스트를 두 번 임베딩하는 게 낭비**
-라는 실행 경로 상의 이유다.
+다만 현재 LangGraph는 Claim 검색 질의와 각 Claim에서 파생된 Evidence 검증 질의가 서로 다른
+텍스트일 수 있어, 호출부가 하나의 벡터를 양쪽에 무조건 공유하지 않는다. 동일 텍스트를 반복
+검색하는 경로가 실제로 확인되면 orchestration 계층에서 요청 단위 캐시를 추가한다. 포트 내부에
+전역 캐시를 두거나 서로 다른 질의 벡터를 억지로 재사용하지 않는다.
 
 ---
 
-## 7. Evidence Retrieval Contract — Gap 및 제안 [PROPOSED]
+## 7. Evidence Retrieval Contract [CURRENT, COMPATIBILITY]
 
-### 현재 구현 (1절 재확인)
+### 현재 구현
 
-`EvidenceRetriever`/`SqlAlchemyHybridSearchBackend`는 `rag_chunk`+레거시 `evidence` 테이블만
-본다. `evidence_chunk`/`evidence_document`를 조회하는 코드가 없다.
+`EvidenceSearchRepository`가 `evidence_chunk`/`evidence_document`/
+`evidence_chunk_ingredient`를 조인해 BGE-M3 벡터 검색과 텍스트 검색을 수행한다.
+`TwoLayerEvidenceSearchBackend`는 조회 행을 기존 `RetrievedChunk`/`EvidenceRecord`로 변환하고,
+`HybridEvidenceRetriever`를 거쳐 기존 `EvidenceRetriever` 포트에 연결한다.
 
-### 필요한 변경 (설계만, 구현 안 함)
+따라서 별도 `EvidenceChunkPort`는 만들지 않았다. 현재 Agent 파이프라인과 Citation 검증을
+재사용하기 위한 호환 경계이며, 레거시 `rag_chunk` 조회 구현과 2-Layer 조회 구현은 서로 다른
+Backend 객체로 주입한다.
 
-기존 `EvidenceSearchRequest`/`EvidenceRecord`는 필드 모양 자체가 레거시(`rag_chunk`) 전용
-이라 `pmid`/`doi`/`page`/`section`을 못 담는다(`docs/contracts/
-two-layer-rag-agent-backend-contract.md` 6절이 이미 "PROPOSED 확장 필드 7개"로 지적).
-여기서는 기존 타입을 확장하지 않고 **별도 타입**을 제안한다 - 기존 `EvidenceSearchRequest`는
-`rag_chunk`(레거시 MFDS/Knowledgedata/NIA_QA) 전용으로 그대로 두고 필드를 억지로 늘리지
-않는 게 "레거시 rag_chunk 변경 금지" 원칙과도 맞다.
+### 7.1 Citation metadata
 
-```python
-class EvidenceChunkSearchRequest(RagModel):
-    anchor: EvidenceQueryAnchor              # 2절에서 만든 anchor 그대로
-    query_embedding: EmbeddingVector | None = None  # 6절
+Citation은 LLM이 만들지 않는다. Backend 어댑터가 검색된 DB 행에서 다음 값을 결정적으로
+조합한다.
 
-
-class EvidenceChunkHit(RagModel):
-    evidence_chunk_id: str
-    document_id: str
-    content: str
-    score: float
-    source_type: EvidenceDocumentSourceType   # 8절 - agent 재선언 필요
-    citation: EvidenceCitation                # 7.1절
-
-
-class EvidenceChunkSearchResult(RagModel):
-    status: LookupStatus                      # 기존 LookupStatus [CURRENT] 재사용
-    hits: list[EvidenceChunkHit] = Field(default_factory=list)
-    error_message: str | None = None
-
-
-class EvidenceChunkPort(ABC):
-    @abstractmethod
-    async def search(self, request: EvidenceChunkSearchRequest) -> EvidenceChunkSearchResult:
-        raise NotImplementedError
-```
-
-구현체(`SqlAlchemyEvidenceChunkBackend` 같은 이름)는 `evidence_chunk`/`evidence_document`/
-`evidence_chunk_ingredient`를 조회하는 **신규** repository가 필요하다
-(`EvidenceChunkRepository`, `EvidenceDocumentRepository` - 지금 `backend/repositories/`에
-없음, 7.2절).
-
-### 7.1 Citation Metadata Contract
-
-**LLM이 citation을 생성하지 않는다**(기존 원칙, `agent/rag/generation/openai_generator.py`
-시스템 프롬프트에 이미 있음, [CURRENT]) - citation은 검색된 `evidence_chunk`/
-`evidence_document` row의 컬럼을 코드로 조합한다.
-
-```python
-class EvidenceCitation(RagModel):
-    """evidence_chunk/evidence_document row에서 그대로 조합 - LLM이 만들지 않는다."""
-
-    evidence_document_id: str
-    evidence_chunk_id: str
-    source_type: EvidenceDocumentSourceType   # 8절
-    source_title: str
-    publisher: str | None
-    document_date: str | None                 # ISO date 문자열
-    url: str | None
-    doi: str | None
-    pmid: str | None
-    jurisdiction: str | None
-    page: int | None
-    section: str | None
-    chunk_index: int
-    evidence_level: EvidenceLevel              # 8절 - agent 재선언 필요
-```
-
-전부 `evidence_chunk`(비정규화 컬럼: source_type/source_title/url/doi/pmid/jurisdiction/
-evidence_level) + `evidence_document`(publisher/document_date, `document_id`로 join)에서
-직접 뽑을 수 있다 - 새 컬럼이 필요 없다(이번에 만든 스키마가 이미 이 용도로 설계됨,
-`docs/data/EVIDENCE_STORAGE_ERD.md` 7절 "Citation 조합 원칙" 참고).
-
-### 7.2 필요한 신규 repository (구현 안 함, 목록만)
-
-- `EvidenceChunkRepository`(`backend/repositories/`) - `evidence_chunk` 벡터 검색 +
-  `evidence_chunk_ingredient` join
-- `EvidenceDocumentRepository`(`backend/repositories/`) - `evidence_document` 조회(citation
-  조합용 publisher/document_date)
-- `ClaimChunkRepository`(`backend/repositories/`) - `claim_chunk` 벡터 검색 +
-  `claim_chunk_ingredient` join(4절 `ClaimPort` 구현체가 사용)
-
----
-
-## 8. Deferred / 신규 필요 사항 정리
-
-### Deferred Mappings (5절 요약)
-
-```
-precaution           - DEFERRED, 별도 Agent contract 결정 전까지 anchor 생성 안 함
-case_observation     - DEFERRED, 성분 미언급 statement_type
-cause_claim          - DEFERRED, 성분 미언급 statement_type
-contextual_factor    - DEFERRED, 성분 미언급 statement_type
-```
-
-### Agent 쪽에 재선언 필요한 Enum (import 방향 규칙 - agent는 models를 import하지 않음)
-
-`models/`에 이미 있지만 `agent/rag/schemas.py`에는 없어서, 이 문서의 타입들을 실제로
-구현하려면 `models/product_ingredient.py`/`evidence_chunk.py` 등이 이미 쓰는 관례(값만
-맞춰 별도 StrEnum 선언)를 그대로 따라야 한다:
-
-| Agent에 재선언 필요 | 값을 맞출 `models/` 원본 |
+| DB 값 | 현재 Agent DTO |
 |---|---|
-| `EvidenceClaimTopic` | `models/evidence_document.py:81` |
-| `EvidenceDocumentSourceType` | `models/evidence_document.py:30` |
-| `EvidenceLevel` | `models/evidence_document.py:39` |
-| `ClaimStatementType` | `models/claim_chunk.py:54` |
-| `ClaimIngestionDecision` | `models/claim_chunk.py:66` |
-| `ClaimSupportStatus` | `models/claim_chunk.py:86` |
-| `ClaimIngredientMatchingStatus` | `models/claim_chunk.py:96` |
+| `evidence_chunk.id` | `EvidenceRecord.evidence_id` |
+| `evidence_document.source_id` | `EvidenceRecord.source_id` |
+| `source_title` | `EvidenceRecord.source_title` |
+| PMID/DOI | `EvidenceRecord.source_reference` |
+| section/chunk_index | `EvidenceRecord.locator` |
+| document/chunk URL | `EvidenceRecord.url` |
+| `evidence_chunk_ingredient.ingredient_id` | `EvidenceRecord.target_ids` |
+
+현재 DTO에는 publisher, page, DOI, PMID를 각각 담는 전용 필드가 없다. 별도
+`EvidenceCitation`/`EvidenceChunkHit` DTO는 **미구현**이며, 화면이나 API가 구조화된 개별 필드를
+요구할 때 계약을 먼저 확장한다. `document_status`의 검수 완료 매핑도 Data 파트의 상태 계약이
+확정될 때까지 보수적으로 `UNREVIEWED`를 유지한다.
+
+### 7.2 현재 repository
+
+- `ClaimSearchRepository`: `claim_chunk` 벡터 검색, annotation version/type/성분 필터,
+  `claim_chunk_ingredient` 조인
+- `EvidenceSearchRepository`: `evidence_chunk` 벡터·텍스트 검색,
+  `evidence_document`와 `evidence_chunk_ingredient` 조인 및 Citation 원본 조회
 
 ---
 
-## 9. Agent Implementation Checklist (구현 순서 제안, 코드 없음)
+## 8. Deferred / 호환 사항
 
-1. 8절의 Enum 재선언을 `agent/rag/schemas.py`에 추가
-2. `EvidenceQueryAnchor`/`EvidenceQueryOrigin`/`IngredientScope`/`IngredientMatchMode`(2절)를
-   `agent/rag/schemas.py`에 추가
-3. `ClaimHit`/`ClaimIngredientRef`(3절), `ClaimSearchRequest`(4절) 타입 추가
-4. `ClaimPort`(4절)를 `agent/rag/ports.py`에 추가
-5. `ClaimChunkRepository`(7.2절, `backend/repositories/`) 신규 작성
-6. `ClaimRetriever` 구현체(`backend/services/` 또는 `agent/rag/retrieval/`, 기존
-   `HybridEvidenceRetriever` 위치 참고) - `claim_chunk`/`claim_chunk_ingredient` 벡터 검색
-7. `ClaimHitToEvidenceQueryAnchorAdapter`(5절) 구현
-8. `EvidenceChunkSearchRequest`/`EvidenceChunkHit`/`EvidenceCitation`/`EvidenceChunkPort`
-   (7절)를 `agent/rag/schemas.py`/`ports.py`에 추가
-9. `EvidenceChunkRepository`/`EvidenceDocumentRepository`(7.2절) 신규 작성
-10. `EvidenceChunkPort` 구현체(7절) - anchor 기반 벡터 검색 + citation 조합(7.1절)
-11. Citation rendering을 Backend가 조합하는 지점 확정(`ProductCandidate.reasons`나 응답
-    조립 계층, `two-layer-rag-agent-backend-contract.md` 8절이 이미 "Backend 소유 제안"으로
-    지정)
-12. `AgentNodes`(1절)에 Claim 검색 단계 삽입 - 현재 "parsed → 바로 EvidenceSearchRequest"인
-    흐름 앞에 "parsed → ClaimPort.search() → adapter → EvidenceChunkPort.search()" 분기
-    추가. 기존 `EvidenceSearchRequest`/`EvidenceRetriever` 경로(레거시 rag_chunk)는 그대로
-    유지 - 두 경로 공존(Claim 없이 직접 질문하는 기존 흐름은 안 건드림)
-13. `TextEmbedder`(BGE-M3) 인스턴스를 Claim/Evidence 양쪽 포트 구현체가 공유하도록 조립
-    계층(`agent/factory.py` 등)에서 배선 - 6절의 query embedding 재사용
+### Deferred statement mappings
 
-**순서 근거**: Enum/타입(1-3) → 포트 인터페이스(4, 8) → 저장소 접근(5, 9) → 검색 구현
-(6, 10) → 변환 로직(7) → 조합(11) → 오케스트레이션 배선(12-13) 순으로, 아래 단계가 위
-단계의 타입에 의존하는 순서를 그대로 따른다.
+```
+precaution           - DEFERRED, 별도 Agent contract 결정 전까지 anchor 생성 금지
+case_observation     - DEFERRED, 성분 미언급형 statement_type
+cause_claim          - DEFERRED, 성분 미언급형 statement_type
+contextual_factor    - DEFERRED, 성분 미언급형 statement_type
+```
+
+`EvidenceClaimTopic`, `ClaimStatementType`, `ClaimIngestionDecision`,
+`ClaimSupportStatus`, `ClaimIngredientMatchingStatus`는 Agent 계층에 재선언되어 있다. Agent가
+`models/`를 역방향 import하지 않도록 값만 저장 계약과 맞춘다.
+
+`EvidenceDocumentSourceType`과 `EvidenceLevel` 전용 Agent Enum은 아직 만들지 않았다. 현재는
+Backend 어댑터가 각각 기존 `EvidenceSourceType`과 `RagConfidenceTier`로 변환한다. 이를
+세분화하려면 Citation DTO 확장과 함께 별도 계약 변경으로 진행한다.
 
 ---
 
-## 10. E2E Sequence (목표 흐름)
+## 9. 구현 상태 체크리스트
+
+| 항목 | 상태 |
+|---|---|
+| `EvidenceQueryAnchor` 및 validation | 완료 |
+| 최소 `ClaimHit`/`ClaimIngredientRef` 계약 | 완료 |
+| 필수 `annotation_version` 설정·요청·SQL 필터 | 완료 |
+| `ClaimRetriever`와 BGE-M3 Claim 검색 | 완료 |
+| `ClaimHitToEvidenceQueryAnchorAdapter` | 완료 |
+| unresolved 성분 재추론 금지 | 완료 |
+| 3개 지원 Claim 타입 매핑 | 완료 |
+| LangGraph Claim → Evidence → Product 배선 | 완료 |
+| Evidence 미검수/부족 시 Claim-only 유지 | 완료 |
+| `evidence_chunk` 전용 Backend 조회 | 완료(기존 Evidence DTO 호환 방식) |
+| 구조화된 전용 `EvidenceCitation` DTO | 미구현·후속 계약 필요 |
+| 한 번 계산한 query embedding의 Claim/Evidence 공동 재사용 | 부분 구현·호출부 공동 캐시 미구현 |
+
+---
+
+## 10. E2E Sequence (현재 흐름)
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant AgentNodes as AgentNodes [CURRENT, 확장 필요]
-    participant Embedder as TextEmbedder(BGE-M3) [PROPOSED 배선]
-    participant ClaimPort as ClaimPort [NOT_IMPLEMENTED]
-    participant Adapter as ClaimHitToEvidenceQueryAnchorAdapter [NOT_IMPLEMENTED]
-    participant EvidenceChunkPort as EvidenceChunkPort [NOT_IMPLEMENTED]
-    participant Backend as Backend(citation 조합) [PROPOSED 위치]
+    participant Workflow as RagWorkflowNodes
+    participant Claim as ClaimRetriever
+    participant Adapter as ClaimHitToEvidenceQueryAnchorAdapter
+    participant Evidence as EvidenceRetriever
+    participant Product as ProductRepository
 
-    User->>AgentNodes: query
-    AgentNodes->>Embedder: embed(query) — 1회만
-    Embedder-->>AgentNodes: query_embedding(1024d, BGE-M3)
-    AgentNodes->>ClaimPort: ClaimSearchRequest(query, query_embedding, annotation_version)
-    ClaimPort-->>AgentNodes: list[ClaimHit]
-    AgentNodes->>Adapter: adapt(ClaimHit)
-    Adapter-->>AgentNodes: EvidenceQueryAnchor | None (deferred/unresolved면 None)
-    AgentNodes->>EvidenceChunkPort: EvidenceChunkSearchRequest(anchor, query_embedding)
-    EvidenceChunkPort-->>AgentNodes: EvidenceChunkHit[] (+ EvidenceCitation)
-    AgentNodes->>Backend: 검색 결과 + citation
-    Backend-->>User: 답변 + citation(코드로 조합, LLM 생성 아님)
+    User->>Workflow: 피부 고민 질문
+    Workflow->>Claim: ClaimSearchRequest(query, annotation_version)
+    Claim-->>Workflow: ClaimSearchResult
+    Workflow->>Adapter: adapt(ClaimHit)
+    Adapter-->>Workflow: EvidenceQueryAnchor 또는 None
+    Workflow->>Evidence: EvidenceSearchRequest(anchor 기반)
+    Evidence-->>Workflow: EvidenceSearchResult
+    Note over Workflow: 미검수·근거 없음은 INSUFFICIENT, Claim-only 유지
+    Workflow->>Product: 확정 성분 ID로 상품 조회
+    Product-->>Workflow: 중복 제거된 상품 후보
+    Workflow-->>User: Claim/Evidence 구분 응답 + 메타데이터 기반 Citation
 ```
 
-레거시 경로(Claim 없이 직접 성분 질문 → 기존 `EvidenceSearchRequest`/`EvidenceRetriever`/
-`rag_chunk`)는 이 흐름과 **병행 유지**된다 - 이번 문서는 그 경로를 바꾸지 않는다.
+명시 성분 질문은 Claim을 건너뛰고 기존 Evidence 경로로 직행한다. 피부 고민형 질문만 위의
+Claim 선행 경로를 사용한다.
 
 ---
 
@@ -442,4 +376,5 @@ sequenceDiagram
 - [docs/data/EVIDENCE_STORAGE_ERD.md](../data/EVIDENCE_STORAGE_ERD.md) - Evidence storage 설계, citation 조합 원칙(7절)
 - [docs/data/EVIDENCE_RAG_DESIGN.md](../data/EVIDENCE_RAG_DESIGN.md) D절 - `EvidenceQueryAnchor` 원 설계(이 문서 2절의 근거)
 - [docs/contracts/two-layer-rag-agent-backend-contract.md](two-layer-rag-agent-backend-contract.md) - `ClaimHit` 필드 매핑 최초 제안(5절), `EvidenceRecord` 확장 필드 제안(6절)
-- `agent/rag/schemas.py`, `agent/rag/ports.py`, `agent/nodes.py`, `backend/services/rag_search_backend.py` - 이 문서의 "Current State" 근거 코드(origin/main 기준)
+- `agent/rag/schemas.py`, `agent/rag/claim_schemas.py`, `agent/rag/ports.py`,
+  `agent/rag_workflow.py`, `backend/services/two_layer_rag_adapters.py` - 현재 구현 근거 코드

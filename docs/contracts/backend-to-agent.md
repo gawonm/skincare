@@ -369,7 +369,7 @@ NIA Q&A는 현재 Agent에 대응하는 변환 계약이 없다. 기존 로더�
 - OpenAI 임베딩 결과가 1536차원이며 기존 DB 벡터와 `embedding_model` 값이 일치한다.
 - 실제 DB를 사용한 vector/BM25 검색과 리랭킹 통합 테스트가 통과한다.
 
-## 9. 최신 dump 기반 2-Layer 읽기 전용 어댑터 (2026-09-17)
+## 9. 최신 dump 기반 2-Layer 읽기 전용 어댑터 (2026-09-17, 19:42 KST 갱신)
 
 > 기준 dump: `data/skincare_latest_2026-09-17.dump`
 >
@@ -426,38 +426,45 @@ Evidence 검수 상태는 저장값만 신뢰한다. 통합 fixture라는 이유
 
 ### 9.2 Claim 조회와 DTO 매핑
 
-`ClaimSearchRequest.query`와 `skin_concerns`를 순서대로 결합한 문자열을 BGE-M3로 임베딩하고,
-같은 `embedding_model`을 가진 `claim_chunk.embedding`만 cosine 검색한다. 현재 dump에서 확인된
-`ingredient_effect_claim`만 첫 구현 범위로 삼으며, 다른 statement type을 임의 변환하지 않는다.
+`ClaimSearchRequest`는 `annotation_version`을 필수로 받고, `query`와 `skin_concerns`를 순서대로
+결합한 문자열을 BGE-M3로 임베딩한다. 이미 계산한 `query_embedding`이 전달되면 같은 벡터를
+재사용한다. DB 조회는 같은 `embedding_model`과 정확히 일치하는 `annotation_version`만 cosine
+검색하며 여러 annotation run을 자동으로 섞거나 최신값으로 추정하지 않는다.
+
+지원 Claim 타입은 계약에서 Evidence topic 매핑이 확정된 아래 세 종류로 제한한다.
+
+- `ingredient_effect_claim` → `EvidenceClaimTopic.EFFICACY`
+- `usage_instruction` → `EvidenceClaimTopic.USAGE_INSTRUCTION`
+- `combination_claim` → `EvidenceClaimTopic.COMBINATION`
 
 | DB 값 | Agent 값 | 규칙 |
 | --- | --- | --- |
-| `claim_document.source_record_id` | `ClaimHit.record_id` | 원문 그대로 |
+| `claim_chunk.id` | `ClaimHit.claim_chunk_id` | UUID 문자열 |
+| `claim_document.source_record_id` | `ClaimHit.source_record_id` | 원문 그대로 |
+| `claim_document.annotation_version` | `ClaimHit.annotation_version` | 요청 버전과 반드시 일치 |
 | `claim_chunk.statement_id` | `ClaimHit.statement_id` | 원문 그대로 |
-| `claim_chunk.content` | `IngredientEffectClaimContent.object` | 원문 그대로 |
-| `claim_chunk.source_spans` | `ClaimHit.source_spans` | Pydantic 검증 후 사용 |
-| `claim_document.skin_concerns_raw` | `ClaimCaseContext.skin_concerns_raw` | 순서 보존 |
-| `claim_chunk_ingredient.raw_name` | `ClaimIngredientAnchor.raw_name` | 원문 그대로 |
-| `claim_chunk_ingredient.ingredient_id` | `ClaimIngredientAnchor.ingredient_id` | UUID 문자열 |
-| `claim_chunk_ingredient.matching_status` | `ClaimIngredientAnchor.matching_status` | 동일 Enum 값만 허용 |
+| `claim_chunk.statement_type` | `ClaimHit.statement_type` | 동일 Enum 값만 허용 |
+| `claim_chunk.content` | `ClaimHit.content` | 원문 그대로 |
+| `claim_chunk.decision` | `ClaimHit.decision` | 동일 Enum 값만 허용 |
+| `claim_chunk_ingredient.*` | `ClaimHit.ingredient_refs` | 성분 연결별 DTO로 보존 |
 | `claim_chunk.support_status` | `ClaimHit.support_status` | 동일 Enum 값만 허용 |
-| cosine similarity | `ClaimHit.retrieval_score` | 원점수 보존 |
+| cosine similarity | `ClaimHit.score` | 원점수 보존 |
 
 DB 컬럼 설명에 따라 Claim 통과 조건은 다음 결정적 규칙으로 고정한다.
 
 - `claim_chunk.decision`은 운영 검색 인덱스 필터이며 `ingestible_*`만 기본 검색 대상이다.
 - `claim_document.production_ready`는 사람 최종 검수 완료 여부이지만 런타임 필수 필터로
   강제하지 않는다.
-- 따라서 `decision=ingestible_structured`인 행은 `ClaimAnnotationStatus.APPROVED`로 변환해
-  Agent Claim 검색에 전달한다.
-- `production_ready=true`는 `ClaimConfidence.HIGH`, `false`는 `ClaimConfidence.LOW`로
-  변환한다. 미검수 여부를 숨기지 않으면서 운영 검색 가능 Claim은 유지하기 위해서다.
+- `decision`은 Agent DTO에도 보존하며 Agent가 허용값을 다시 검증한다.
+- `production_ready`는 저장소 provenance이며 최소 `ClaimHit`에는 복제하지 않는다. 이 값으로
+  검색 결과를 제외하거나 Claim 지원 상태를 바꾸지 않는다.
 - `decision`이 `ingestible_*`가 아닌 행과 `matching_status`가 `rejected`인 성분 연결은 검색
   후보에서 제외한다.
+- `matching_status=matched`인 성분만 `EvidenceQueryAnchor.ingredient_refs`로 승격한다.
+  unresolved 성분은 Agent가 raw name으로 다시 해소하지 않고 보류한다.
 
 현재 dump의 Claim 5건은 모두 `decision=ingestible_structured`이므로 Claim 검색 후보에
-포함된다. 동시에 Claim 문서의 `production_ready=false`를 보존해 모두 `LOW` confidence로
-전달한다. 즉 `production_ready=false` 때문에 Claim 결과가 0건이 되지 않는다.
+포함된다. `production_ready=false` 때문에 Claim 결과가 0건이 되지 않는다.
 
 ### 9.3 Evidence 조회와 Citation 매핑
 
@@ -487,14 +494,16 @@ Citation의 제목, URL, PMID, DOI는 DB 메타데이터만 사용한다. LLM �
 
 `document_status=NULL`은 `EvidenceReviewStatus.UNREVIEWED`로 변환한다. 검색 결과에는 남기되
 Citation과 `SUPPORTED` 판정에는 사용하지 않는다. 해당 Claim은 `INSUFFICIENT`가 되고,
-성분은 `CLAIM_ONLY` 상품 후보로 유지한다. `document_status=verified`처럼 저장된 검수 완료 값이
-있을 때만 `VERIFIED`로 변환한다.
+성분은 `CLAIM_ONLY` 상품 후보로 유지한다. 현재 저장 계약에는 `verified` 값이 없으므로
+`VERIFIED` 승격 조건은 보류 상태다. Data 파트와 검수 상태 계약을 확정하기 전에는
+`final`/`amended_final` 또는 `peer_reviewed_study`를 임의로 검수 완료로 해석하지 않는다.
 
 ### 9.4 Ingredient와 Product 조회
 
 - Ingredient resolve는 표준 한글/영문명, 정규화명, 구명칭의 정확 일치만 먼저 지원한다.
 - 일치 1건은 `SUCCESS`, 복수는 `ambiguous_candidates`, 없음은 `NO_RESULTS`다.
-- Claim에 이미 `matched` UUID가 있으면 Agent는 문자열 재매칭 없이 그 ID를 사용한다.
+- Claim은 `matched` UUID만 사용한다. unresolved raw name은 Ingredient resolve로 다시 추론하지
+  않으며 Data 파트가 후속 annotation run에서 확정해야 한다.
 - Product 검색은 `product_ingredient.match_acceptance=confirmed`와 non-null `ingredient_id`만 사용한다.
 - 요청한 성분 ID 중 하나 이상을 포함한 상품을 반환하되, 같은 상품이 여러 성분에서 검색돼도
   `product.id` 기준으로 한 번만 반환한다.
