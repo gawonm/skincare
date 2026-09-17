@@ -154,6 +154,7 @@ DTO 변환 외에도 신규 분류,
 
 ## 관련 문서
 
+- [2026-09-17 17:51 피부 고민형 Intent 라우팅 보정](2026-09-17_1751_INTENT_ROUTING_UPDATE.md)
 - [2-Layer RAG Agent 리팩터링 작업계획](TWO_LAYER_RAG_REFACTOR_PLAN.md)
 - [2-Layer RAG Agent 후속 보완 작업계획](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
 - [2-Layer RAG Agent — main 대비 변경점](TWO_LAYER_RAG_MAIN_DIFF.md)

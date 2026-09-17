@@ -306,3 +306,20 @@ git diff --check
   # 검색 요청·청크·점수까지 포함한 상세 화면
   uv run python -m tests.agent.interactive_two_layer_rag_cli "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?" --verbose
   ```
+
+### LOG-F05 — 2026-09-17 17:51 — 피부 고민형 Intent 라우팅 보정
+
+- 상태: `VERIFIED`
+- 상세 문서: `2026-09-17_1751_INTENT_ROUTING_UPDATE.md`
+- 변경 결과:
+  - LLM이 피부 고민형 사용 질문을 `evidence_qa`로 오분류해도 Rule이
+    `product_discovery + claim_then_evidence`로 보정한다.
+  - 경로뿐 아니라 Intent도 함께 보정해 `Claim → Evidence → Product` 전체 작업을 실행한다.
+  - 명시 성분 효능 질문과 단순 원인 설명 질문은 `evidence_only`로 유지한다.
+  - 프롬프트에 Intent 정의와 한국어 예시를 추가했다.
+- 검증 결과:
+  - 2-Layer RAG 통합 테스트: 12개 통과
+  - 프로젝트 전체 테스트: 188개 통과, 1개 선택 제외
+  - Ruff: 통과
+  - Pyrefly: 오류 없음
+  - 실제 OpenAI/BGE-M3/최신 dump LangGraph 실행: `product_discovery`, Claim-only 상품 13건
