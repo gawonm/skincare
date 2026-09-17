@@ -154,3 +154,33 @@ uv run python -m tests.agent.two_layer_rag_dump_smoke
 - [2-Layer RAG main 대비 변경점](../agent/TWO_LAYER_RAG_MAIN_DIFF.md)
 - [front → backend 계약](../contracts/front-to-backend.md): AI 채팅(미정), 회원가입 확장
   (성별·연령대·약관동의 — 확정 및 구현 완료. `models/user.py`, `backend/schemas/auth.py`)
+
+## Evidence RAG `document_status` 매핑 보류 (2026-09-17)
+
+`TwoLayerEvidenceSearchBackend`는 DB의 `evidence_document.document_status`를 Agent의
+`EvidenceReviewStatus`로 바꾸는 경계다. 따라서 저장 상태 매핑이 Backend 어댑터에 있는 구조는
+유지한다. 다만 현재 `_VERIFIED_STATUS = "verified"`는 확정된 저장 계약이 아니다.
+
+실제 `skincare_latest` DB의 `ck_evidence_document_document_status`가 허용하는 값은 다음과 같다.
+
+```text
+final, amended_final, tentative, draft, rereview, unknown, NULL
+```
+
+`verified`는 허용값이 아니므로 현재 어댑터의 조건은 실제 DB에서 참이 될 수 없다. 이 코드는
+2026-09-17 읽기 전용 smoke 구현 당시 `document_status=NULL → UNREVIEWED` 동작을 보수적으로
+보장하기 위해 둔 임시 매핑이다. 당시 세 PubMed 행이 모두 `NULL`이어서 검수 완료 상태의 양방향
+계약은 검증하지 못했다.
+
+Evidence RAG 저장·검수 흐름을 구현하기 전까지는 다음 기준을 따른다.
+
+- 현행 `NULL → UNREVIEWED` 동작을 유지한다.
+- `peer_reviewed_study`를 사람 검수 완료 상태로 대신 사용하지 않는다.
+- `final` 또는 `amended_final`을 임의로 `VERIFIED`에 연결하지 않는다.
+- DB CHECK 제약조건을 우회해 `verified` 값을 직접 저장하지 않는다.
+
+후속 구현에서는 Data 파트와 `final`/`amended_final`의 의미를 먼저 합의한다. 사람 검수 완료 의미가
+맞으면 허용 상태 집합을 Enum으로 정의해 Backend 어댑터에서 `VERIFIED`로 변환한다. 문서 생명주기
+상태일 뿐이라면 `review_status` 같은 별도 컬럼이 필요하며, 이 경우 ERD 문서 확인 후 모델과
+마이그레이션을 작성한다. 어느 경우든 `docs/contracts/backend-to-agent.md`의 현재 `verified` 예시는
+실제 저장 계약에 맞게 먼저 수정하고 통합 테스트를 추가한다.
