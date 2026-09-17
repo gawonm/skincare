@@ -292,6 +292,11 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
         self._reranker_config = config.create_reranker()
         self._retrieval_policy = config.create_retrieval_policy()
         self._database = LatestDumpDatabaseFactory().create()
+        claim_annotation_version = settings.agent.retrieval.claim_annotation_version
+        if claim_annotation_version is None:
+            raise RuntimeError(
+                "2-Layer CLI 실행에는 active Claim annotation_version 설정이 필요합니다."
+            )
 
         embedder = TextEmbedderFactory().create(self._embedding_config)
         claim_retriever = TwoLayerClaimRetriever(
@@ -318,6 +323,7 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
                 self._database.session_factory
             ),
             claim_retriever=claim_retriever,
+            claim_annotation_version=claim_annotation_version,
             evidence_retriever=self._retriever,
             answer_generator=AnswerGenerator(
                 EvidenceStatementGeneratorFactory().create(self._chat_config)

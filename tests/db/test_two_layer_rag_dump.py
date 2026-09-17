@@ -6,10 +6,8 @@ import pytest
 from sqlalchemy.engine import make_url
 
 from agent.claim_verification import ClaimEvidenceVerifier, IngredientRecommendationSelector
+from agent.rag.claim_anchor_adapter import ClaimHitToEvidenceQueryAnchorAdapter
 from agent.rag.claim_schemas import (
-    ClaimAnnotationStatus,
-    ClaimConfidence,
-    ClaimResolvedTarget,
     ClaimSearchRequest,
     ClaimVerificationBundle,
     ClaimVerificationRequest,
@@ -80,24 +78,24 @@ class TestTwoLayerRagLatestDump:
         database = LatestDumpDatabaseFactory().create()
         embedder = FixedBgeM3Embedder()
         try:
+            annotation_version = settings.agent.retrieval.claim_annotation_version
+            if annotation_version is None:
+                raise RuntimeError("Claim DB smoke에 active annotation_version 설정이 필요합니다.")
             claims = await TwoLayerClaimRetriever(
                 database.session_factory,
                 embedder,
             ).search(
                 ClaimSearchRequest(
                     query="피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?",
+                    annotation_version=annotation_version,
                     skin_concerns=["여드름/뾰루지"],
-                    limit=5,
+                    top_k=5,
                 )
             )
 
             assert claims.status is LookupStatus.SUCCESS
             assert len(claims.hits) == 5
-            assert all(
-                hit.annotation_status is ClaimAnnotationStatus.APPROVED
-                for hit in claims.hits
-            )
-            assert all(hit.confidence is ClaimConfidence.LOW for hit in claims.hits)
+            assert all(hit.annotation_version == annotation_version for hit in claims.hits)
 
             niacinamide = next(
                 hit
@@ -140,19 +138,18 @@ class TestTwoLayerRagLatestDump:
                 for record in evidence.records
             )
 
+            evidence_anchor = ClaimHitToEvidenceQueryAnchorAdapter().adapt(
+                niacinamide,
+                request_id="two-layer-db-smoke",
+            )
+            assert evidence_anchor is not None
             verification = await ClaimEvidenceVerifier(
                 EvidencePipeline(
                     retriever=evidence_retriever,
                     evaluator=EvidenceApplicabilityEvaluator(),
                 )
             ).verify(
-                ClaimVerificationRequest(
-                    target=ClaimResolvedTarget(
-                        statement_id=niacinamide.statement_id,
-                        ingredient_ids=ingredient_ids,
-                        query=niacinamide.verification_query(),
-                    )
-                )
+                ClaimVerificationRequest(anchor=evidence_anchor)
             )
 
             assert verification.status is ClaimVerificationStatus.INSUFFICIENT
@@ -177,5 +174,24 @@ class TestTwoLayerRagLatestDump:
                 ingredient_ids[0] in product.ingredient_ids
                 for product in products.products
             )
+        finally:
+            await database.dispose()
+
+    async def test_unknown_annotation_version_returns_no_claims(self) -> None:
+        database = LatestDumpDatabaseFactory().create()
+        try:
+            result = await TwoLayerClaimRetriever(
+                database.session_factory,
+                FixedBgeM3Embedder(),
+            ).search(
+                ClaimSearchRequest(
+                    query="피지가 많은데 뭘 써야 해?",
+                    annotation_version="missing-annotation-version",
+                    top_k=5,
+                )
+            )
+
+            assert result.status is LookupStatus.NO_RESULTS
+            assert result.hits == []
         finally:
             await database.dispose()

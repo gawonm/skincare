@@ -13,9 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.engine import make_url
 
 from agent.claim_verification import ClaimEvidenceVerifier, IngredientRecommendationSelector
+from agent.rag.claim_anchor_adapter import ClaimHitToEvidenceQueryAnchorAdapter
 from agent.rag.claim_schemas import (
-    ClaimConfidence,
-    ClaimResolvedTarget,
     ClaimSearchRequest,
     ClaimVerificationBundle,
     ClaimVerificationRequest,
@@ -52,7 +51,6 @@ class TwoLayerDumpSmokeReport(BaseModel):
     database: str = Field(min_length=1)
     embedding_model: str = Field(min_length=1)
     claim_count: int = Field(ge=0)
-    low_confidence_claim_count: int = Field(ge=0)
     evidence_record_count: int = Field(ge=0)
     unreviewed_evidence_count: int = Field(ge=0)
     claim_only_ingredient_count: int = Field(ge=0)
@@ -91,11 +89,15 @@ class TwoLayerRagDumpSmokeRunner:
 
     async def run(self) -> TwoLayerDumpSmokeReport:
         try:
+            annotation_version = settings.agent.retrieval.claim_annotation_version
+            if annotation_version is None:
+                raise RuntimeError("Claim smoke에 active annotation_version 설정이 필요합니다.")
             claims = await self._claims.search(
                 ClaimSearchRequest(
                     query=self.QUERY,
+                    annotation_version=annotation_version,
                     skin_concerns=self.SKIN_CONCERNS,
-                    limit=self.CLAIM_LIMIT,
+                    top_k=self.CLAIM_LIMIT,
                 )
             )
             if claims.status is not LookupStatus.SUCCESS:
@@ -132,19 +134,24 @@ class TwoLayerRagDumpSmokeRunner:
                     evaluator=EvidenceApplicabilityEvaluator(),
                 )
             )
+            anchor_adapter = ClaimHitToEvidenceQueryAnchorAdapter()
+            evidence_anchors = [
+                anchor
+                for hit in claims.hits
+                if (
+                    anchor := anchor_adapter.adapt(
+                        hit,
+                        request_id="two-layer-dump-smoke",
+                    )
+                )
+                is not None
+            ]
             verification = ClaimVerificationBundle(
                 results=[
                     await verifier.verify(
-                        ClaimVerificationRequest(
-                            target=ClaimResolvedTarget(
-                                statement_id=hit.statement_id,
-                                ingredient_ids=hit.matched_ingredient_ids(),
-                                query=hit.verification_query(),
-                            )
-                        )
+                        ClaimVerificationRequest(anchor=anchor)
                     )
-                    for hit in claims.hits
-                    if hit.matched_ingredient_ids()
+                    for anchor in evidence_anchors
                 ]
             )
             recommendations = IngredientRecommendationSelector().select(verification)
@@ -169,9 +176,6 @@ class TwoLayerRagDumpSmokeRunner:
                 database=self.DATABASE_NAME,
                 embedding_model=self._claims.embedding_model.value,
                 claim_count=len(claims.hits),
-                low_confidence_claim_count=sum(
-                    hit.confidence is ClaimConfidence.LOW for hit in claims.hits
-                ),
                 evidence_record_count=len(evidence.records),
                 unreviewed_evidence_count=sum(
                     record.review_status is EvidenceReviewStatus.UNREVIEWED

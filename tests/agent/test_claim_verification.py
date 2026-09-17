@@ -6,7 +6,6 @@ from agent.claim_verification import (
     IngredientRecommendationSelector,
 )
 from agent.rag.claim_schemas import (
-    ClaimResolvedTarget,
     ClaimVerificationBundle,
     ClaimVerificationRequest,
     ClaimVerificationResult,
@@ -17,10 +16,15 @@ from agent.rag.pipeline import EvidencePipeline
 from agent.rag.schemas import (
     EvidenceBackedStatement,
     EvidenceBundle,
+    EvidenceClaimTopic,
+    EvidenceQueryAnchor,
+    EvidenceQueryOrigin,
     EvidenceRecord,
     EvidenceReviewStatus,
     EvidenceSearchRequest,
     EvidenceSearchResult,
+    IngredientMatchMode,
+    IngredientScope,
     IngredientVerificationResult,
     LookupStatus,
     PerTargetResult,
@@ -43,25 +47,36 @@ class ClaimVerificationFixture:
     SECOND_INGREDIENT_ID = "ingredient:retinol"
     STATEMENT_ID = "claim:1"
 
-    def target(self) -> ClaimResolvedTarget:
-        return ClaimResolvedTarget(
-            statement_id=self.STATEMENT_ID,
-            ingredient_ids=[self.INGREDIENT_ID],
-            query="나이아신아마이드: 피지 고민 사례에서 언급됨",
+    def anchor(self) -> EvidenceQueryAnchor:
+        return EvidenceQueryAnchor(
+            anchor_id="anchor:claim-1",
+            request_id="request:claim-1",
+            origin=EvidenceQueryOrigin.CLAIM_HIT,
+            origin_ref=self.STATEMENT_ID,
+            ingredient_scope=IngredientScope.SINGLE,
+            ingredient_refs=[self.INGREDIENT_ID],
+            claim_topic=EvidenceClaimTopic.EFFICACY,
+            query_text="나이아신아마이드: 피지 고민 사례에서 언급됨",
         )
 
     def request(self) -> ClaimVerificationRequest:
-        return ClaimVerificationRequest(target=self.target())
+        return ClaimVerificationRequest(anchor=self.anchor())
 
-    def combination_target(self) -> ClaimResolvedTarget:
-        return ClaimResolvedTarget(
-            statement_id="claim:combination",
-            ingredient_ids=[self.INGREDIENT_ID, self.SECOND_INGREDIENT_ID],
-            query="나이아신아마이드와 레티놀을 함께 사용하는 조합",
+    def combination_anchor(self) -> EvidenceQueryAnchor:
+        return EvidenceQueryAnchor(
+            anchor_id="anchor:combination",
+            request_id="request:combination",
+            origin=EvidenceQueryOrigin.CLAIM_HIT,
+            origin_ref="claim:combination",
+            ingredient_scope=IngredientScope.MULTI,
+            ingredient_refs=[self.INGREDIENT_ID, self.SECOND_INGREDIENT_ID],
+            ingredient_match_mode=IngredientMatchMode.ALL,
+            claim_topic=EvidenceClaimTopic.COMBINATION,
+            query_text="나이아신아마이드와 레티놀을 함께 사용하는 조합",
         )
 
     def combination_request(self) -> ClaimVerificationRequest:
-        return ClaimVerificationRequest(target=self.combination_target())
+        return ClaimVerificationRequest(anchor=self.combination_anchor())
 
     def record(
         self,
@@ -174,7 +189,7 @@ class TestClaimEvidenceVerifier:
         assert result.status is ClaimVerificationStatus.SUPPORTED
         assert result.evidence_ids == ["evidence:1"]
         assert result.summary == "검증 가능한 효능 근거가 확인됐습니다."
-        assert pipeline.requests[0].query == fixture.target().query
+        assert pipeline.requests[0].query == fixture.anchor().query_text
         assert pipeline.requests[0].target_ids == [fixture.INGREDIENT_ID]
 
     async def test_no_results_remains_claim_only_eligible(self) -> None:

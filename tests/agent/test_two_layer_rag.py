@@ -15,11 +15,10 @@ from agent.nodes import CLAIM_ONLY_PRODUCT_LIMITATION, EVIDENCE_PRODUCT_LIMITATI
 from agent.ports import IngredientRepository, LlmClient, ProductRepository
 from agent.rag.chunking.field_chunker import FieldChunker
 from agent.rag.claim_schemas import (
-    ClaimIngredientAnchor,
-    ClaimMatchingStatus,
+    ClaimIngredientMatchingStatus,
+    ClaimIngredientRef,
     ClaimSearchRequest,
     ClaimSearchResult,
-    IngredientEffectClaimContent,
 )
 from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.ports import ClaimRetriever, EvidenceRetriever, EvidenceStatementGenerator
@@ -119,19 +118,51 @@ class MixedClaimRetriever(ClaimRetriever):
         retinol = first.model_copy(
             deep=True,
             update={
+                "claim_chunk_id": "fixture-claim-chunk-retinol-1",
                 "statement_id": "fixture-claim-retinol-1",
-                "content": IngredientEffectClaimContent(
-                    subject=ClaimIngredientAnchor(
-                        raw_name="RETINOL",
-                        raw_name_ko="레티놀",
+                "content": "유사한 피부 고민 사례에서 레티놀이 언급되었습니다.",
+                "ingredient_refs": [
+                    ClaimIngredientRef(
+                        raw_name="레티놀",
                         ingredient_id="ingredient:retinol",
-                        matching_status=ClaimMatchingStatus.MATCHED,
-                    ),
-                    object="유사한 피부 고민 사례에서 레티놀이 언급되었습니다.",
-                ),
+                        matching_status=ClaimIngredientMatchingStatus.MATCHED,
+                    )
+                ],
             },
         )
         return result.model_copy(deep=True, update={"hits": [first, retinol]})
+
+
+class UnresolvedClaimRetriever(ClaimRetriever):
+    """Data가 확정하지 않은 raw_name을 Agent가 다시 매칭하지 않는지 확인한다."""
+
+    def __init__(self, calls: list[WorkflowCall]) -> None:
+        self._calls = calls
+        self._delegate = FixtureClaimRetriever()
+
+    @property
+    def embedding_model(self) -> LocalEmbeddingModel:
+        return LocalEmbeddingModel.BGE_M3
+
+    async def search(self, request: ClaimSearchRequest) -> ClaimSearchResult:
+        self._calls.append(WorkflowCall.CLAIM)
+        result = await self._delegate.search(request)
+        first = result.hits[0]
+        unresolved = first.model_copy(
+            deep=True,
+            update={
+                "claim_chunk_id": "fixture-claim-chunk-unresolved-1",
+                "statement_id": "fixture-claim-unresolved-1",
+                "ingredient_refs": [
+                    ClaimIngredientRef(
+                        raw_name="UNKNOWN EXTRACT",
+                        ingredient_id=None,
+                        matching_status=ClaimIngredientMatchingStatus.UNRESOLVED,
+                    )
+                ],
+            },
+        )
+        return result.model_copy(deep=True, update={"hits": [unresolved]})
 
 
 class VerifiedEvidenceRetriever(EvidenceRetriever):
@@ -577,6 +608,23 @@ class TestTwoLayerRagWorkflow:
         assert any(item.kind is UnresolvedKind.NO_EVIDENCE for item in output.unresolved)
         assert any(isinstance(artifact, ProductCandidateSet) for artifact in output.artifacts)
         assert output.citations == []
+
+    async def test_unresolved_claim_ingredient_is_not_resolved_again(self) -> None:
+        calls: list[WorkflowCall] = []
+        harness = TwoLayerRagHarness()
+        application = harness.create(
+            calls,
+            claim_retriever=UnresolvedClaimRetriever(calls),
+        )
+
+        output = await application.service.handle_turn(
+            harness.request("unresolved-claim-1", "피지가 많은데 세럼 추천해줘")
+        )
+
+        assert calls == [WorkflowCall.CLAIM]
+        assert WorkflowCall.INGREDIENT not in calls
+        assert WorkflowCall.EVIDENCE not in calls
+        assert any("UNKNOWN EXTRACT" in item.detail for item in output.unresolved)
 
     async def test_claim_failure_stops_evidence_and_product_search(self) -> None:
         calls: list[WorkflowCall] = []

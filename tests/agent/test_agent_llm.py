@@ -108,6 +108,7 @@ class TestAgentLlmConfigAndAssembly:
                     openai=OpenAiEmbeddingConfig(api_key=SecretStr("test-key")),
                 ),
                 retrieval_policy=RagRetrievalPolicy(free_text_min_vector_similarity=0.45),
+                claim_annotation_version="fixture-claim-v1",
             )
 
     def test_production_agent_config_keeps_openai_chat_with_bge_m3(self) -> None:
@@ -119,6 +120,7 @@ class TestAgentLlmConfigAndAssembly:
             openai=openai_config,
             embedding=TextEmbeddingConfig(provider=EmbeddingProvider.LOCAL),
             retrieval_policy=RagRetrievalPolicy(free_text_min_vector_similarity=0.45),
+            claim_annotation_version="fixture-claim-v1",
         )
         assert config.chat is not None
         assert config.chat.provider is LlmProvider.OPENAI
@@ -138,6 +140,7 @@ class TestAgentLlmConfigAndAssembly:
                 local=LocalEmbeddingConfig(),
             ),
             retrieval_policy=RagRetrievalPolicy(free_text_min_vector_similarity=0.5),
+            claim_annotation_version="fixture-claim-v1",
         )
         dependencies = ProductionAgentDependencies(
             history=InMemoryChatHistoryRepository(),
@@ -199,8 +202,65 @@ class TestAgentConfigurationAssembler:
                 ),
             ),
             embedding=EmbeddingSettings(openai_dimensions=1536),
+            retrieval=RagRetrievalSettings(
+                claim_annotation_version="fixture-claim-v1",
+                free_text_min_vector_similarity=0.45,
+            ),
+        )
+        with pytest.raises(RuntimeError, match="BGE-M3"):
+            AgentConfigurationAssembler().create(openai=openai_config, agent=agent_settings)
+
+    def test_assembler_injects_claim_version_into_two_layer_agent_config(self) -> None:
+        from backend.services.agent_configuration import AgentConfigurationAssembler
+        from core.config import (
+            AgentSettings,
+            EmbeddingSettings,
+            LlmChatSettings,
+            LocalChatSettings,
+            RagRetrievalSettings,
+        )
+        from core.config import (
+            EmbeddingProvider as CoreEmbeddingProvider,
+        )
+        from core.config import LlmProvider as CoreLlmProvider
+
+        config = AgentConfigurationAssembler().create(
+            openai=None,
+            agent=AgentSettings(
+                chat=LlmChatSettings(
+                    provider=CoreLlmProvider.OLLAMA,
+                    local=LocalChatSettings(model="qwen 3.5:9B"),
+                ),
+                embedding=EmbeddingSettings(provider=CoreEmbeddingProvider.LOCAL),
+                retrieval=RagRetrievalSettings(
+                    claim_annotation_version="fixture-claim-v1",
+                    free_text_min_vector_similarity=0.45,
+                ),
+            ),
+        )
+
+        assert config.claim_annotation_version == "fixture-claim-v1"
+        assert config.embedding.output_dimensions() == 1024
+
+    def test_assembler_rejects_missing_claim_annotation_version(self) -> None:
+        from backend.services.agent_configuration import AgentConfigurationAssembler
+        from core.config import (
+            AgentSettings,
+            EmbeddingSettings,
+            LlmChatSettings,
+            RagRetrievalSettings,
+        )
+        from core.config import (
+            EmbeddingProvider as CoreEmbeddingProvider,
+        )
+        from core.config import LlmProvider as CoreLlmProvider
+
+        agent_settings = AgentSettings(
+            chat=LlmChatSettings(provider=CoreLlmProvider.OLLAMA),
+            embedding=EmbeddingSettings(provider=CoreEmbeddingProvider.LOCAL),
             retrieval=RagRetrievalSettings(free_text_min_vector_similarity=0.45),
         )
-        with pytest.raises(ValidationError, match="BGE-M3"):
-            AgentConfigurationAssembler().create(openai=openai_config, agent=agent_settings)
+
+        with pytest.raises(RuntimeError, match="claim_annotation_version"):
+            AgentConfigurationAssembler().create(openai=None, agent=agent_settings)
 
