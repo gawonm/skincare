@@ -77,5 +77,4 @@ models_cache/
 !docs/
 !docs/**
 
-skincare_data.dump
-skincare_integration_smoke_d4.dump
+skincare_latest_2026-09-17.dump
