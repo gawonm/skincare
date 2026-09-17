@@ -282,6 +282,11 @@ class ClaimEvidenceVerifier:
 EvidenceSearchRequest(
     query=claim.verification_query(),
     target_ids=claim.matched_ingredient_ids(),
+    combination_target_ids=(
+        claim.matched_ingredient_ids()
+        if len(claim.matched_ingredient_ids()) > 1
+        else []
+    ),
 )
 ```
 
@@ -292,6 +297,11 @@ EvidenceSearchRequest(
 Claim 종류별로 검증 가능한 문장을 만드는 책임은 클래스 메서드로 둔다. 단순
 `display_text()`와 검증용 질문 생성은 목적이 다르므로 분리한다.
 
+복합 성분 Claim은 조합 전체를 직접 다루는 `combination` 결과와, 전체 대상 성분 ID를 포함하는
+검증된 Evidence가 있을 때만 `SUPPORTED`로 판정한다. 각 성분의 단독 `per_target` Evidence가
+모두 존재해도 조합 효능·안전성 근거로 확대하지 않는다. 조합 근거가 없으면 `INSUFFICIENT`로
+유지하되 해당 성분은 `CLAIM_ONLY` 상품 후보로 남길 수 있다.
+
 ## 10. Evidence 결과 처리표
 
 | Evidence 처리 결과 | 추천 근거 | 상품 포함 | 응답 상태 |
@@ -300,10 +310,10 @@ Claim 종류별로 검증 가능한 문장을 만드는 책임은 클래스 메�
 | 정상 검색했으나 결과 없음 | `CLAIM_ONLY` | 포함 | `PARTIAL` |
 | 관련 축을 뒷받침하지 못함 | `CLAIM_ONLY` | 포함 | `PARTIAL` |
 | 미검수 자료만 존재 | `CLAIM_ONLY` | 포함 | `PARTIAL` |
-| 명시적 상반 근거 | 미정 | 미정 | 미정 |
+| 명시적 상반 근거 | 추천 제외 | 제외 | `PARTIAL` |
 | 규제 금지·명시적 안전 위험 | 제외 권장 | 제외 권장 | `PARTIAL` 또는 오류 |
-| 검색 기능이 조건을 지원하지 않음 | 미정 | 미정 | `UNSUPPORTED_CONDITION` |
-| Evidence 도구 오류 | 미정 | 미정 | `TOOL_FAILED` |
+| 검색 기능이 조건을 지원하지 않음 | 보류 | 제외 | `UNSUPPORTED_CONDITION` |
+| Evidence 도구 오류 | 보류 | 제외 | `TOOL_FAILED` |
 
 정상적인 `NO_RESULTS`와 도구 `ERROR`를 같은 상태로 처리하지 않는다.
 
@@ -367,6 +377,8 @@ Claim 종류별로 검증 가능한 문장을 만드는 책임은 클래스 메�
 - `CLAIM_ONLY`에는 Evidence Citation이 생기지 않는다.
 - Evidence 없음이 `CONTRADICTED`로 변환되지 않는다.
 - Claim 검색 `UNSUPPORTED`의 원인 메시지가 보존된다.
+- 복합 Claim은 개별 성분 Evidence만으로 `SUPPORTED`가 되지 않는다.
+- 복합 Claim Citation은 전체 대상 성분을 포함하는 실제 검색 Evidence만 사용한다.
 
 ### Product
 
@@ -469,10 +481,10 @@ Claim 종류별로 검증 가능한 문장을 만드는 책임은 클래스 메�
 | P1. 정책 결정 | `VERIFIED` | 16절의 5개 항목 사용자 확인 | `LOG-006` |
 | P2. 라우팅 리팩터링 | `VERIFIED` | LLM 경로 누락 시 우회 방지 테스트 통과 | `LOG-006`, `LOG-007` |
 | P3. Claim별 Evidence 확인 | `VERIFIED` | Claim별 상태와 Evidence ID 연결 테스트 통과 | `LOG-007`, `LOG-008` |
-| P4. 추천 후보 분류 | `IN_PROGRESS` | Evidence-supported와 Claim-only 모두 상품 후보 포함 | `LOG-008` |
-| P5. LangGraph·응답 정리 | `PLANNED` | 노드 책임 및 근거별 표현·Citation 분리 | — |
-| P6. 회귀 검증 | `PLANNED` | Agent/전체 테스트, Ruff, diff 검사 통과 | — |
-| P7. 문서 마감 | `PLANNED` | README·변경점·누적 일지와 실제 코드 일치 | — |
+| P4. 추천 후보 분류 | `VERIFIED` | Evidence-supported와 Claim-only 모두 상품 후보 포함 | `LOG-008`, `LOG-009` |
+| P5. LangGraph·응답 정리 | `VERIFIED` | 노드 책임 및 근거별 표현·Citation 분리 | `LOG-009` |
+| P6. 회귀 검증 | `VERIFIED` | Agent/전체 테스트, Ruff, diff 검사 통과 | `LOG-009` |
+| P7. 문서 마감 | `VERIFIED` | README·변경점·누적 일지와 실제 코드 일치 | `LOG-009` |
 
 단계 상태를 바꿀 때는 표만 수정하지 않고 그 근거가 되는 작업 일지 ID를 함께 연결한다.
 
@@ -501,6 +513,8 @@ Claim 종류별로 검증 가능한 문장을 만드는 책임은 클래스 메�
 | `DEC-019` | `SUPERSEDED` | Product 통합 smoke test에 사용할 상품-성분 mapping 공급 방식 | 후속 product smoke dump가 제공되어 `DEC-020`으로 대체됐다. |
 | `DEC-020` | 확정 | Product 통합 smoke test에는 `skincare_nia_evidence_product_smoke_2026-09-17.dump`를 사용한다. | 상품 snapshot과 성분 mapping이 포함되어 있다. |
 | `DEC-021` | 확정 | 상품 추천에는 `product_ingredient.match_acceptance=confirmed`인 매핑만 사용한다. | `needs_review`와 `unmatched`를 확정 성분처럼 사용하지 않는다. |
+| `DEC-022` | 확정 | 복합 성분 Claim은 조합 전체를 직접 검증한 Evidence가 있을 때만 `SUPPORTED`로 판정한다. | 개별 성분 Evidence를 조합 효능·안전성 근거로 확대하지 않는다. |
+| `DEC-023` | 확정 | 기존 후보 번호를 참조하는 상품 요청은 Claim RAG가 아니라 Product 경로로 처리한다. | 저장된 상품 조건과 폐기된 분류 코드를 재검증하고 불필요한 Claim 검색을 막는다. |
 
 결정이 바뀌면 같은 ID의 내용을 덮어쓰지 않고 새 결정 ID를 추가하고, 이전 ID는
 `SUPERSEDED`로 표시한다.
@@ -962,3 +976,54 @@ Claim→Ingredient→Product 커버리지는 다음과 같다.
 - 다음 작업:
   - `VERIFY_CLAIMS`, `BUILD_RECOMMENDATION_CANDIDATES` 노드를 LangGraph에 연결
   - 추천 성분별 Product RDB 조회와 근거 등급별 정렬·중복 제거 구현
+
+### LOG-009 — 2026-09-17 — LangGraph 통합·복합 Claim 방어·상품 병합 검증
+
+- 브랜치: `feature/agent-two-layer-rag-main`
+- 단계: P4. 추천 후보 분류, P5. LangGraph·응답 정리, P6. 회귀 검증, P7. 문서 마감
+- 상태: `VERIFIED`
+- 주요 변경 파일:
+  - `agent/graph.py`
+  - `agent/rag_workflow.py`
+  - `agent/claim_verification.py`
+  - `agent/nodes.py`
+  - `agent/rag_response.py`
+  - `agent/rag_route_policy.py`
+  - `agent/schemas.py`
+  - `agent/rag/claim_schemas.py`
+  - `tests/agent/test_claim_verification.py`
+  - `tests/agent/test_two_layer_rag.py`
+- 작업 내용:
+  - `VERIFY_CLAIMS`, `BUILD_RECOMMENDATION_CANDIDATES`를 Claim RAG LangGraph 경로에 연결했다.
+  - Claim별 Evidence 판정 결과를 `EVIDENCE_SUPPORTED`와 `CLAIM_ONLY` 추천 성분으로 변환했다.
+  - 두 근거 등급의 성분을 모두 Product RDB에서 조회하고, `product_id` 기준으로 병합한 뒤
+    Evidence-supported 상품을 먼저 표시하도록 했다.
+  - Claim-only 상품에는 공인 근거 부족 한계를 표시하고 Citation을 생성하지 않도록 했다.
+  - 복합 Claim은 조합 전체 Evidence가 있을 때만 `SUPPORTED`가 되도록 개별 성분 Evidence의
+    조합 승격 fallback을 제거했다.
+  - 동일 상품이 Evidence-supported와 Claim-only 성분 양쪽에서 반환되거나 여러 Claim-only
+    성분에서 반복 반환되는 시나리오를 추가했고, 현행 병합 로직이 기대 정책과 일치함을 확인했다.
+  - 후보 번호를 참조한 후속 상품 요청이 근거 없는 Claim 검색으로 들어가지 않고 기존 상품 조건을
+    Product 경로에서 재검증하도록 라우팅 조건을 보완했다.
+- 작업 이유:
+  - Evidence 부재가 Claim 기반 탐색 상품의 자동 제외로 이어지지 않게 하면서도 두 레이어의
+    신뢰도와 Citation을 분리하기 위해서다.
+  - 단독 성분 근거를 조합 효과나 병용 안전성 근거로 과도하게 확대하지 않기 위해서다.
+  - 여러 성분에 걸친 동일 상품이 중복 표시되거나 더 강한 근거 등급이 유실되지 않게 하기 위해서다.
+- 검증:
+  - 수정 전 기준선: 대상 테스트 14개 통과
+  - 복합 Claim 결함 재현: 개별 Evidence만 있는 조합 Claim 테스트 1개 실패 확인 후 수정
+  - `uv run pytest tests/agent/test_claim_verification.py -q`: 10개 통과
+  - `uv run pytest tests/agent/test_two_layer_rag.py -q`: 10개 통과
+  - `uv run pytest tests/agent/test_agent_product_contract.py tests/agent/test_two_layer_rag.py -q`:
+    20개 통과
+  - `uv run pytest tests/agent -q`: 116개 통과
+  - `uv run pytest tests -q`: 186개 통과
+  - `uv run ruff check agent tests/agent`: 통과
+  - `git diff --check`: 통과. Windows 줄바꿈 변환 경고만 있으며 공백 오류는 없음
+- 상품 병합 구현 변경: 없음. 추가한 회귀 테스트에서 기존 `product_id` 병합 로직이 정책과
+  일치함을 확인했다.
+- 다음 작업:
+  - 현재 변경을 의미 단위의 Agent 커밋으로 정리
+  - 최신 `origin/main` 반영 여부를 확인한 뒤 브랜치 push 및 PR 준비
+  - 도구 호출 예산·성분별 Evidence 배치 정책은 별도 후속 계획으로 분리

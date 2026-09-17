@@ -135,15 +135,16 @@ main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거
 ## 검증과 완료 범위
 
 ```sh
-.venv/bin/python -m pytest tests -q -p no:cacheprovider
-.venv/bin/python -m agent.demo
+uv run pytest tests/agent -q
+uv run pytest tests -q
+uv run python -m agent.demo
 ```
 
-2026-09-17 Agent 및 관련 RAG 테스트 121개 통과를 확인했다. DB 없는 대화 흐름·방 격리·
+2026-09-17 Agent 테스트 116개와 프로젝트 전체 테스트 186개 통과를 확인했다. DB 없는 대화 흐름·방 격리·
 후보 참조·실패 복구·데이터
 DTO 변환 외에도 신규 분류,
 제형·사용감 분리, 폐기된 코드 차단, 조건 누락 후보 제외, 실제 상품 표시, 청킹→검색 통합→
-인용·조건 검증과 Claim→Evidence 라우팅을 검사한다. 실제 Claim DB 검색, 운영 BGE-M3 모델 로딩,
+인용·조건 검증, Claim→Evidence 라우팅, 복합 Claim 방어와 동일 상품 병합을 검사한다. 실제 Claim DB 검색, 운영 BGE-M3 모델 로딩,
 임베딩 API, 운영 연결의 검증은 아니다.
 
 동적 분류 방향은 사용자 선택으로 반영했다. 운영용 분류 코드·지원 목록의 공급,
@@ -154,6 +155,7 @@ DTO 변환 외에도 신규 분류,
 ## 관련 문서
 
 - [2-Layer RAG Agent 리팩터링 작업계획](TWO_LAYER_RAG_REFACTOR_PLAN.md)
+- [2-Layer RAG Agent 후속 보완 작업계획](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
 - [2-Layer RAG Agent — main 대비 변경점](TWO_LAYER_RAG_MAIN_DIFF.md)
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
 - [현재 구조·연결 계약 검토](AGENT_INTEGRATION_REVIEW.md)
