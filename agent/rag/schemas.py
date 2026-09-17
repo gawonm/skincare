@@ -3,7 +3,15 @@
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    FiniteFloat,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_ROUTINE_FREQUENCY = 2
@@ -27,6 +35,86 @@ class LookupStatus(StrEnum):
     NO_RESULTS = "no_results"
     UNSUPPORTED = "unsupported"
     ERROR = "error"
+
+
+class EvidenceQueryOrigin(StrEnum):
+    CLAIM_HIT = "claim_hit"
+    DIRECT_QUERY = "direct_query"
+
+
+class IngredientScope(StrEnum):
+    SINGLE = "single"
+    MULTI = "multi"
+
+
+class IngredientMatchMode(StrEnum):
+    ANY = "any"
+    ALL = "all"
+
+
+class EvidenceClaimTopic(StrEnum):
+    EFFICACY = "efficacy"
+    PRECAUTION = "precaution"
+    CONCENTRATION_REGULATION = "concentration_regulation"
+    USAGE_INSTRUCTION = "usage_instruction"
+    COMBINATION = "combination"
+
+
+class EvidenceQueryAnchor(RagModel):
+    """Claim 또는 직접 질의를 Evidence 검색 조건으로 고정한 비영속 계약."""
+
+    anchor_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    origin: EvidenceQueryOrigin
+    origin_ref: str | None = Field(default=None, min_length=1)
+    ingredient_scope: IngredientScope
+    ingredient_refs: list[str] = Field(min_length=1)
+    ingredient_match_mode: IngredientMatchMode | None = None
+    claim_topic: EvidenceClaimTopic
+    query_text: str = Field(min_length=1)
+    query_terms: list[str] = Field(default_factory=list)
+    limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
+
+    @field_validator("query_text")
+    @classmethod
+    def validate_query_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Evidence 질의문은 공백일 수 없습니다.")
+        return normalized
+
+    @field_validator("query_terms")
+    @classmethod
+    def normalize_query_terms(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+    @field_validator("ingredient_refs")
+    @classmethod
+    def validate_ingredient_refs(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip() for value in values]
+        if any(not value for value in normalized):
+            raise ValueError("Evidence 성분 참조는 공백일 수 없습니다.")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("Evidence 성분 참조가 중복되었습니다.")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_origin_and_scope(self) -> Self:
+        if self.origin is EvidenceQueryOrigin.CLAIM_HIT and self.origin_ref is None:
+            raise ValueError("Claim 유래 Evidence 질의에는 origin_ref가 필수입니다.")
+        if self.origin is EvidenceQueryOrigin.DIRECT_QUERY and self.origin_ref is not None:
+            raise ValueError("직접 Evidence 질의의 origin_ref는 반드시 None이어야 합니다.")
+        if self.ingredient_scope is IngredientScope.SINGLE:
+            if len(self.ingredient_refs) != 1:
+                raise ValueError("단일 성분 범위에는 성분 참조가 정확히 1개 필요합니다.")
+            if self.ingredient_match_mode is not None:
+                raise ValueError("단일 성분 범위의 match mode는 반드시 None이어야 합니다.")
+            return self
+        if len(self.ingredient_refs) < 2:
+            raise ValueError("다중 성분 범위에는 성분 참조가 2개 이상 필요합니다.")
+        if self.ingredient_match_mode is None:
+            raise ValueError("다중 성분 범위에는 ingredient_match_mode가 필수입니다.")
+        return self
 
 
 class ProductClassification(RagModel):
@@ -485,29 +573,29 @@ class LocalRerankerConfig(RagModel):
     local_files_only: bool = False
 
 
-class GeneratedClaim(RagModel):
+class GeneratedEvidenceStatement(RagModel):
     sentence: str = Field(min_length=1)
     evidence_ids: list[str] = Field(min_length=1)
 
 
-class GeneratedClaims(RagModel):
-    claims: list[GeneratedClaim] = Field(default_factory=list)
+class GeneratedEvidenceStatements(RagModel):
+    claims: list[GeneratedEvidenceStatement] = Field(default_factory=list)
 
 
-class ClaimGenerationRequest(RagModel):
+class EvidenceStatementGenerationRequest(RagModel):
     question: str = Field(min_length=1)
     records: list[EvidenceRecord] = Field(min_length=1)
     known_conditions: EvidenceConditions
     is_combination: bool = False
 
 
-class AnsweredClaim(RagModel):
+class EvidenceBackedStatement(RagModel):
     sentence: str = Field(min_length=1)
     sources: list[EvidenceRecord] = Field(min_length=1)
 
 
 class IngredientVerificationResult(RagModel):
-    claims: list[AnsweredClaim] = Field(default_factory=list)
+    claims: list[EvidenceBackedStatement] = Field(default_factory=list)
     unverifiable_reason: UnverifiableReason | None = None
 
     @property

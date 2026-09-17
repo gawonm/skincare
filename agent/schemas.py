@@ -7,8 +7,14 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent.rag.claim_schemas import (
+    ClaimBundle,
+    ClaimVerificationBundle,
+    IngredientRecommendationSet,
+)
 from agent.rag.schemas import (
     ApplicabilityAssessment,
+    EvidenceBundle,
     EvidenceConditions,
     EvidenceRecord,
     EvidenceScope,
@@ -58,6 +64,13 @@ class Intent(StrEnum):
     OUT_OF_SCOPE = "out_of_scope"
     CLARIFICATION = "clarification"
     ROUTINE_SAVE = "routine_save"
+
+
+class RagRoute(StrEnum):
+    """성분이 확정된 질문과 고민 기반 탐색을 서로 다른 RAG 경로로 보낸다."""
+
+    EVIDENCE_ONLY = "evidence_only"
+    CLAIM_THEN_EVIDENCE = "claim_then_evidence"
 
 
 class ChatStatus(StrEnum):
@@ -121,10 +134,18 @@ class SummarySaveStatus(StrEnum):
 class GraphNode(StrEnum):
     PREPARE_TURN = "prepare_turn"
     UNDERSTAND_REQUEST = "understand_request"
+    DECIDE_RAG_ROUTE = "decide_rag_route"
     RESOLVE_ENTITIES = "resolve_entities"
     ASSESS_INFORMATION = "assess_information"
     ASK_USER = "ask_user"
     ROUTE_TASK = "route_task"
+    ROUTE_RAG = "route_rag"
+    SEARCH_CLAIMS = "search_claims"
+    RESOLVE_CLAIM_INGREDIENTS = "resolve_claim_ingredients"
+    VERIFY_CLAIMS = "verify_claims"
+    BUILD_RECOMMENDATION_CANDIDATES = "build_recommendation_candidates"
+    SEARCH_EVIDENCE = "search_evidence"
+    ASSEMBLE_RAG_RESPONSE = "assemble_rag_response"
     PROCESS_TASK = "process_task"
     VALIDATE_RESULT = "validate_result"
     REVISE_RESULT = "revise_result"
@@ -138,6 +159,7 @@ class InformationRoute(StrEnum):
 
 class TaskRoute(StrEnum):
     PROCESS_TASK = "process_task"
+    ROUTE_RAG = "route_rag"
     VALIDATE_RESULT = "validate_result"
 
 
@@ -196,7 +218,9 @@ class ParsedRequest(AgentModel):
     is_modification: bool = False
     pending_answer: bool = False
     ingredient_mentions: list[str] = Field(default_factory=list)
+    skin_concerns: list[str] = Field(default_factory=list)
     known_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions)
+    rag_route: RagRoute | None = None
 
 
 class TaskContext(AgentModel):
@@ -476,6 +500,11 @@ class AgentState(AgentModel):
 
     parsed_request: ParsedRequest | None = None
     resolved_entities: ResolvedEntities = Field(default_factory=ResolvedEntities)
+    rag_route: RagRoute | None = None
+    claim_bundle: ClaimBundle | None = None
+    claim_verification_bundle: ClaimVerificationBundle | None = None
+    recommendation_ingredients: IngredientRecommendationSet | None = None
+    evidence_bundle: EvidenceBundle | None = None
     task_queue: list[Intent] = Field(default_factory=list)
     current_intent: Intent | None = None
     artifacts: list[Artifact] = Field(default_factory=list)

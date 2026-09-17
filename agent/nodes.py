@@ -1,21 +1,20 @@
 """LangGraph 각 단계의 상태 전이를 구현한다."""
 
 from datetime import UTC, datetime
-from uuid import NAMESPACE_URL, uuid5
 
 from agent.context import ContextBuilder
 from agent.evidence_query_policy import EvidenceQueryPolicy
 from agent.ports import IngredientRepository, LlmClient, ProductRepository, RoutinePlanner
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
-from agent.rag.pipeline import EvidencePipeline
+from agent.rag.claim_schemas import (
+    IngredientRecommendationCandidate,
+    RecommendationBasis,
+    RecommendationProductMatch,
+)
 from agent.rag.retrieval.ingredient_alias_mapper import CommonIngredientAliasMapper
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.schemas import (
-    ApplicabilityStatus,
-    EvidenceBundle,
     EvidenceConditions,
-    EvidenceRecord,
-    EvidenceSearchRequest,
     IngredientResolveRequest,
     LookupStatus,
     ProductCandidate,
@@ -28,25 +27,22 @@ from agent.rag.schemas import (
     RoutinePlan,
     RoutinePlanRequest,
     RoutineValidationRequest,
-    UnverifiableReason,
     Weekday,
 )
+from agent.rag_route_policy import RagRoutePolicy
+from agent.runtime import AgentRuntime
 from agent.schemas import (
     AgentState,
     ChatMessage,
     ChatStatus,
     ChatTurnInput,
     ChatTurnOutput,
-    Citation,
-    ErrorCode,
-    EvidenceAnswer,
-    ExecutionEvent,
-    ExecutionEventKind,
     GraphNode,
     Intent,
     MessageRole,
     ParsedRequest,
     PendingQuestion,
+    RagRoute,
     ResolvedEntities,
     RoutineSaveHandoff,
     SessionSnapshot,
@@ -56,6 +52,7 @@ from agent.schemas import (
     UnresolvedKind,
     ValueOrigin,
 )
+from agent.task_planning import TaskPlanBuilder
 
 DEMO_RESULT_NOTICE = "개발용 fixture 결과이며 실제 제품·임상 검증 결과가 아닙니다."
 PRODUCT_TARGET_QUESTION = "루틴에 사용할 제품명을 알려주세요."
@@ -65,7 +62,8 @@ CANDIDATE_REFERENCE_QUESTION = (
 )
 ROUTINE_REFERENCE_QUESTION = "참조한 루틴 버전을 현재 방에서 찾을 수 없습니다. 다시 선택해 주세요."
 NO_RESULT_MESSAGE = "현재 상품 데이터에서 조건을 만족하는 제품을 찾지 못했습니다."
-NO_EVIDENCE_MESSAGE = "현재 연결된 검색 자료에서 관련 근거를 찾지 못했습니다."
+EVIDENCE_PRODUCT_LIMITATION = "성분 근거이며 완제품 자체의 임상 효과를 입증하지 않습니다."
+CLAIM_ONLY_PRODUCT_LIMITATION = "현재 연결된 공인 근거로 Claim을 충분히 확인하지 못했습니다."
 
 
 class AgentNodes:
@@ -78,23 +76,28 @@ class AgentNodes:
         llm: LlmClient,
         product_repository: ProductRepository,
         ingredient_repository: IngredientRepository,
-        evidence_pipeline: EvidencePipeline,
         routine_planner: RoutinePlanner,
         context_builder: ContextBuilder,
         prompt_catalog: PromptCatalog,
         product_taxonomy: ProductTaxonomy,
+        runtime: AgentRuntime,
+        task_plan: TaskPlanBuilder,
+        rag_route_policy: RagRoutePolicy,
+        evidence_query_policy: EvidenceQueryPolicy,
     ) -> None:
         self._llm = llm
         self._product_repository = product_repository
         self._ingredient_repository = ingredient_repository
-        self._evidence_pipeline = evidence_pipeline
         self._routine_planner = routine_planner
         self._context_builder = context_builder
         self._prompt_catalog = prompt_catalog
         self._product_taxonomy = product_taxonomy.model_copy(deep=True)
         self._product_filters = ProductFilterValidator(self._product_taxonomy)
         self._ingredient_aliases = CommonIngredientAliasMapper()
-        self._evidence_query_policy = EvidenceQueryPolicy()
+        self._runtime = runtime
+        self._task_plan = task_plan
+        self._rag_route_policy = rag_route_policy
+        self._evidence_query_policy = evidence_query_policy
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
         self._require_turn_fields(state)
@@ -118,6 +121,11 @@ class AgentNodes:
 
         state.parsed_request = None
         state.resolved_entities = ResolvedEntities()
+        state.rag_route = None
+        state.claim_bundle = None
+        state.claim_verification_bundle = None
+        state.recommendation_ingredients = None
+        state.evidence_bundle = None
         state.task_queue = []
         state.current_intent = None
         state.artifacts = []
@@ -176,6 +184,7 @@ class AgentNodes:
                 update={
                     "query": original.query + "\n" + parsed.query,
                     "intents": original.intents,
+                    "rag_route": original.rag_route or parsed.rag_route,
                     "category": parsed.category or original.category,
                     "texture": parsed.texture or original.texture,
                     "skin_feel": parsed.skin_feel or original.skin_feel,
@@ -247,8 +256,27 @@ class AgentNodes:
             for experience in state.parsed_request.reported_experiences
             if experience not in known_experiences
         )
-        state.task_queue = list(state.parsed_request.intents)
         self._record_event(state, GraphNode.UNDERSTAND_REQUEST, "목적과 조건을 추출했습니다.")
+        return state
+
+    async def decide_rag_route(self, state: AgentState) -> AgentState:
+        parsed = self._require_parsed(state)
+        decision = self._rag_route_policy.decide(parsed)
+        state.parsed_request = parsed.model_copy(
+            deep=True,
+            update={
+                "intents": decision.normalized_intents,
+                "rag_route": decision.route,
+                "skin_concerns": decision.normalized_skin_concerns or parsed.skin_concerns,
+            },
+        )
+        state.rag_route = decision.route
+        state.task_queue = self._task_plan.build(state.parsed_request)
+        self._record_event(
+            state,
+            GraphNode.DECIDE_RAG_ROUTE,
+            f"RAG 경로를 규칙으로 확정했습니다: {decision.reason.value}",
+        )
         return state
 
     async def resolve_entities(self, state: AgentState) -> AgentState:
@@ -267,7 +295,14 @@ class AgentNodes:
             return state
 
         unresolved_names: list[str] = []
-        for mention in parsed.ingredient_mentions or [parsed.query]:
+        # 상품 필터 문장 전체를 성분명으로 조회하면 DB 결과에 따라 우연히 성분이 붙을 수 있으므로,
+        # Evidence 직행 질문에서만 원문을 보수적인 해석 후보로 사용한다.
+        fallback_mentions = (
+            [parsed.query]
+            if not parsed.ingredient_mentions and parsed.rag_route is RagRoute.EVIDENCE_ONLY
+            else []
+        )
+        for mention in parsed.ingredient_mentions or fallback_mentions:
             if not self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):
                 break
             ingredient_result = await self._ingredient_repository.resolve(
@@ -304,82 +339,23 @@ class AgentNodes:
             Intent.EVIDENCE_QA in parsed.intents
             and ("제품" in parsed.query or parsed.category is not None)
         )
+        defer_product_search = (
+            parsed.rag_route is RagRoute.CLAIM_THEN_EVIDENCE
+            and Intent.PRODUCT_DISCOVERY in parsed.intents
+        )
         if (
             needs_products
+            and not defer_product_search
             and not unresolved_names
             and not parsed.unsupported_product_conditions
-            and self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES)
         ):
-            effective_category = parsed.category
-            if effective_category is None and parsed.referenced_candidate_number is not None:
-                referenced = self._candidate_by_rank(
-                    state,
-                    parsed.referenced_candidate_number,
-                )
-                effective_category = referenced.product.category if referenced else None
-            reference_filters = self._product_filters.normalize(
-                ProductSearchFilters(
-                    category=effective_category, texture=parsed.texture, skin_feel=parsed.skin_feel
-                )
+            product_entities = await self._search_products(
+                state,
+                ingredient_ids,
+                GraphNode.RESOLVE_ENTITIES,
             )
-            if reference_filters.unsupported_conditions:
-                # 이전 후보에서 가져온 분류도 현재 목록에서 폐기되었을 수 있다.
-                parsed.unsupported_product_conditions.extend(
-                    reference_filters.unsupported_conditions
-                )
-                state.resolved_entities = ResolvedEntities(
-                    ingredient_ids=list(dict.fromkeys(ingredient_ids)),
-                    unresolved_names=unresolved_names,
-                )
-                return state
-            effective_category = reference_filters.filters.category
-            if Intent.PRODUCT_DISCOVERY in parsed.intents:
-                previous_ids = state.task_context.search_filters.ingredient_ids
-                if not ingredient_ids and (parsed.is_modification or parsed.pending_answer):
-                    ingredient_ids = list(previous_ids)
-                state.task_context.search_filters = ProductSearchFilters(
-                    category=effective_category,
-                    texture=parsed.texture,
-                    skin_feel=parsed.skin_feel,
-                    ingredient_ids=ingredient_ids,
-                )
-            product_result = await self._product_repository.search(
-                ProductSearchRequest(
-                    query=parsed.query,
-                    allow_discovery=Intent.PRODUCT_DISCOVERY in parsed.intents,
-                    filters=ProductSearchFilters(
-                        category=effective_category,
-                        texture=parsed.texture,
-                        skin_feel=parsed.skin_feel,
-                        ingredient_ids=ingredient_ids,
-                    ),
-                )
-            )
-            if product_result.status is LookupStatus.ERROR:
-                self._add_tool_failure(state, product_result.error_message)
-            elif product_result.status is LookupStatus.UNSUPPORTED:
-                state.status = ChatStatus.PARTIAL
-                state.unresolved.extend(
-                    UnresolvedItem(
-                        kind=UnresolvedKind.UNSUPPORTED_CONDITION,
-                        detail=condition,
-                    )
-                    for condition in product_result.unsupported_conditions
-                    or [
-                        product_result.error_message
-                        or "현재 상품 조회기가 이 조건을 지원하지 않습니다."
-                    ]
-                )
-            # 실패·미지원 응답의 후보를 성공 결과로 섞지 않는다.
-            products = (
-                product_result.products if product_result.status is LookupStatus.SUCCESS else []
-            )
-            if Intent.PRODUCT_DISCOVERY in parsed.intents:
-                products = [
-                    product
-                    for product in products
-                    if self._product_filters.matches(product, state.task_context.search_filters)
-                ]
+            products = product_entities.products
+            ingredient_ids = product_entities.ingredient_ids
 
         state.resolved_entities = ResolvedEntities(
             products=products,
@@ -436,7 +412,12 @@ class AgentNodes:
                 and parsed.referenced_candidate_number not in parsed.rejected_candidate_numbers
             )
             has_current_routine = state.routine is not None
-            if not has_products and not has_reference and not has_current_routine:
+            if (
+                not has_products
+                and not has_reference
+                and not has_current_routine
+                and parsed.rag_route is not RagRoute.CLAIM_THEN_EVIDENCE
+            ):
                 question = PRODUCT_TARGET_QUESTION
                 target_field = "routine_products"
                 reason = "제품이 식별되지 않으면 제품별 사용 계획을 만들 수 없습니다."
@@ -496,8 +477,6 @@ class AgentNodes:
             await self._process_product_discovery(state)
         elif intent is Intent.ROUTINE_PLANNING:
             await self._process_routine(state)
-        elif intent is Intent.EVIDENCE_QA:
-            await self._process_evidence(state)
         elif intent is Intent.GENERAL_CHAT:
             state.response_parts.append(
                 "현재 결과를 유지합니다. 성분 확인·상품 검색·루틴 구성을 도와드릴 수 있어요."
@@ -630,11 +609,24 @@ class AgentNodes:
         state.task_context.rejected_product_ids = list(
             dict.fromkeys(state.task_context.rejected_product_ids + list(rejected_product_ids))
         )
+        recommendation_matches: list[RecommendationProductMatch] = []
+        if parsed.rag_route is RagRoute.CLAIM_THEN_EVIDENCE:
+            recommendation_matches = await self._search_recommendation_products(state)
+            products = [match.product for match in recommendation_matches]
+        else:
+            products = list(state.resolved_entities.products)
         products = [
             product
-            for product in state.resolved_entities.products
+            for product in products
             if product.product_id not in state.task_context.rejected_product_ids
         ]
+        if recommendation_matches:
+            allowed_product_ids = {product.product_id for product in products}
+            recommendation_matches = [
+                match
+                for match in recommendation_matches
+                if match.product.product_id in allowed_product_ids
+            ]
         if not products:
             state.status = ChatStatus.PARTIAL
             state.unresolved.append(
@@ -643,19 +635,33 @@ class AgentNodes:
             state.response_parts.append(NO_RESULT_MESSAGE)
             return
 
-        candidates = [
-            ProductCandidate(
-                rank=rank,
-                product=product,
-                reasons=self._candidate_reasons(state.task_context.search_filters),
-                unresolved=(
-                    ["개발용 상품 데이터이며 실제 제품 검증 결과가 아님"] if product.is_demo else []
-                )
-                + (["제품 사용법 미상"] if product.directions is None else [])
-                + (["제품 버전 미상"] if product.version is None else []),
+        if recommendation_matches:
+            state.resolved_entities = state.resolved_entities.model_copy(
+                deep=True,
+                update={
+                    "products": products,
+                    "ingredient_ids": [
+                        candidate.ingredient_id
+                        for candidate in (state.recommendation_ingredients.candidates)
+                    ]
+                    if state.recommendation_ingredients is not None
+                    else [],
+                },
             )
-            for rank, product in enumerate(products, start=1)
-        ]
+
+        candidates = (
+            self._recommendation_product_candidates(state, recommendation_matches)
+            if recommendation_matches
+            else [
+                ProductCandidate(
+                    rank=rank,
+                    product=product,
+                    reasons=self._candidate_reasons(state.task_context.search_filters),
+                    unresolved=self._product_limitations(product),
+                )
+                for rank, product in enumerate(products, start=1)
+            ]
+        )
         candidate_set = ProductCandidateSet(
             candidate_set_id=self._stable_id(state, "candidates"),
             candidates=candidates,
@@ -663,9 +669,240 @@ class AgentNodes:
         )
         state.candidate_set = candidate_set
         state.artifacts.append(candidate_set)
-        lines = [f"{candidate.rank}번. {candidate.product.name}" for candidate in candidates]
-        title = "개발용 제품 후보:" if candidate_set.is_demo else "조건에 맞는 제품 후보:"
-        state.response_parts.append(title + "\n" + "\n".join(lines))
+        if recommendation_matches:
+            self._append_recommendation_product_message(state, candidates, recommendation_matches)
+        else:
+            lines = [f"{candidate.rank}번. {candidate.product.name}" for candidate in candidates]
+            title = "개발용 제품 후보:" if candidate_set.is_demo else "조건에 맞는 제품 후보:"
+            state.response_parts.append(title + "\n" + "\n".join(lines))
+
+    async def _search_recommendation_products(
+        self,
+        state: AgentState,
+    ) -> list[RecommendationProductMatch]:
+        recommendation_set = state.recommendation_ingredients
+        if recommendation_set is None:
+            return []
+        matches: dict[str, RecommendationProductMatch] = {}
+        ingredient_ids = [candidate.ingredient_id for candidate in recommendation_set.candidates]
+        for candidate in recommendation_set.candidates:
+            unresolved_count = len(state.unresolved)
+            previous_error_code = state.error_code
+            entities = await self._search_products(
+                state,
+                [candidate.ingredient_id],
+                GraphNode.PROCESS_TASK,
+            )
+            if not entities.products:
+                if (
+                    len(state.unresolved) == unresolved_count
+                    and state.error_code is previous_error_code
+                ):
+                    state.status = ChatStatus.PARTIAL
+                    detail = (
+                        "추천 성분과 연결된 상품을 찾지 못했습니다: "
+                        f"{candidate.ingredient_id}"
+                    )
+                    state.unresolved.append(
+                        UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=detail)
+                    )
+                continue
+            for product in entities.products:
+                matches[product.product_id] = self._merge_recommendation_product(
+                    matches.get(product.product_id),
+                    product,
+                    candidate,
+                )
+        state.task_context.search_filters = state.task_context.search_filters.model_copy(
+            deep=True,
+            update={"ingredient_ids": ingredient_ids},
+        )
+        return sorted(
+            matches.values(),
+            key=lambda match: (
+                0 if match.basis() is RecommendationBasis.EVIDENCE_SUPPORTED else 1
+            ),
+        )
+
+    def _merge_recommendation_product(
+        self,
+        existing: RecommendationProductMatch | None,
+        product: ProductRecord,
+        candidate: IngredientRecommendationCandidate,
+    ) -> RecommendationProductMatch:
+        supported_ids = (
+            [candidate.ingredient_id]
+            if candidate.basis is RecommendationBasis.EVIDENCE_SUPPORTED
+            else []
+        )
+        claim_only_ids = (
+            [candidate.ingredient_id]
+            if candidate.basis is RecommendationBasis.CLAIM_ONLY
+            else []
+        )
+        if existing is None:
+            return RecommendationProductMatch(
+                product=product,
+                evidence_supported_ingredient_ids=supported_ids,
+                claim_only_ingredient_ids=claim_only_ids,
+                statement_ids=candidate.statement_ids,
+                evidence_ids=candidate.evidence_ids,
+            )
+        return existing.model_copy(
+            deep=True,
+            update={
+                "evidence_supported_ingredient_ids": list(
+                    dict.fromkeys(existing.evidence_supported_ingredient_ids + supported_ids)
+                ),
+                "claim_only_ingredient_ids": list(
+                    dict.fromkeys(existing.claim_only_ingredient_ids + claim_only_ids)
+                ),
+                "statement_ids": list(
+                    dict.fromkeys(existing.statement_ids + candidate.statement_ids)
+                ),
+                "evidence_ids": list(
+                    dict.fromkeys(existing.evidence_ids + candidate.evidence_ids)
+                ),
+            },
+        )
+
+    def _recommendation_product_candidates(
+        self,
+        state: AgentState,
+        matches: list[RecommendationProductMatch],
+    ) -> list[ProductCandidate]:
+        candidates: list[ProductCandidate] = []
+        for rank, match in enumerate(matches, start=1):
+            reasons = self._candidate_reasons(state.task_context.search_filters)
+            reasons.extend(
+                f"공인 Evidence가 확인된 성분 포함: {ingredient_id}"
+                for ingredient_id in match.evidence_supported_ingredient_ids
+            )
+            reasons.extend(
+                f"유사 사용자 사례에서 발굴된 탐색 성분 포함: {ingredient_id}"
+                for ingredient_id in match.claim_only_ingredient_ids
+            )
+            limitations = self._product_limitations(match.product)
+            if match.evidence_supported_ingredient_ids:
+                limitations.append(EVIDENCE_PRODUCT_LIMITATION)
+            if match.claim_only_ingredient_ids:
+                limitations.append(CLAIM_ONLY_PRODUCT_LIMITATION)
+            candidates.append(
+                ProductCandidate(
+                    rank=rank,
+                    product=match.product,
+                    reasons=list(dict.fromkeys(reasons)),
+                    unresolved=list(dict.fromkeys(limitations)),
+                )
+            )
+        return candidates
+
+    def _append_recommendation_product_message(
+        self,
+        state: AgentState,
+        candidates: list[ProductCandidate],
+        matches: list[RecommendationProductMatch],
+    ) -> None:
+        supported_lines = [
+            f"{candidate.rank}번. {candidate.product.name}"
+            for candidate, match in zip(candidates, matches, strict=True)
+            if match.basis() is RecommendationBasis.EVIDENCE_SUPPORTED
+        ]
+        claim_only_lines = [
+            f"{candidate.rank}번. {candidate.product.name}"
+            for candidate, match in zip(candidates, matches, strict=True)
+            if match.basis() is RecommendationBasis.CLAIM_ONLY
+        ]
+        if supported_lines:
+            state.response_parts.append(
+                "공인 근거가 확인된 성분 기반 제품 후보:\n" + "\n".join(supported_lines)
+            )
+        if claim_only_lines:
+            state.response_parts.append(
+                "유사 사용자 사례에서 발굴된 탐색 제품 후보:\n"
+                + "\n".join(claim_only_lines)
+            )
+
+    def _product_limitations(self, product: ProductRecord) -> list[str]:
+        return (
+            ["개발용 상품 데이터이며 실제 제품 검증 결과가 아님"] if product.is_demo else []
+        ) + (["제품 사용법 미상"] if product.directions is None else []) + (
+            ["제품 버전 미상"] if product.version is None else []
+        )
+
+    async def _search_products(
+        self,
+        state: AgentState,
+        ingredient_ids: list[str],
+        node: GraphNode,
+    ) -> ResolvedEntities:
+        parsed = self._require_parsed(state)
+        if not self._reserve_tool_call(state, node):
+            return ResolvedEntities(ingredient_ids=ingredient_ids)
+        effective_category = parsed.category
+        if effective_category is None and parsed.referenced_candidate_number is not None:
+            referenced = self._candidate_by_rank(state, parsed.referenced_candidate_number)
+            effective_category = referenced.product.category if referenced else None
+        reference_filters = self._product_filters.normalize(
+            ProductSearchFilters(
+                category=effective_category,
+                texture=parsed.texture,
+                skin_feel=parsed.skin_feel,
+            )
+        )
+        if reference_filters.unsupported_conditions:
+            # 저장된 예전 분류도 현재 지원 목록에서 폐기됐을 수 있어 다시 검증한다.
+            parsed.unsupported_product_conditions.extend(reference_filters.unsupported_conditions)
+            return ResolvedEntities(ingredient_ids=ingredient_ids)
+
+        effective_ingredient_ids = list(ingredient_ids)
+        if Intent.PRODUCT_DISCOVERY in parsed.intents:
+            previous_ids = state.task_context.search_filters.ingredient_ids
+            if not effective_ingredient_ids and (parsed.is_modification or parsed.pending_answer):
+                effective_ingredient_ids = list(previous_ids)
+            state.task_context.search_filters = ProductSearchFilters(
+                category=reference_filters.filters.category,
+                texture=parsed.texture,
+                skin_feel=parsed.skin_feel,
+                ingredient_ids=effective_ingredient_ids,
+            )
+        filters = ProductSearchFilters(
+            category=reference_filters.filters.category,
+            texture=parsed.texture,
+            skin_feel=parsed.skin_feel,
+            ingredient_ids=effective_ingredient_ids,
+        )
+        result = await self._product_repository.search(
+            ProductSearchRequest(
+                query=parsed.query,
+                allow_discovery=Intent.PRODUCT_DISCOVERY in parsed.intents,
+                filters=filters,
+            )
+        )
+        if result.status is LookupStatus.ERROR:
+            self._add_tool_failure(state, result.error_message)
+            return ResolvedEntities(ingredient_ids=effective_ingredient_ids)
+        if result.status is LookupStatus.UNSUPPORTED:
+            state.status = ChatStatus.PARTIAL
+            details = result.unsupported_conditions or [
+                result.error_message or "현재 상품 조회기가 이 조건을 지원하지 않습니다."
+            ]
+            state.unresolved.extend(
+                UnresolvedItem(kind=UnresolvedKind.UNSUPPORTED_CONDITION, detail=detail)
+                for detail in details
+            )
+            return ResolvedEntities(ingredient_ids=effective_ingredient_ids)
+        products = result.products if result.status is LookupStatus.SUCCESS else []
+        if Intent.PRODUCT_DISCOVERY in parsed.intents:
+            products = [
+                product
+                for product in products
+                if self._product_filters.matches(product, state.task_context.search_filters)
+            ]
+        return ResolvedEntities(
+            products=products,
+            ingredient_ids=effective_ingredient_ids,
+        )
 
     async def _process_routine(self, state: AgentState) -> None:
         parsed = self._require_parsed(state)
@@ -723,205 +960,6 @@ class AgentNodes:
                 )
             )
 
-    async def _process_evidence(self, state: AgentState) -> None:
-        parsed = self._require_parsed(state)
-        if self._evidence_query_policy.has_lookup_failure(state):
-            state.response_parts.append("성분·대상 조회가 실패해 근거 검색을 진행하지 못했습니다.")
-            return
-        if not self._reserve_tool_call(state, GraphNode.PROCESS_TASK):
-            return
-        products = list(state.resolved_entities.products)
-        if parsed.referenced_candidate_number is not None:
-            candidate = self._candidate_by_rank(state, parsed.referenced_candidate_number)
-            if candidate:
-                products.append(candidate.product)
-        target_ids = list(
-            dict.fromkeys(
-                state.resolved_entities.ingredient_ids
-                + [product.product_id for product in products]
-                + [ingredient for product in products for ingredient in product.ingredient_ids]
-            )
-        )
-        combination_target_ids = (
-            [product.product_id for product in products]
-            if products
-            else list(state.resolved_entities.ingredient_ids)
-        )
-        known_conditions = parsed.known_conditions
-        if (
-            not target_ids
-            and not parsed.ingredient_mentions
-            and any(word in parsed.query for word in self._EVIDENCE_REFERENCES)
-        ):
-            target_ids = list(state.task_context.evidence_target_ids)
-            combination_target_ids = list(state.task_context.evidence_combination_target_ids)
-            known_conditions = state.task_context.evidence_conditions.model_copy(deep=True)
-            for field in EvidenceConditions.model_fields:
-                value = getattr(parsed.known_conditions, field)
-                if value is not None:
-                    setattr(known_conditions, field, value)
-        request = self._evidence_query_policy.search_request(
-            state,
-            EvidenceSearchRequest(
-                query=parsed.query,
-                target_ids=target_ids,
-                known_conditions=known_conditions,
-                combination_target_ids=combination_target_ids,
-            ),
-        )
-        if self._evidence_query_policy.allows_fallback(state):
-            limitation = self._evidence_query_policy.limitation(state)
-            state.status = ChatStatus.PARTIAL
-            state.unresolved.append(limitation)
-            state.response_parts.append(limitation.detail)
-        # 폴백 대상의 일부 ID를 저장하면 다음 '그 성분'이 다른 성분으로 잘못 복원된다.
-        state.task_context.evidence_target_ids = list(request.target_ids)
-        state.task_context.evidence_combination_target_ids = list(request.combination_target_ids)
-        state.task_context.evidence_conditions = known_conditions.model_copy(deep=True)
-        bundle = await self._evidence_pipeline.run(request)
-        if bundle.search.status is LookupStatus.ERROR:
-            self._add_tool_failure(state, bundle.search.error_message)
-            state.response_parts.append("근거 검색 도구가 실패해 확인 가능한 범위만 반환합니다.")
-            return
-        if bundle.search.status is LookupStatus.NO_RESULTS:
-            state.status = ChatStatus.PARTIAL
-            state.unresolved.append(
-                UnresolvedItem(kind=UnresolvedKind.NO_EVIDENCE, detail=NO_EVIDENCE_MESSAGE)
-            )
-            state.response_parts.append(NO_EVIDENCE_MESSAGE)
-            return
-
-        if bundle.search.status is LookupStatus.UNSUPPORTED:
-            state.status = ChatStatus.PARTIAL
-            detail = (
-                bundle.search.error_message or "현재 검색기가 이 근거 요청을 지원하지 않습니다."
-            )
-            state.unresolved.append(
-                UnresolvedItem(kind=UnresolvedKind.UNSUPPORTED_CONDITION, detail=detail)
-            )
-            state.response_parts.append(detail)
-            return
-        if bundle.generated is not None:
-            self._append_generated_evidence(state, bundle)
-            return
-        excluded_ids = {
-            item.evidence_id
-            for item in bundle.assessments
-            if item.status is ApplicabilityStatus.NOT_APPLICABLE
-        }
-        records = [
-            record for record in bundle.search.records if record.evidence_id not in excluded_ids
-        ]
-        if not records:
-            state.status = ChatStatus.PARTIAL
-            state.response_parts.append("검색된 근거를 현재 조건에 적용할 수 없습니다.")
-            state.unresolved.extend(
-                UnresolvedItem(kind=UnresolvedKind.UNSUPPORTED_CONDITION, detail=reason)
-                for item in bundle.assessments
-                for reason in item.reasons
-            )
-            return
-        known_ids = {record.evidence_id for record in state.evidence}
-        state.evidence.extend(record for record in records if record.evidence_id not in known_ids)
-        state.citations.extend(self._citation(record) for record in records)
-        answer = EvidenceAnswer(
-            answer_id=self._stable_id(state, "evidence-answer"),
-            subject=parsed.query,
-            summary="\n".join(f"[{record.source_title}] {record.text}" for record in records),
-            evidence_ids=[record.evidence_id for record in records],
-            assessments=bundle.assessments,
-            is_demo=any(record.is_demo for record in records),
-        )
-        state.artifacts.append(answer)
-        state.response_parts.append(answer.summary)
-        limitations = list(
-            dict.fromkeys(
-                reason
-                for item in bundle.assessments
-                for reason in item.reasons
-                if item.status is not ApplicabilityStatus.APPLICABLE
-            )
-        )
-        if limitations:
-            state.response_parts.append("적용 한계: " + "; ".join(limitations))
-        if any(word in parsed.query for word in ("병용", "같이", "괜찮")):
-            state.response_parts.append(
-                "개별 성분 자료만으로 두 완제품의 병용 안전성을 확정할 수 없습니다."
-            )
-        if "농도" in parsed.query or "ph" in parsed.query.casefold():
-            state.unresolved.append(
-                UnresolvedItem(
-                    kind=UnresolvedKind.MISSING_INFORMATION,
-                    detail="개발 fixture에는 제품별 공개 농도 또는 pH가 없습니다.",
-                )
-            )
-        for assessment in bundle.assessments:
-            if assessment.status is not ApplicabilityStatus.APPLICABLE:
-                state.unresolved.extend(
-                    UnresolvedItem(
-                        kind=UnresolvedKind.MISSING_INFORMATION,
-                        detail=f"{assessment.evidence_id}: {reason}",
-                    )
-                    for reason in assessment.reasons
-                )
-
-    def _append_generated_evidence(self, state: AgentState, bundle: EvidenceBundle) -> None:
-        generated = bundle.generated
-        if generated is None:
-            raise ValueError("생성된 RAG 결과가 없습니다.")
-        results = [
-            (f"대상 {index}", item.result)
-            for index, item in enumerate(generated.per_target, start=1)
-        ]
-        if generated.combination is not None:
-            results.append(("병용 근거", generated.combination))
-        if generated.free_text is not None:
-            results.append(("질문에 대한 근거", generated.free_text))
-        messages: list[str] = []
-        records: dict[str, EvidenceRecord] = {}
-        for label, result in results:
-            if result.has_verifiable_evidence:
-                messages.append(f"{label}: {result.answer}")
-                for claim in result.claims:
-                    for record in claim.sources:
-                        records[record.evidence_id] = record
-            else:
-                reason = result.unverifiable_reason or UnverifiableReason.NO_EVIDENCE_FOUND
-                detail = self._unverifiable_message(reason)
-                messages.append(f"{label}: {detail}")
-                state.status = ChatStatus.PARTIAL
-                state.unresolved.append(
-                    UnresolvedItem(kind=UnresolvedKind.NO_EVIDENCE, detail=detail)
-                )
-        for item in bundle.assessments:
-            if item.evidence_id in records and item.status is not ApplicabilityStatus.APPLICABLE:
-                messages.append("적용 한계: " + "; ".join(item.reasons))
-        summary = "\n".join(messages) or NO_EVIDENCE_MESSAGE
-        state.evidence.extend(records.values())
-        state.citations.extend(self._citation(record) for record in records.values())
-        state.artifacts.append(
-            EvidenceAnswer(
-                answer_id=self._stable_id(state, "evidence-answer"),
-                subject=self._require_parsed(state).query,
-                summary=summary,
-                evidence_ids=list(records),
-                assessments=bundle.assessments,
-                is_demo=any(record.is_demo for record in records.values()),
-                generated=generated,
-            )
-        )
-        state.response_parts.append(summary)
-
-    def _unverifiable_message(self, reason: UnverifiableReason) -> str:
-        messages = {
-            UnverifiableReason.NO_EVIDENCE_FOUND: "확인할 근거를 찾지 못했습니다.",
-            UnverifiableReason.UNREVIEWED_EVIDENCE: "검수된 근거가 없어 답변을 보류합니다.",
-            UnverifiableReason.NOT_RELEVANT_TO_QUESTION: "질문이 묻는 항목을 뒷받침할 근거가 부족합니다.",
-            UnverifiableReason.MISSING_COMBINATION_EVIDENCE: "질문의 대상들을 함께 다루는 병용 근거가 없습니다.",
-            UnverifiableReason.CITATION_VALIDATION_FAILED: "출처 또는 적용 조건 검증을 통과한 답변이 없습니다.",
-        }
-        return messages[reason]
-
     async def _routine_products(self, state: AgentState) -> list[ProductRecord]:
         parsed = self._require_parsed(state)
         rejected_ids = set(state.task_context.rejected_product_ids)
@@ -975,62 +1013,13 @@ class AgentNodes:
         return list(dict.fromkeys(state.task_context.excluded_weekdays + current_exclusions))
 
     def _execution_limit_reached(self, state: AgentState) -> bool:
-        elapsed = (datetime.now(UTC) - state.started_at).total_seconds()
-        if state.tool_call_count >= state.execution_limits.max_tool_calls:
-            self._mark_limit(state, "최대 도구 호출 수에 도달했습니다.")
-            return True
-        if elapsed >= state.execution_limits.timeout_seconds:
-            self._mark_limit(state, "요청 실행 시간 제한에 도달했습니다.")
-            return True
-        return False
+        return self._runtime.execution_limit_reached(state, GraphNode.PROCESS_TASK)
 
     def _reserve_tool_call(self, state: AgentState, node: GraphNode) -> bool:
-        if self._execution_limit_reached(state):
-            return False
-        state.tool_call_count += 1
-        state.events.append(
-            ExecutionEvent(
-                node=node,
-                kind=ExecutionEventKind.TOOL_CALLED,
-                detail=f"도구 호출 {state.tool_call_count}회",
-            )
-        )
-        return True
-
-    def _mark_limit(self, state: AgentState, detail: str) -> None:
-        if state.error_code is ErrorCode.EXECUTION_LIMIT_REACHED:
-            return
-        state.status = ChatStatus.PARTIAL
-        state.error_code = ErrorCode.EXECUTION_LIMIT_REACHED
-        state.retryable = True
-        state.response_parts.append(detail)
-        state.unresolved.append(
-            UnresolvedItem(
-                kind=UnresolvedKind.CONFLICT,
-                detail=detail,
-                retryable=True,
-            )
-        )
-        state.events.append(
-            ExecutionEvent(
-                node=GraphNode.PROCESS_TASK,
-                kind=ExecutionEventKind.LIMIT_REACHED,
-                detail=detail,
-            )
-        )
+        return self._runtime.reserve_tool_call(state, node)
 
     def _add_tool_failure(self, state: AgentState, detail: str | None) -> None:
-        message = detail or "도구가 원인을 제공하지 않고 실패했습니다."
-        state.status = ChatStatus.PARTIAL
-        state.error_code = ErrorCode.TOOL_FAILED
-        state.retryable = True
-        state.unresolved.append(
-            UnresolvedItem(
-                kind=UnresolvedKind.TOOL_FAILURE,
-                detail=message,
-                retryable=True,
-            )
-        )
+        self._runtime.add_tool_failure(state, detail)
 
     def _candidate_by_rank(
         self,
@@ -1057,45 +1046,23 @@ class AgentNodes:
             reasons.append("요청한 사용감 조건과 일치")
         return reasons
 
-    def _citation(self, record: EvidenceRecord) -> Citation:
-        return Citation(
-            source_type=record.source_type,
-            text_kind=record.text_kind,
-            scope=record.scope,
-            jurisdiction=record.jurisdiction,
-            evidence_id=record.evidence_id,
-            source_id=record.source_id,
-            locator=record.locator,
-            source_title=record.source_title,
-            document_version=record.document_version,
-            url=record.url,
-            is_demo=record.is_demo,
-        )
-
     def _ingredient_request(self, query: str) -> IngredientResolveRequest:
         return IngredientResolveRequest(name=query)
 
     def _stable_id(self, state: AgentState, namespace: str) -> str:
-        turn = self._require_turn(state)
-        return str(uuid5(NAMESPACE_URL, f"{namespace}:{state.chat_room_id}:{turn.request_id}"))
+        return self._runtime.stable_id(state, namespace)
 
     def _next_sequence(self, state: AgentState) -> int:
         return max((message.sequence for message in state.messages), default=0) + 1
 
     def _record_event(self, state: AgentState, node: GraphNode, detail: str) -> None:
-        state.events.append(
-            ExecutionEvent(node=node, kind=ExecutionEventKind.NODE_COMPLETED, detail=detail)
-        )
+        self._runtime.record_node(state, node, detail)
 
     def _require_turn(self, state: AgentState) -> ChatTurnInput:
-        if state.turn_input is None:
-            raise RuntimeError("그래프 상태에 현재 사용자 입력이 없습니다.")
-        return state.turn_input
+        return self._runtime.require_turn(state)
 
     def _require_parsed(self, state: AgentState) -> ParsedRequest:
-        if state.parsed_request is None:
-            raise RuntimeError("요청 해석 결과 없이 다음 노드를 실행할 수 없습니다.")
-        return state.parsed_request
+        return self._runtime.require_parsed(state)
 
     def _require_turn_fields(self, state: AgentState) -> None:
         if not state.chat_room_id or not state.thread_id:

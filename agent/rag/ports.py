@@ -2,18 +2,34 @@
 
 from abc import ABC, abstractmethod
 
+from agent.rag.claim_schemas import ClaimSearchRequest, ClaimSearchResult
 from agent.rag.schemas import (
-    ClaimGenerationRequest,
     EmbeddingRequest,
     EmbeddingResult,
     EvidenceSearchRequest,
     EvidenceSearchResult,
-    GeneratedClaims,
+    EvidenceStatementGenerationRequest,
+    GeneratedEvidenceStatements,
     HybridSearchRequest,
     HybridSearchResult,
+    LocalEmbeddingModel,
     RerankRequest,
     RerankResult,
 )
+
+
+class ClaimRetriever(ABC):
+    """NIA Claim 전용 검색 포트. Evidence 검색 결과를 반환하지 않는다."""
+
+    @property
+    @abstractmethod
+    def embedding_model(self) -> LocalEmbeddingModel:
+        """Claim 색인과 질의에 사용한 임베딩 모델을 반환한다."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def search(self, request: ClaimSearchRequest) -> ClaimSearchResult:
+        raise NotImplementedError
 
 
 class EvidenceRetriever(ABC):
@@ -46,7 +62,10 @@ class EvidenceReranker(ABC):
         raise NotImplementedError
 
 
-class ClaimGenerator(ABC):
+class EvidenceStatementGenerator(ABC):
     @abstractmethod
-    async def generate(self, request: ClaimGenerationRequest) -> GeneratedClaims:
+    async def generate(
+        self,
+        request: EvidenceStatementGenerationRequest,
+    ) -> GeneratedEvidenceStatements:
         raise NotImplementedError

@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from agent.nodes import AgentNodes
+from agent.rag_workflow import RagWorkflowNodes
 from agent.schemas import (
     AgentInvocation,
     AgentState,
@@ -16,6 +17,8 @@ from agent.schemas import (
     GraphInvocationResult,
     GraphNode,
     InformationRoute,
+    Intent,
+    RagRoute,
     TaskRoute,
     ValidationRoute,
 )
@@ -30,6 +33,8 @@ class AgentGraphRouter:
         return InformationRoute.ROUTE_TASK
 
     def after_task_routing(self, state: AgentState) -> TaskRoute:
+        if state.current_intent is Intent.EVIDENCE_QA:
+            return TaskRoute.ROUTE_RAG
         if state.current_intent is not None:
             return TaskRoute.PROCESS_TASK
         return TaskRoute.VALIDATE_RESULT
@@ -38,6 +43,15 @@ class AgentGraphRouter:
         if state.needs_revision and state.revision_count < state.execution_limits.max_revisions:
             return ValidationRoute.REVISE_RESULT
         return ValidationRoute.FINALIZE_RESPONSE
+
+
+class RagWorkflowRouter:
+    """선택된 2-Layer RAG 경로를 첫 검색 노드로 연결한다."""
+
+    def after_rag_routing(self, state: AgentState) -> RagRoute:
+        if state.rag_route is None:
+            raise RuntimeError("RAG 경로가 선택되지 않았습니다.")
+        return state.rag_route
 
 
 class AgentGraph:
@@ -64,11 +78,15 @@ class AgentGraphFactory:
     def __init__(
         self,
         nodes: AgentNodes,
+        rag_nodes: RagWorkflowNodes,
         router: AgentGraphRouter,
+        rag_router: RagWorkflowRouter,
         checkpointer: BaseCheckpointSaver[str],
     ) -> None:
         self._nodes = nodes
+        self._rag_nodes = rag_nodes
         self._router = router
+        self._rag_router = rag_router
         self._checkpointer = checkpointer
 
     def create(self) -> AgentGraph:
@@ -79,10 +97,27 @@ class AgentGraphFactory:
         )
         builder.add_node(GraphNode.PREPARE_TURN.value, self._nodes.prepare_turn)
         builder.add_node(GraphNode.UNDERSTAND_REQUEST.value, self._nodes.understand_request)
+        builder.add_node(GraphNode.DECIDE_RAG_ROUTE.value, self._nodes.decide_rag_route)
         builder.add_node(GraphNode.RESOLVE_ENTITIES.value, self._nodes.resolve_entities)
         builder.add_node(GraphNode.ASSESS_INFORMATION.value, self._nodes.assess_information)
         builder.add_node(GraphNode.ASK_USER.value, self._nodes.ask_user)
         builder.add_node(GraphNode.ROUTE_TASK.value, self._nodes.route_task)
+        builder.add_node(GraphNode.ROUTE_RAG.value, self._rag_nodes.route_rag)
+        builder.add_node(GraphNode.SEARCH_CLAIMS.value, self._rag_nodes.search_claims)
+        builder.add_node(
+            GraphNode.RESOLVE_CLAIM_INGREDIENTS.value,
+            self._rag_nodes.resolve_claim_ingredients,
+        )
+        builder.add_node(GraphNode.VERIFY_CLAIMS.value, self._rag_nodes.verify_claims)
+        builder.add_node(
+            GraphNode.BUILD_RECOMMENDATION_CANDIDATES.value,
+            self._rag_nodes.build_recommendation_candidates,
+        )
+        builder.add_node(GraphNode.SEARCH_EVIDENCE.value, self._rag_nodes.search_evidence)
+        builder.add_node(
+            GraphNode.ASSEMBLE_RAG_RESPONSE.value,
+            self._rag_nodes.assemble_rag_response,
+        )
         builder.add_node(GraphNode.PROCESS_TASK.value, self._nodes.process_task)
         builder.add_node(GraphNode.VALIDATE_RESULT.value, self._nodes.validate_result)
         builder.add_node(GraphNode.REVISE_RESULT.value, self._nodes.revise_result)
@@ -90,7 +125,8 @@ class AgentGraphFactory:
 
         builder.add_edge(START, GraphNode.PREPARE_TURN.value)
         builder.add_edge(GraphNode.PREPARE_TURN.value, GraphNode.UNDERSTAND_REQUEST.value)
-        builder.add_edge(GraphNode.UNDERSTAND_REQUEST.value, GraphNode.RESOLVE_ENTITIES.value)
+        builder.add_edge(GraphNode.UNDERSTAND_REQUEST.value, GraphNode.DECIDE_RAG_ROUTE.value)
+        builder.add_edge(GraphNode.DECIDE_RAG_ROUTE.value, GraphNode.RESOLVE_ENTITIES.value)
         builder.add_edge(GraphNode.RESOLVE_ENTITIES.value, GraphNode.ASSESS_INFORMATION.value)
         builder.add_conditional_edges(
             GraphNode.ASSESS_INFORMATION.value,
@@ -105,10 +141,40 @@ class AgentGraphFactory:
             GraphNode.ROUTE_TASK.value,
             self._router.after_task_routing,
             {
+                TaskRoute.ROUTE_RAG: GraphNode.ROUTE_RAG.value,
                 TaskRoute.PROCESS_TASK: GraphNode.PROCESS_TASK.value,
                 TaskRoute.VALIDATE_RESULT: GraphNode.VALIDATE_RESULT.value,
             },
         )
+        builder.add_conditional_edges(
+            GraphNode.ROUTE_RAG.value,
+            self._rag_router.after_rag_routing,
+            {
+                RagRoute.CLAIM_THEN_EVIDENCE: GraphNode.SEARCH_CLAIMS.value,
+                RagRoute.EVIDENCE_ONLY: GraphNode.SEARCH_EVIDENCE.value,
+            },
+        )
+        builder.add_edge(
+            GraphNode.SEARCH_CLAIMS.value,
+            GraphNode.RESOLVE_CLAIM_INGREDIENTS.value,
+        )
+        builder.add_edge(
+            GraphNode.RESOLVE_CLAIM_INGREDIENTS.value,
+            GraphNode.VERIFY_CLAIMS.value,
+        )
+        builder.add_edge(
+            GraphNode.VERIFY_CLAIMS.value,
+            GraphNode.BUILD_RECOMMENDATION_CANDIDATES.value,
+        )
+        builder.add_edge(
+            GraphNode.BUILD_RECOMMENDATION_CANDIDATES.value,
+            GraphNode.ASSEMBLE_RAG_RESPONSE.value,
+        )
+        builder.add_edge(
+            GraphNode.SEARCH_EVIDENCE.value,
+            GraphNode.ASSEMBLE_RAG_RESPONSE.value,
+        )
+        builder.add_edge(GraphNode.ASSEMBLE_RAG_RESPONSE.value, GraphNode.ROUTE_TASK.value)
         builder.add_edge(GraphNode.PROCESS_TASK.value, GraphNode.ROUTE_TASK.value)
         builder.add_conditional_edges(
             GraphNode.VALIDATE_RESULT.value,

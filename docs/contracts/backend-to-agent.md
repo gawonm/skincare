@@ -1,6 +1,6 @@
 # Backend → Agent 호출 계약
 
-> 상태: **통합 방향 합의 — 기존 DB 차원 유지·운영 저장소는 후속 확인 필요**
+> 상태: **2-Layer 읽기 전용 어댑터 계약 확정 — 읽기 전용 smoke 검증 완료**
 >
 > 기준: `integration/llm-rag-main`의 agent 공개 계약
 >
@@ -368,3 +368,159 @@ NIA Q&A는 현재 Agent에 대응하는 변환 계약이 없다. 기존 로더�
   `BAAI/bge-reranker-v2-m3`를 사용한다.
 - OpenAI 임베딩 결과가 1536차원이며 기존 DB 벡터와 `embedding_model` 값이 일치한다.
 - 실제 DB를 사용한 vector/BM25 검색과 리랭킹 통합 테스트가 통과한다.
+
+## 9. 최신 dump 기반 2-Layer 읽기 전용 어댑터 (2026-09-17, 19:42 KST 갱신)
+
+> 기준 dump: `data/skincare_latest_2026-09-17.dump`
+>
+> 복원 DB: `skincare_latest`
+>
+> 상태: **입출력·Claim 검색·Claim-only 정책 확인 완료**
+
+이 절은 앞 절의 구형 `rag_chunk` 1,536차원 경로를 변경하지 않고, 별도
+`claim_chunk`/`evidence_chunk` 경로를 추가하는 계약이다. 최신 dump는 두 레이어 모두
+`BAAI/bge-m3`, 1,024차원으로 저장되어 있으므로 OpenAI 1,536차원 임베딩과 섞지 않는다.
+
+### 9.1 범위와 소유권
+
+- Agent는 기존 `ClaimRetriever`, `HybridSearchBackend`, `IngredientRepository`,
+  `ProductRepository` 포트와 Pydantic DTO를 소유한다.
+- Backend repository는 SQL과 DB 행 전용 Pydantic 모델을 소유한다.
+- Backend service adapter는 repository 결과를 Agent DTO로 변환한다.
+- Agent는 `AsyncSession`, SQLAlchemy, Backend 구현을 import하지 않는다.
+- 이번 경로는 복원된 dump를 읽기만 하며 `models/`, `migrations/`, dump 데이터는 변경하지 않는다.
+- 구형 `SqlAlchemyHybridSearchBackend`를 덮어쓰지 않고 2-Layer 전용 구현을 별도 클래스로 둔다.
+
+예정된 호출 시그니처는 기존 Agent 계약을 그대로 사용한다.
+
+```python
+class ClaimRetriever(ABC):
+    @property
+    @abstractmethod
+    def embedding_model(self) -> LocalEmbeddingModel: ...
+
+    @abstractmethod
+    async def search(self, request: ClaimSearchRequest) -> ClaimSearchResult: ...
+
+
+class HybridSearchBackend(ABC):
+    @abstractmethod
+    async def search(self, request: HybridSearchRequest) -> HybridSearchResult: ...
+
+
+class IngredientRepository(ABC):
+    @abstractmethod
+    async def resolve(self, request: IngredientResolveRequest) -> IngredientResolveResult: ...
+
+
+class ProductRepository(ABC):
+    @abstractmethod
+    async def search(self, request: ProductSearchRequest) -> ProductSearchResult: ...
+
+    @abstractmethod
+    async def get(self, request: ProductGetRequest) -> ProductGetResult: ...
+```
+
+Evidence 검수 상태는 저장값만 신뢰한다. 통합 fixture라는 이유로 `NULL` 상태를 검증 완료로
+승격하는 별도 완화 정책은 두지 않는다.
+
+### 9.2 Claim 조회와 DTO 매핑
+
+`ClaimSearchRequest`는 `annotation_version`을 필수로 받고, `query`와 `skin_concerns`를 순서대로
+결합한 문자열을 BGE-M3로 임베딩한다. 이미 계산한 `query_embedding`이 전달되면 같은 벡터를
+재사용한다. DB 조회는 같은 `embedding_model`과 정확히 일치하는 `annotation_version`만 cosine
+검색하며 여러 annotation run을 자동으로 섞거나 최신값으로 추정하지 않는다.
+
+지원 Claim 타입은 계약에서 Evidence topic 매핑이 확정된 아래 세 종류로 제한한다.
+
+- `ingredient_effect_claim` → `EvidenceClaimTopic.EFFICACY`
+- `usage_instruction` → `EvidenceClaimTopic.USAGE_INSTRUCTION`
+- `combination_claim` → `EvidenceClaimTopic.COMBINATION`
+
+| DB 값 | Agent 값 | 규칙 |
+| --- | --- | --- |
+| `claim_chunk.id` | `ClaimHit.claim_chunk_id` | UUID 문자열 |
+| `claim_document.source_record_id` | `ClaimHit.source_record_id` | 원문 그대로 |
+| `claim_document.annotation_version` | `ClaimHit.annotation_version` | 요청 버전과 반드시 일치 |
+| `claim_chunk.statement_id` | `ClaimHit.statement_id` | 원문 그대로 |
+| `claim_chunk.statement_type` | `ClaimHit.statement_type` | 동일 Enum 값만 허용 |
+| `claim_chunk.content` | `ClaimHit.content` | 원문 그대로 |
+| `claim_chunk.decision` | `ClaimHit.decision` | 동일 Enum 값만 허용 |
+| `claim_chunk_ingredient.*` | `ClaimHit.ingredient_refs` | 성분 연결별 DTO로 보존 |
+| `claim_chunk.support_status` | `ClaimHit.support_status` | 동일 Enum 값만 허용 |
+| cosine similarity | `ClaimHit.score` | 원점수 보존 |
+
+DB 컬럼 설명에 따라 Claim 통과 조건은 다음 결정적 규칙으로 고정한다.
+
+- `claim_chunk.decision`은 운영 검색 인덱스 필터이며 `ingestible_*`만 기본 검색 대상이다.
+- `claim_document.production_ready`는 사람 최종 검수 완료 여부이지만 런타임 필수 필터로
+  강제하지 않는다.
+- `decision`은 Agent DTO에도 보존하며 Agent가 허용값을 다시 검증한다.
+- `production_ready`는 저장소 provenance이며 최소 `ClaimHit`에는 복제하지 않는다. 이 값으로
+  검색 결과를 제외하거나 Claim 지원 상태를 바꾸지 않는다.
+- `decision`이 `ingestible_*`가 아닌 행과 `matching_status`가 `rejected`인 성분 연결은 검색
+  후보에서 제외한다.
+- `matching_status=matched`인 성분만 `EvidenceQueryAnchor.ingredient_refs`로 승격한다.
+  unresolved 성분은 Agent가 raw name으로 다시 해소하지 않고 보류한다.
+
+현재 dump의 Claim 5건은 모두 `decision=ingestible_structured`이므로 Claim 검색 후보에
+포함된다. `production_ready=false` 때문에 Claim 결과가 0건이 되지 않는다.
+
+### 9.3 Evidence 조회와 Citation 매핑
+
+`HybridSearchRequest.embedding_model`은 반드시 `BAAI/bge-m3`여야 하고 벡터 길이는 1,024여야
+한다. `target_ids`는 `evidence_chunk_ingredient.ingredient_id`에 OR 필터로 적용한다. 개별 성분
+한 개와 연결된 Evidence를 `PAIR` 근거로 승격하지 않는다. 따라서 복합 질문은 개별 근거만
+반환하며, 조합 근거 없음 판정은 기존 Agent 규칙에 맡긴다.
+
+| DB 값 | Agent 값 | 규칙 |
+| --- | --- | --- |
+| `pubmed_abstract` | `EvidenceSourceType.PAPER` | 명시적 Enum 매핑 |
+| `evidence_chunk.id` | `EvidenceRecord.evidence_id` | UUID 문자열 |
+| `evidence_document.source_id` | `EvidenceRecord.source_id` | `PMID:<id>` 보존 |
+| `evidence_document.source_title` | `EvidenceRecord.source_title` | 원문 그대로 |
+| `evidence_chunk.content` | `EvidenceRecord.text`, `RagChunkDraft.content` | 두 DTO에서 동일 원문 사용 |
+| `evidence_chunk.chunk_id` | `RagChunkDraft.chunk_id` | 원문 그대로 |
+| `section`/`chunk_index` | `field_id`/`locator` | 빈 section은 오류, locator는 결정적으로 조립 |
+| Evidence 성분 연결 | `EvidenceRecord.target_ids` | UUID 문자열, 중복 제거 |
+| `document_date`/`retrieved_at` | `published_at`/`collected_at` | ISO-8601 문자열 |
+| `jurisdiction` | `jurisdiction`, `conditions.jurisdiction` | 저장값만 사용 |
+| `url`, `doi`, `pmid` | `url`, `source_reference` | URL은 그대로, reference는 DOI와 PMID를 결정적으로 조립 |
+| `claim_topics` | `RagChunkDraft.intents` | LLM이 아니라 명시적 topic→`QuestionIntent` 룰로 변환 |
+| `peer_reviewed_study` | `RagConfidenceTier.STRUCTURED_KNOWLEDGE` | 근거 종류 tier로 사용하며 검수 상태는 별도 판정 |
+
+Citation의 제목, URL, PMID, DOI는 DB 메타데이터만 사용한다. LLM 출력으로 출처 식별자를 만들거나
+보완하지 않는다.
+
+`document_status=NULL`은 `EvidenceReviewStatus.UNREVIEWED`로 변환한다. 검색 결과에는 남기되
+Citation과 `SUPPORTED` 판정에는 사용하지 않는다. 해당 Claim은 `INSUFFICIENT`가 되고,
+성분은 `CLAIM_ONLY` 상품 후보로 유지한다. 현재 저장 계약에는 `verified` 값이 없으므로
+`VERIFIED` 승격 조건은 보류 상태다. Data 파트와 검수 상태 계약을 확정하기 전에는
+`final`/`amended_final` 또는 `peer_reviewed_study`를 임의로 검수 완료로 해석하지 않는다.
+
+### 9.4 Ingredient와 Product 조회
+
+- Ingredient resolve는 표준 한글/영문명, 정규화명, 구명칭의 정확 일치만 먼저 지원한다.
+- 일치 1건은 `SUCCESS`, 복수는 `ambiguous_candidates`, 없음은 `NO_RESULTS`다.
+- Claim은 `matched` UUID만 사용한다. unresolved raw name은 Ingredient resolve로 다시 추론하지
+  않으며 Data 파트가 후속 annotation run에서 확정해야 한다.
+- Product 검색은 `product_ingredient.match_acceptance=confirmed`와 non-null `ingredient_id`만 사용한다.
+- 요청한 성분 ID 중 하나 이상을 포함한 상품을 반환하되, 같은 상품이 여러 성분에서 검색돼도
+  `product.id` 기준으로 한 번만 반환한다.
+- `ProductRecord.ingredient_ids`에는 해당 상품의 confirmed 성분 ID만 중복 없이 넣는다.
+- 상품의 이름·분류·source·관찰 시각은 저장값만 매핑하고, 제형·사용감·사용법을 추론하지 않는다.
+
+### 9.5 상태와 실패 계약
+
+- 검색 성공 + 결과 있음: `SUCCESS`
+- 검색 성공 + 결과 없음: `NO_RESULTS`
+- BGE-M3 이외 모델, 1,024 이외 차원, 현재 미지원 statement type/필터: `UNSUPPORTED`
+- DB 오류, JSON/Pydantic 변환 오류, 저장 Enum 불일치: 원인을 포함한 `ERROR`
+- 예외를 빈 성공 결과로 바꾸지 않는다.
+- 읽기 전용 smoke 실행기는 실제 LLM 응답 품질 평가와 분리한다. 먼저 검색 DTO, Claim→Evidence,
+  Claim-only Product, Citation metadata의 결정적 연결을 검증한다.
+
+### 9.6 후속 평가 항목
+
+BGE-M3 자유 질의 임계값은 현재 데이터 5건만으로 확정하지 않는다. 첫 통합 구현에서는
+성분 ID 필터 검색을 우선하고, 자유 질의 임계값 튜닝은 평가 데이터가 늘어난 뒤 별도 진행한다.

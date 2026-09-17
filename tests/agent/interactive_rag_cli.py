@@ -29,7 +29,9 @@ from agent.llm import OpenAiLlmClient
 from agent.ports import IngredientRepository
 from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.generation.answer_generator import AnswerGenerator
-from agent.rag.generation.openai_generator import OpenAiClaimGenerator
+from agent.rag.generation.evidence_statement_generator import (
+    OpenAiEvidenceStatementGenerator,
+)
 from agent.rag.ports import EvidenceRetriever, HybridSearchBackend
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
@@ -224,7 +226,9 @@ class InteractiveAgentCli:
             llm=self._llm,
             ingredient_repository=DbIngredientRepository(self._database),
             evidence_retriever=self._retriever,
-            answer_generator=AnswerGenerator(OpenAiClaimGenerator(self._config.openai)),
+            answer_generator=AnswerGenerator(
+                OpenAiEvidenceStatementGenerator(self._config.openai)
+            ),
         ).create()
         self._app.history.register_room(
             RegisterRoomRequest(
