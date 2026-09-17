@@ -11,7 +11,7 @@
 (사용자 규칙 5: 과학적 검증과 semantic annotation 분리).
 """
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,7 +20,9 @@ class LlmSourceQuote(BaseModel):
     json_path: str = Field(
         description="원문 내 위치. 예: $.chain_of_thought[1].content, $.external[0].details, $.info.question"
     )
-    quote: str = Field(description="json_path가 가리키는 텍스트에 등장하는 원문 그대로의 부분 문자열")
+    quote: str = Field(
+        description="json_path가 가리키는 텍스트에 등장하는 원문 그대로의 부분 문자열"
+    )
 
 
 class LlmIngredientMention(BaseModel):
@@ -81,8 +83,18 @@ class LlmUsageInstructionStatement(BaseModel):
     statement_type: Literal["usage_instruction"] = "usage_instruction"
     action_id: str = Field(description="문서 내 고유 ID, 예: A001")
     action: str
-    time_of_day: list[Literal["morning", "evening", "daytime", "night"]] = Field(default_factory=list)
+    time_of_day: list[Literal["morning", "evening", "daytime", "night"]] = Field(
+        default_factory=list
+    )
     frequency: LlmFrequency | None = None
+    ingredient_mentions: list[LlmIngredientMention] = Field(
+        default_factory=list,
+        description=(
+            "이 action 문장에 실제로 이름이 명시된 성분만 나열하세요(0개 이상). "
+            "action에 성분명이 없으면 빈 리스트로 두세요. 다른 statement나 문서의 "
+            "다른 부분에서 성분을 가져와 추론해서 채우지 마세요."
+        ),
+    )
     quotes: list[LlmSourceQuote] = Field(min_length=1)
     note: str | None = None
 
@@ -109,15 +121,13 @@ class LlmContextualFactorStatement(BaseModel):
 
 
 LlmStatement = Annotated[
-    Union[
-        LlmCaseObservationStatement,
-        LlmCauseClaimStatement,
-        LlmIngredientEffectClaimStatement,
-        LlmPrecautionStatement,
-        LlmUsageInstructionStatement,
-        LlmCombinationClaimStatement,
-        LlmContextualFactorStatement,
-    ],
+    LlmCaseObservationStatement
+    | LlmCauseClaimStatement
+    | LlmIngredientEffectClaimStatement
+    | LlmPrecautionStatement
+    | LlmUsageInstructionStatement
+    | LlmCombinationClaimStatement
+    | LlmContextualFactorStatement,
     Field(discriminator="statement_type"),
 ]
 

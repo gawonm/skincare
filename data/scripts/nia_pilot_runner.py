@@ -171,12 +171,22 @@ class NiaPilotRecordProcessor:
                     stmt.time_of_day,
                     stmt.frequency.model_dump() if stmt.frequency else None,
                 )
+                # unresolved mention은 임의 ingredient_id로 바꾸지 않고 그냥 뺀다 - 이
+                # 필드엔 raw_name을 보존할 자리가 없어(NiaUsageInstructionStatement.
+                # ingredient_ids: tuple[UUID, ...]), matched만 담는 게 유일한 안전한 방법이다.
+                resolved_mentions = [
+                    self._matching_stage.resolve(mention) for mention in stmt.ingredient_mentions
+                ]
                 base.update(
                     action_id=stmt.action_id,
                     action=stmt.action,
                     time_of_day=time_of_day,
                     frequency=frequency,
-                    ingredient_ids=[],
+                    ingredient_ids=[
+                        resolved["ingredient_id"]
+                        for resolved in resolved_mentions
+                        if resolved["matching_status"] == "matched"
+                    ],
                 )
             elif stmt.statement_type == "combination_claim":
                 base.update(
