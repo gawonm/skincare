@@ -97,6 +97,7 @@ class AgentGraphFactory:
         )
         builder.add_node(GraphNode.PREPARE_TURN.value, self._nodes.prepare_turn)
         builder.add_node(GraphNode.UNDERSTAND_REQUEST.value, self._nodes.understand_request)
+        builder.add_node(GraphNode.DECIDE_RAG_ROUTE.value, self._nodes.decide_rag_route)
         builder.add_node(GraphNode.RESOLVE_ENTITIES.value, self._nodes.resolve_entities)
         builder.add_node(GraphNode.ASSESS_INFORMATION.value, self._nodes.assess_information)
         builder.add_node(GraphNode.ASK_USER.value, self._nodes.ask_user)
@@ -119,7 +120,8 @@ class AgentGraphFactory:
 
         builder.add_edge(START, GraphNode.PREPARE_TURN.value)
         builder.add_edge(GraphNode.PREPARE_TURN.value, GraphNode.UNDERSTAND_REQUEST.value)
-        builder.add_edge(GraphNode.UNDERSTAND_REQUEST.value, GraphNode.RESOLVE_ENTITIES.value)
+        builder.add_edge(GraphNode.UNDERSTAND_REQUEST.value, GraphNode.DECIDE_RAG_ROUTE.value)
+        builder.add_edge(GraphNode.DECIDE_RAG_ROUTE.value, GraphNode.RESOLVE_ENTITIES.value)
         builder.add_edge(GraphNode.RESOLVE_ENTITIES.value, GraphNode.ASSESS_INFORMATION.value)
         builder.add_conditional_edges(
             GraphNode.ASSESS_INFORMATION.value,

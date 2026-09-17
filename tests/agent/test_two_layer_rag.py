@@ -10,7 +10,7 @@ from agent.adapters import (
     FixtureProductTaxonomy,
 )
 from agent.factory import DevelopmentAgentApplication, DevelopmentAgentFactory
-from agent.ports import IngredientRepository, ProductRepository
+from agent.ports import IngredientRepository, LlmClient, ProductRepository
 from agent.rag.claim_schemas import ClaimSearchRequest, ClaimSearchResult
 from agent.rag.ports import ClaimRetriever, EvidenceRetriever
 from agent.rag.schemas import (
@@ -21,6 +21,7 @@ from agent.rag.schemas import (
     LocalEmbeddingModel,
     LookupStatus,
     ProductCandidateSet,
+    ProductCategory,
     ProductGetRequest,
     ProductGetResult,
     ProductSearchRequest,
@@ -32,7 +33,11 @@ from agent.schemas import (
     ChatStatus,
     ChatTurnInput,
     ErrorCode,
+    Intent,
+    ParsedRequest,
+    RagRoute,
     RegisterRoomRequest,
+    UnderstandingRequest,
     UnresolvedKind,
 )
 
@@ -100,14 +105,24 @@ class TrackingProductRepository(ProductRepository):
         return await self._delegate.get(request)
 
 
+class FixedRequestLlm(LlmClient):
+    def __init__(self, parsed_request: ParsedRequest) -> None:
+        self._parsed_request = parsed_request
+
+    async def understand(self, request: UnderstandingRequest) -> ParsedRequest:
+        return self._parsed_request.model_copy(deep=True)
+
+
 class TwoLayerRagHarness:
     def create(
         self,
         calls: list[WorkflowCall],
         claim_failure: bool = False,
         evidence_no_results: bool = False,
+        llm: LlmClient | None = None,
     ) -> DevelopmentAgentApplication:
         application = DevelopmentAgentFactory(
+            llm=llm,
             claim_retriever=TrackingClaimRetriever(calls, fail=claim_failure),
             evidence_retriever=TrackingEvidenceRetriever(
                 calls,
@@ -138,6 +153,64 @@ class TwoLayerRagHarness:
 
 
 class TestTwoLayerRagWorkflow:
+    async def test_rule_routes_concern_to_claim_when_llm_omits_route(self) -> None:
+        calls: list[WorkflowCall] = []
+        harness = TwoLayerRagHarness()
+        llm = FixedRequestLlm(
+            ParsedRequest(
+                intents=[Intent.PRODUCT_DISCOVERY],
+                query="피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?",
+                skin_concerns=["피지", "좁쌀 여드름"],
+            )
+        )
+        application = harness.create(calls, llm=llm)
+
+        output = await application.service.handle_turn(
+            harness.request("rule-concern-1", "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?")
+        )
+
+        assert output.status is ChatStatus.COMPLETED
+        assert calls == [WorkflowCall.CLAIM, WorkflowCall.EVIDENCE, WorkflowCall.PRODUCT]
+
+    async def test_rule_skips_rag_for_explicit_ingredient_product_query(self) -> None:
+        calls: list[WorkflowCall] = []
+        harness = TwoLayerRagHarness()
+        llm = FixedRequestLlm(
+            ParsedRequest(
+                intents=[Intent.PRODUCT_DISCOVERY],
+                query="나이아신아마이드 세럼 추천해줘",
+                ingredient_mentions=["나이아신아마이드"],
+                rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+            )
+        )
+        application = harness.create(calls, llm=llm)
+
+        output = await application.service.handle_turn(
+            harness.request("rule-ingredient-1", "나이아신아마이드 세럼 추천해줘")
+        )
+
+        assert output.status is ChatStatus.COMPLETED
+        assert calls == [WorkflowCall.INGREDIENT, WorkflowCall.PRODUCT]
+
+    async def test_rule_skips_claim_for_product_filter_only_query(self) -> None:
+        calls: list[WorkflowCall] = []
+        harness = TwoLayerRagHarness()
+        llm = FixedRequestLlm(
+            ParsedRequest(
+                intents=[Intent.PRODUCT_DISCOVERY],
+                query="세럼 추천해줘",
+                category=ProductCategory(code="demo:serum", name="세럼"),
+            )
+        )
+        application = harness.create(calls, llm=llm)
+
+        output = await application.service.handle_turn(
+            harness.request("rule-filter-1", "세럼 추천해줘")
+        )
+
+        assert output.status is ChatStatus.COMPLETED
+        assert calls == [WorkflowCall.PRODUCT]
+
     async def test_concern_query_runs_claim_then_evidence_then_product(self) -> None:
         calls: list[WorkflowCall] = []
         harness = TwoLayerRagHarness()

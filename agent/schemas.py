@@ -130,6 +130,7 @@ class SummarySaveStatus(StrEnum):
 class GraphNode(StrEnum):
     PREPARE_TURN = "prepare_turn"
     UNDERSTAND_REQUEST = "understand_request"
+    DECIDE_RAG_ROUTE = "decide_rag_route"
     RESOLVE_ENTITIES = "resolve_entities"
     ASSESS_INFORMATION = "assess_information"
     ASK_USER = "ask_user"
@@ -211,6 +212,7 @@ class ParsedRequest(AgentModel):
     is_modification: bool = False
     pending_answer: bool = False
     ingredient_mentions: list[str] = Field(default_factory=list)
+    skin_concerns: list[str] = Field(default_factory=list)
     known_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions)
     rag_route: RagRoute | None = None
 

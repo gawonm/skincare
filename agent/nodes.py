@@ -24,6 +24,7 @@ from agent.rag.schemas import (
     RoutineValidationRequest,
     Weekday,
 )
+from agent.rag_route_policy import RagRoutePolicy
 from agent.runtime import AgentRuntime
 from agent.schemas import (
     AgentState,
@@ -74,6 +75,7 @@ class AgentNodes:
         product_taxonomy: ProductTaxonomy,
         runtime: AgentRuntime,
         task_plan: TaskPlanBuilder,
+        rag_route_policy: RagRoutePolicy,
         evidence_query_policy: EvidenceQueryPolicy,
     ) -> None:
         self._llm = llm
@@ -87,6 +89,7 @@ class AgentNodes:
         self._ingredient_aliases = CommonIngredientAliasMapper()
         self._runtime = runtime
         self._task_plan = task_plan
+        self._rag_route_policy = rag_route_policy
         self._evidence_query_policy = evidence_query_policy
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
@@ -244,8 +247,26 @@ class AgentNodes:
             for experience in state.parsed_request.reported_experiences
             if experience not in known_experiences
         )
-        state.task_queue = self._task_plan.build(state.parsed_request)
         self._record_event(state, GraphNode.UNDERSTAND_REQUEST, "목적과 조건을 추출했습니다.")
+        return state
+
+    async def decide_rag_route(self, state: AgentState) -> AgentState:
+        parsed = self._require_parsed(state)
+        decision = self._rag_route_policy.decide(parsed)
+        state.parsed_request = parsed.model_copy(
+            deep=True,
+            update={
+                "rag_route": decision.route,
+                "skin_concerns": decision.normalized_skin_concerns or parsed.skin_concerns,
+            },
+        )
+        state.rag_route = decision.route
+        state.task_queue = self._task_plan.build(state.parsed_request)
+        self._record_event(
+            state,
+            GraphNode.DECIDE_RAG_ROUTE,
+            f"RAG 경로를 규칙으로 확정했습니다: {decision.reason.value}",
+        )
         return state
 
     async def resolve_entities(self, state: AgentState) -> AgentState:
@@ -264,8 +285,12 @@ class AgentNodes:
             return state
 
         unresolved_names: list[str] = []
+        # 상품 필터 문장 전체를 성분명으로 조회하면 DB 결과에 따라 우연히 성분이 붙을 수 있으므로,
+        # Evidence 직행 질문에서만 원문을 보수적인 해석 후보로 사용한다.
         fallback_mentions = (
-            [parsed.query] if parsed.rag_route is not RagRoute.CLAIM_THEN_EVIDENCE else []
+            [parsed.query]
+            if not parsed.ingredient_mentions and parsed.rag_route is RagRoute.EVIDENCE_ONLY
+            else []
         )
         for mention in parsed.ingredient_mentions or fallback_mentions:
             if not self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):

@@ -218,6 +218,9 @@ class FakeLlmClient(LlmClient):
         candidate_number = self._extract_candidate_number(message)
         rejected_numbers = self._extract_rejected_numbers(message, candidate_number)
         ingredient_mentions = list(dict.fromkeys(self._INGREDIENT_PATTERN.findall(message)))
+        skin_concerns = [
+            concern for concern in self._CONCERN_KEYWORDS if concern.casefold() in message.casefold()
+        ]
         rag_route = self._rag_route(message, intents, ingredient_mentions)
         return ParsedRequest(
             intents=intents,
@@ -234,6 +237,7 @@ class FakeLlmClient(LlmClient):
             is_modification=self._contains(message, self._MODIFICATION_KEYWORDS),
             pending_answer=pending_answer,
             ingredient_mentions=ingredient_mentions,
+            skin_concerns=skin_concerns,
             rag_route=rag_route,
         )
 

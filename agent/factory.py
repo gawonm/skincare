@@ -66,6 +66,7 @@ from agent.rag.schemas import (
     TextEmbeddingConfig,
 )
 from agent.rag_response import RagResponseAssembler
+from agent.rag_route_policy import RagRoutePolicy
 from agent.rag_workflow import RagWorkflowNodes
 from agent.runtime import AgentRuntime
 from agent.schemas import AgentModel, ContextLimits, ExecutionLimits
@@ -126,6 +127,7 @@ class AgentFactory:
             product_taxonomy=dependencies.product_taxonomy,
             runtime=runtime,
             task_plan=TaskPlanBuilder(),
+            rag_route_policy=RagRoutePolicy(),
             evidence_query_policy=evidence_query_policy,
         )
         rag_nodes = RagWorkflowNodes(
