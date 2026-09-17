@@ -165,3 +165,31 @@ DTO 변환 외에도 신규 분류,
 - [초기 파이프라인 설계](RAG_YK/LLM_RAG_PIPELINE.md)
 
 정식 `backend → agent` 계약은 호출자인 backend가 소유하며 위 문서의 합의 내용을 따른다.
+
+## Evidence RAG 검수 상태 계약 보류 (2026-09-17)
+
+현재 Evidence RAG의 저장·검수 계약은 아직 확정하지 않았다. Agent는 저장소의 원시 상태 문자열을
+직접 해석하지 않고, Backend가 변환한 `EvidenceReviewStatus`만 사용한다.
+
+- `VERIFIED`: 검수 완료로 합의된 저장 상태만 변환 대상이다. Citation과 `SUPPORTED` 판정에
+  사용할 수 있다.
+- `UNREVIEWED`: 검색 결과에는 남기지만 Citation과 `SUPPORTED` 판정에는 사용하지 않는다.
+  연결된 Claim은 `INSUFFICIENT`가 되며, 명시적 상반·오류가 아니라면 `CLAIM_ONLY` 탐색 후보로
+  유지한다.
+- `evidence_level=peer_reviewed_study`는 자료 유형·근거 등급이지 사람 검수 완료 상태가 아니다.
+  이 값만으로 `VERIFIED`로 승격하지 않는다.
+
+최신 `skincare_latest` dump의 `evidence_document.document_status` 허용값은 `final`,
+`amended_final`, `tentative`, `draft`, `rereview`, `unknown`, `NULL`이다. 현재 세 PubMed 행은
+`NULL`이므로 Agent에서 모두 `UNREVIEWED`로 보이는 것이 정상이다.
+
+현재 Backend 어댑터가 확인하는 문자열 `verified`는 dump의 CHECK 제약조건에 존재하지 않아 실제로
+성립할 수 없다. 이는 Evidence RAG 계약 확정 전의 임시 매핑이며, 운영 가능한 검수 상태 계약으로
+간주하지 않는다. Evidence RAG 구현을 이어갈 때 Data 파트와 아래 중 하나를 먼저 합의한다.
+
+1. `final`/`amended_final` 중 어떤 값이 사람 검수 완료를 의미하는지 확정하고 Backend 매핑을 수정한다.
+2. `document_status`가 문서 생명주기만 나타낸다면 별도 `review_status`를 ERD·마이그레이션에 추가한다.
+
+합의 전에는 Agent의 검수 게이트를 완화하거나 PubMed 자료를 자동으로 `VERIFIED` 처리하지 않는다.
+계약이 확정되면 `docs/contracts/backend-to-agent.md`, Agent 회귀 테스트, 실제 DB smoke 결과를 함께
+갱신한다.
