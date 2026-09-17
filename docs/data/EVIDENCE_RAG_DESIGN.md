@@ -4,12 +4,16 @@
 > 포함하지 않는다. Claim RAG(NIA annotation)는 1차 완료 상태로 간주하고, 여기서는
 > "Claim RAG가 찾은 claim을 실제 근거 문서로 추적하는" Evidence RAG의 데이터 구조만
 > 정의한다.
+>
+> **2026-09-15 갱신** — 모든 질문이 Claim RAG를 거치는 것은 아니다. D절(`EvidenceQueryAnchor`)이
+> Claim-backed 경로 외에 direct ingredient/multi-ingredient 경로도 정의한다(아래 flow는
+> 대표 경로 하나만 보여준다 — 전체 경로는 D.2/D.4 참고).
 
 ```
 사용자 질문
-→ Claim RAG (NIA annotation) → claim 추출
-→ Claim → Evidence query 생성
-→ Evidence RAG → 근거 문서 검색
+→ [필요 시] Claim RAG (NIA annotation) → claim 추출
+→ [또는 Claim 없이 직접] Intent/Entity 분석 → ingredient_refs
+→ EvidenceQueryAnchor 생성 → Evidence RAG → 근거 문서 검색
 → 답변 생성 (citation은 LLM이 아니라 코드가 metadata로 렌더링)
 ```
 
@@ -107,54 +111,362 @@ class EvidenceChunk(BaseModel):
 
 ---
 
-## D. Claim → Evidence Query Bridge
+## D. EvidenceQueryAnchor — Evidence RAG 진입 계약
 
-Claim RAG의 `nia_10s_30s_claim_ingestion.jsonl`(statement_id/decision/priority)과 실제 annotation(`ingredient_effect_claim.subject` 등)을 합쳐 아래 anchor를 만든다. **이번 단계에서는 이 표현만 정의하고 실제 검색은 실행하지 않는다.**
+**상태: 2026-09-15 4차 개정.** 3차 개정(출처·성분개수·검색모드가 `origin` 하나에 섞여
+있던 버전)을 분해한다 — 출처(origin)/성분 범위(ingredient_scope)/성분 매칭 방식
+(ingredient_match_mode)/검색 주제(claim_topic)를 4개의 독립 축으로 나누고, anchor 하나가
+검색 목적 하나만 표현하도록(atomic) 제한한다. 이 표현만 정의하고 실제 검색(retrieval 구현)은
+이번 단계에서 실행하지 않는다. `embedding` 관련 설정은 이 anchor에 넣지 않는다(D.13) —
+chat/annotation LLM은 Ollama/`qwen3.5:9b`로 결정됐고, embedding은 2026-09-17 별도로
+`BAAI/bge-m3`(local)/`vector(1024)`로 확정됐다(`EVIDENCE_STORAGE_ERD.md` 참고) — 둘 다
+retrieval 요청 스키마인 이 anchor의 필드는 아니다.
+
+**공용 contract 명칭 정정 반영**: `docs/contracts/two-layer-rag-agent-backend-contract.md`
+6절의 레거시 명칭 `EvidenceSearchRequest`는 향후 `EvidenceQueryAnchor`로 확정된다 — 이
+문서(D절)가 그 최종 형태의 기준이다. `ClaimHit.ingredient_id`(단일)라는 표현도 구버전이며,
+FROZEN된 실제 Claim contract는 `ingredient_refs: list[IngredientRef]`(배열)를 쓴다 — 아래
+D.3 매핑은 이 최신 형태를 기준으로 한다.
+
+### D.1 Persistence — DB 테이블 아님
+
+`EvidenceQueryAnchor`는 **영속화하지 않는다.** Pydantic 기반 비영속 retrieval request DTO다
+(`agent`/`backend` 레이어 안에서만 생성·소비되고 끝난다, 요청 하나의 수명과 함께 사라짐).
+
+**이유**:
+- 매 질문마다 새로 만들어지는 검색 입력값이지, 그 자체로 보존할 도메인 사실이 아니다.
+  저장해야 할 사실은 anchor가 아니라 그 결과(`ClaimEvidenceLink`, 이것도 3절에서 이미
+  비영속으로 확정)다.
+- 저장하면 Claim이 재라벨링되거나 Evidence corpus가 갱신될 때마다 오래된 anchor를 무효화
+  하는 별도 유지보수가 생긴다 — 캐시가 필요해지면 그때 "anchor 자체"가 아니라 "anchor +
+  retrieval 결과" 쌍을 캐시 테이블로 별도 설계한다(YAGNI, 지금은 안 함).
+- 저장이 필요하다고 뒤집힐 유일한 시나리오는 "같은 anchor로 반복 검색되는 비용을 줄여야
+  한다"는 성능 요구가 실측으로 확인될 때다 — 지금은 그런 근거가 없다.
+
+### D.2 분류 축 — 4개 독립 축으로 분해
+
+기존 프로젝트 convention 확인: 실제 코드(`agent/rag/schemas.py`)의 판별자성 enum은 전부
+`StrEnum` + snake_case 값이다(`QuestionIntent`, `LookupStatus`, `ConstraintSource`,
+`EvidenceSourceType` 등 — `docs/erd/app.md`/`models/`의 `_sql_enum` 관례와도 일치). 아래
+4개 축 전부 이 convention을 따라 `StrEnum`으로 제안한다(코드로 만들지 않음, 설계 문서에만
+기재).
+
+```python
+class EvidenceQueryOrigin(StrEnum):
+    """anchor가 어떤 트리거로 만들어졌는지. 성분 개수나 검색 모드와는 무관한 축이다."""
+
+    CLAIM_HIT = "claim_hit"        # Claim RAG가 찾은 claim을 검증하러 온 경로
+    DIRECT_QUERY = "direct_query"  # Claim 없이 사용자가 성분을 이미 알고 직접 질문(단일/다중 공통)
+
+
+class IngredientScope(StrEnum):
+    """이 anchor가 성분 몇 개를 대상으로 하는지. origin과 독립이다 - combination_claim
+    (Claim RAG)도 origin=CLAIM_HIT이면서 scope=MULTI일 수 있다."""
+
+    SINGLE = "single"
+    MULTI = "multi"
+
+
+class IngredientMatchMode(StrEnum):
+    """MULTI일 때만 의미가 있다(D.6). SINGLE이면 값이 있어도 검색에 영향 없음."""
+
+    ANY = "any"
+    ALL = "all"
+```
+
+**왜 이전 버전(3차)의 `origin={CLAIM_HIT, DIRECT_INGREDIENT, MULTI_INGREDIENT}`을 버리는가**:
+"성분이 1개인 직접 질문"과 "성분이 여러 개인 직접 질문"은 트리거 관점에서 같은 경로
+(Claim 없이 Intent/Entity 분석이 직접 만듦)인데, 성분 개수 차이 때문에 `origin` 값 자체를
+나눴었다 — 이러면 "이 anchor가 Claim에서 왔는가"를 물을 때마다 3개 값을 다 검사해야 했다.
+이제 `origin`은 `{CLAIM_HIT, DIRECT_QUERY}` 2값이고, "성분이 몇 개인가"는 `ingredient_scope`
+가 전담한다.
+
+**`anchor_type`("structured"/"free_text")은 제거한다.** D.6에서 정의하듯 유효한 anchor는
+**항상** `ingredient_refs`가 1개 이상이어야 하므로(구조화 안 된 성분만으로는 애초에 anchor를
+만들지 않음, `NO_ANCHOR` 상태로 처리) `anchor_type="free_text"`에 대응하던 경우 자체가 더 이상
+anchor 스키마 안에 존재하지 않는다 — 그 구분은 "anchor가 만들어졌는가 아닌가"(D.6)로
+옮겨간다.
+
+**`claim_topic`**: 기존 `EvidenceClaimTopic`(`models/evidence_document.py`, 이미 코드로
+존재하는 enum)을 그대로 재사용한다 — 새 값을 추가하지 않는다.
+
+| 요청하신 검색 목적 | 매핑되는 `EvidenceClaimTopic` 값 | 비고 |
+|---|---|---|
+| 효능 | `EFFICACY` | |
+| 안전성/주의사항 | `PRECAUTION` | |
+| 사용법 | `USAGE_INSTRUCTION` | |
+| 농도 | `CONCENTRATION_REGULATION` | |
+| 병용·충돌 | `COMBINATION` | `ingredient_scope=MULTI`와 별개 축 — `COMBINATION` topic이어도 scope=SINGLE일 수 있다(예: "레티놀은 다른 성분과 같이 쓰면 안 된다는 게 있나요?" 처럼 한 성분의 상호작용 "주의사항"을 묻는 경우) |
+| 규제 | `CONCENTRATION_REGULATION` | MFDS가 다루는 유일한 topic이 배합 한도/금지라 별도 값을 안 만든다(`EVIDENCE_COVERAGE_AUDIT.md` 1절) |
+| 추천 이유 | (신규 값 없음) | "제품 추천 이유"는 그 자체로 검색 주제가 아니라, `EFFICACY`/`PRECAUTION`/`COMBINATION` 등 다른 topic들의 anchor 결과를 Backend가 조합해서 만드는 산출물이다(요청하신 원칙 "제품 후보는 RDB, 추천 이유는 Evidence RAG") — anchor 레벨에 `recommendation_reason` topic을 새로 만들면 검색 대상이 불분명해진다 |
+
+### D.3 ClaimHit → EvidenceQueryAnchor 매핑
+
+**`ClaimDocument`/`ClaimHit` contract는 FROZEN이다 — 이 문서도, 어떤 Claim 쪽 파일도
+바꾸지 않는다.** 매핑은 Evidence 쪽에 있는 별도 어댑터(`ClaimHitToEvidenceQueryAnchorAdapter`
+같은 이름, 코드는 이번 단계에서 작성하지 않음)가 전담한다 — Claim 쪽 필드가 나중에 늘어나도
+이 어댑터 하나만 고치면 된다. **Claim 쪽 필드명을 Evidence 쪽에서 임의로 재정의하지 않는다**
+— 아래 표의 왼쪽 열은 Claim contract 그대로, 오른쪽 열만 Evidence 쪽 이름이다.
+
+`ClaimHit` 필드는 두 문서를 합쳐서 본다: 개별 필드는
+`docs/contracts/two-layer-rag-agent-backend-contract.md` 5절(제안 당시 표, 단 거기 적힌
+단일 `ingredient_id`는 구버전 — 아래 표가 최신),
+다중 성분 표현은 `docs/coordination/CLAUDE_SESSION_BOARD.md`의 `IngredientRef` 합의
+(`ingredient_refs: list[IngredientRef]`, `IngredientRef{ingredient_id, raw_name,
+matching_status, role}`)를 canonical로 따른다.
+
+| `ClaimHit` 필드 | `EvidenceQueryAnchor` 필드 | 매핑 규칙 |
+|---|---|---|
+| `statement_id` | `origin_ref` | 그대로 복사(D.11) |
+| — (고정값) | `origin` | 항상 `CLAIM_HIT` |
+| `ingredient_refs: list[IngredientRef]` | `ingredient_refs: list[str]`, `ingredient_scope` | D.12에 정의된 순서로 adapter가 먼저 관련 성분을 고르고, `matching_status == matched`인 `IngredientRef.ingredient_id`만 문자열로 추려 담는다(agent 쪽 id류 필드는 전부 `str`, D.5 5차 개정 참고). 1개면 `scope=SINGLE`, 2개 이상이면 `scope=MULTI`. **`matched`가 0개면 anchor를 만들지 않는다**(`NO_ANCHOR`, D.6) |
+| `IngredientRef.role`(primary/secondary/unspecified) | 매핑 없음(단, D.12 순서 준수) | anchor의 최종 필드에는 안 남지만, scope/match_mode/query_text를 정하기 전까지 adapter 내부에서 버리지 않는다(D.12) |
+| `statement_type` | `claim_topic` | `ingredient_effect_claim→EFFICACY`, `precaution→PRECAUTION`, `usage_instruction→USAGE_INSTRUCTION`, `combination_claim→COMBINATION`. `case_observation`/`cause_claim`/`contextual_factor`는 매핑 대상 아님(Evidence 검증이 필요한 statement_type이 아니므로 애초에 adapter 호출 전 필터링) |
+| `claim`(statement_type별 object/subject) | `query_text` | 검색 입력 문자열로만 쓴다(citation 아님, D.10). **하나의 anchor에 하나의 topic만**(D.4) — 원본 claim이 여러 주제를 담고 있으면 topic별로 anchor를 쪼갠다 |
+| `case_context`(전체 아님) | `query_terms`(보조) | **원문 그대로 복사하지 않는다.** whitelist 기반 결정적 추출만 허용(D.8) |
+| `support_status` | 매핑 없음 | Claim 쪽의 "아직 검증 안 됨" 표시일 뿐 anchor에 넣을 정보가 아니다 — Evidence 쪽 판정은 `ClaimEvidenceLink.support_level`이 별도로 만든다(D.9) |
+| `annotation_status` | 매핑 없음 | `rejected`면 애초에 adapter를 호출하지 않는다(Claim ingestion 정책이 이미 필터링, Board Shared Decisions #6) |
+
+**Claim contract 변경 필요**: NO. 위 매핑은 전부 기존 필드를 읽기만 한다 — Claim 쪽에 새
+필드를 요구하지 않는다.
+
+### D.4 Atomic anchor 규칙 — anchor 하나 = 검색 목적 하나
+
+**`EvidenceQueryAnchor` 하나는 `claim_topic` 하나만 표현한다.** 사용자 질문 하나에 검색
+목적이 여러 개면(예: "나이아신아마이드 효과랑 주의사항 알려줘") 이 경계에서 anchor를
+분해한다 — 한 `query_text`/`claim_topic`에 두 주제를 섞지 않는다.
+
+```
+사용자 요청 1개
+  → EvidenceQueryAnchor N개(topic별로 분리, 같은 request_id로 묶임 — D.11)
+    → anchor별 retrieval(각자 독립 실행)
+      → 결과 병합(Backend/Agent 책임, 이 문서 범위 밖)
+```
+
+예시("나이아신아마이드 효과랑 주의사항 알려줘", `ingredient_refs=[<niacinamide-uuid>]`):
+
+```
+anchor 1: origin=DIRECT_QUERY, scope=SINGLE, claim_topic=EFFICACY,   query_text="나이아신아마이드 효능"
+anchor 2: origin=DIRECT_QUERY, scope=SINGLE, claim_topic=PRECAUTION, query_text="나이아신아마이드 주의사항"
+```
+
+두 anchor는 `ingredient_refs`는 같지만 `claim_topic`/`query_text`가 다른 별개 요청이다 —
+검색도, 결과도 따로 취급한다(한쪽 결과가 없다고 다른 쪽까지 실패로 취급하지 않는다).
+
+### D.5 `EvidenceQueryAnchor` 필드
+
+**2026-09-15 5차 개정(구현 착수 전 타입 정합화)** — 실제 코드베이스 convention을 확인한 결과
+(`agent/rag/schemas.py`), 이 파일의 모든 id류 필드는 `UUID`가 아니라 `str`이다
+(`IngredientRecord.ingredient_id: str`, `ProductRecord.ingredient_ids: list[str]`,
+`docs/contracts/backend-to-agent.md`의 `Turn.request_id: str` 등). 아래 스니펫을 그 convention에
+맞춰 `UUID` → `str`로 정정한다 — 실제 UUID 파싱/검증은 backend/repository 경계에서 한다,
+agent 쪽 DTO는 문자열로만 주고받는다(기존 코드 전체가 이미 이 방식). **`ingredient_match_mode`
+의 canonical 규칙도 이번에 확정**: `ingredient_scope=SINGLE`이면 "무시되는 기본값"이 아니라
+**반드시 `None`**이어야 한다(빈 값을 허용하면 서로 다른 요청이 같은 검색으로 취급돼 재현성이
+깨진다는 지적 반영) — `ingredient_scope=MULTI`이면 `ANY`/`ALL` 중 하나가 **필수**다.
 
 ```python
 class EvidenceQueryAnchor(BaseModel):
-    claim_statement_id: str
-    claim_topic: Literal["effect", "precaution", "usage", "combination"]
-    anchor_type: Literal["structured", "free_text"]   # Case A / Case B
-    ingredient_id: UUID | None = None                  # anchor_type=structured일 때만
-    raw_name: str | None = None
-    raw_name_ko: str | None = None
-    query_terms: list[str]                              # en/ko 둘 다, 검색 실행 전 후보 문자열
+    anchor_id: str                                      # D.11, 이 anchor 하나만의 식별자
+    request_id: str                                     # D.11, 같은 사용자 요청에서 나온 N개 anchor를 묶음
+    origin: EvidenceQueryOrigin
+    origin_ref: str | None = None                       # D.11, origin=CLAIM_HIT일 때 필수
+
+    ingredient_refs: list[str]                            # D.6, 최소 1개(빈 리스트면 애초에 anchor 자체가 없음), 중복 금지
+    ingredient_scope: IngredientScope                     # len(ingredient_refs)와 정확히 일치해야 함(D.6)
+    ingredient_match_mode: IngredientMatchMode | None = None  # SINGLE→반드시 None, MULTI→반드시 ANY/ALL(D.6)
+
+    query_text: str                                       # 검색 입력. citation 아님(D.10). 공백만이면 거부
+    query_terms: list[str] = []                            # whitelist 추출만(D.8), 중복·공백 제거
+
+    claim_topic: EvidenceClaimTopic                        # anchor당 정확히 1개(D.4) - list 아님
+
+    # --- optional filters(아래 표) ---
+    source_types: list[EvidenceDocumentSourceType] = []
+    jurisdiction: str | None = None
+    document_status: list[str] = []
+    study_type: list[str] = []
+    formulation_type: list[str] = []
+    evidence_level: list[str] = []
+    language: str | None = None
+
+    # --- retrieval option: 기존 EvidenceSearchRequest/ProductSearchRequest와 동일 관례
+    # (DEFAULT_SEARCH_LIMIT=5, 상한 없음) 재사용 ---
+    limit: int = 5
 ```
 
-**예시 (Case A, ingredient_id 있음)**
+| 구분 | 필드 | 비고 |
+|---|---|---|
+| **core**(항상 필요) | `anchor_id`, `request_id`, `origin`, `ingredient_refs`(≥1, 중복 금지), `ingredient_scope`, `query_text`(공백만 거부), `claim_topic`(단수) | 이게 없으면 검색 자체가 성립 안 함 |
+| **core, 조건부 필수** | `origin_ref`(origin=CLAIM_HIT일 때 필수, DIRECT_QUERY면 반드시 `None`), `ingredient_match_mode`(scope=SINGLE이면 반드시 `None`, scope=MULTI이면 ANY/ALL 필수) | D.6/D.11, **canonical 정정**: "없어도 되는 값"이 아니라 scope에 따라 상태가 결정된다 |
+| **optional filter**(있으면 좁히고, 없으면 전체 대상) | `source_types`, `jurisdiction`, `document_status`, `study_type`, `formulation_type`, `evidence_level`, `language` | 전부 빈 리스트/None이 기본값 |
+| **retrieval option** | `limit`, `ingredient_match_mode` | `limit`은 상한이지 결과 개수 보장 아님(`hits=[]`가 정상, D.10) |
+| **제외**(이 anchor에 안 넣음) | `support_level`(D.9), citation 문자열(D.10), embedding vector(D.14), `IngredientRef.role`(D.3/D.12) | 각 항목 이유는 해당 절 참고 |
 
-입력 — `ingredient_effect_claim`: `subject={raw_name: "NIACINAMIDE", raw_name_ko: "나이아신아마이드", ingredient_id: "<uuid>", matching_status: "matched"}`, `object="피지 조절"`
+### D.6 `ingredient_refs` validation과 3가지 상태
 
-```json
-{
-  "claim_statement_id": "COT_ACN_F_O30_00221-S002",
-  "claim_topic": "effect",
-  "anchor_type": "structured",
-  "ingredient_id": "<uuid>",
-  "raw_name": "NIACINAMIDE",
-  "raw_name_ko": "나이아신아마이드",
-  "query_terms": ["niacinamide sebum control", "나이아신아마이드 피지 조절"]
-}
-```
+**Evidence RAG는 성분 중심이다 — 유효한 모든 anchor는 `ingredient_refs`가 최소 1개다.**
 
-**예시 (Case B, ingredient unresolved)**
+- `ingredient_scope=SINGLE` ⟺ `len(ingredient_refs) == 1`
+- `ingredient_scope=MULTI` ⟺ `len(ingredient_refs) >= 2`
+- `ingredient_scope`와 `len(ingredient_refs)`가 안 맞으면 validation error.
 
-입력 — `subject={raw_name: "BAMBUSA VULGARIS EXTRACT 등 4종 표기", matching_status: "unresolved_ambiguous_family"}`, `object="보습"`
+**성분을 하나도 식별 못 했을 때는 `EvidenceQueryAnchor`를 아예 만들지 않는다** — upstream
+(Claim adapter 또는 Agent의 ingredient entity resolution)의 실패 결과로 처리하고, 이걸
+"anchor는 유효한데 검색 결과가 없다"(`hits=[]`)와 절대 혼동하지 않는다. 세 가지 상태를
+구분한다(semantics만 — 실제 enum/응답 코드는 이번 단계에서 만들지 않음):
 
-```json
-{
-  "claim_statement_id": "COT_RED_M_O50_03216-S003",
-  "claim_topic": "effect",
-  "anchor_type": "free_text",
-  "ingredient_id": null,
-  "raw_name": "BAMBUSA VULGARIS EXTRACT",
-  "raw_name_ko": "대나무 추출물",
-  "query_terms": ["bamboo extract moisturizing", "대나무 추출물 보습"]
-}
-```
+| 상태 | 의미 | anchor 존재 여부 |
+|---|---|---|
+| `NO_ANCHOR` | 성분 식별 실패, 또는 애초에 Evidence 검증 대상이 아닌 질문(statement_type 필터 탈락 등) | anchor 자체가 생성되지 않음 |
+| `VALID_ANCHOR_WITH_NO_HITS` | anchor는 정상 생성됐지만 MFDS/CIR/PubMed에서 근거를 못 찾음 | anchor 있음, retrieval 결과 `hits=[]` |
+| `VALID_ANCHOR_WITH_HITS` | anchor 생성 + 근거 검색 결과 존재 | anchor 있음, `hits` 비어있지 않음 |
 
-`precaution`/`usage_instruction`은 `ingredient_id`가 스키마상 없을 수 있으므로(주체가 자유 텍스트, `subject: str`) 그 경우 `anchor_type="free_text"`로 `subject` 원문을 `query_terms`에 그대로 쓴다.
+`NO_ANCHOR`와 `VALID_ANCHOR_WITH_NO_HITS`는 사용자에게 보여줄 메시지도 달라야 한다(전자는
+"이 성분/질문은 근거를 찾을 수 있는 형태가 아님", 후자는 "근거를 찾아봤지만 없음") — 다만
+실제 메시지 문구·enum 구현은 이번 범위 밖이다.
+
+### D.7 다중 성분 분해 — interaction anchor와 per-ingredient anchor
+
+병용/충돌/비교 질문은 필요에 따라 **별도 anchor 두 종류**를 만들 수 있다(D.4의 atomic 규칙과
+같은 이유 — 서로 다른 검색 목적이라 섞지 않는다).
+
+**A. Interaction anchor** — `ingredient_scope=MULTI`, `ingredient_match_mode=ALL`. 같은
+`evidence_chunk`가 `ingredient_refs` 전부와 연결돼야 통과한다(D.13) — "두 성분을 동시에
+직접 다룬" 근거만 찾는다.
+
+**B. Per-ingredient anchor** — 성분마다 `ingredient_scope=SINGLE` anchor를 하나씩 만든다.
+각 성분의 독립적인 효능/안전성 근거를 각자 찾는다(같은 `request_id`로 묶임, D.11).
+
+**금지**: `ALL` 결과가 없다고 `ANY`(또는 per-ingredient 결과)를 interaction evidence처럼
+쓰지 않는다. `ALL` 결과가 비었으면 "직접적인 상호작용 근거 없음" + "각 성분의 개별 근거는
+있음(있다면)"으로 **분리해서** 전달한다 — 둘을 합쳐 "병용해도 된다는 근거가 있다"로
+표현하지 않는다(`rag_pipeline_handoff.md` 6절 기존 원칙과 동일한 이유).
+
+### D.8 `case_context` 사용 제한 — whitelist만 허용
+
+`ClaimHit.case_context` 원문 전체를 `query_terms`에 복사하지 않는다.
+
+**허용**:
+- 정규화된 성분명(`raw_name`/`raw_name_ko`, 이미 `IngredientRef`에 있는 필드)
+- `claim_topic`에 대응하는 검색어(예: EFFICACY topic이면 "효능"류 키워드)
+- formulation/농도/사용 시점 등 검색에 직접 필요한 **구조화된** 조건 필드(자유 서술이 아닌
+  이미 필드로 분리된 값)
+- 개인정보가 제거된, 검색 목적에 한정된 제한적 검색 용어
+
+**금지**:
+- NIA `case_context` 원문 전체(피험자 서술)
+- 개인 식별 가능 정보
+- Evidence claim과 무관한 사례 서술
+- LLM이 임의로 확장·해석한 사실(질문에 없는 내용을 만들어 검색어에 넣는 것)
+
+`ClaimHitToEvidenceQueryAnchorAdapter`가 `case_context`를 쓴다면, **whitelist 기반의
+결정적(deterministic) 추출만** 허용한다 — LLM 호출로 요약·확장하지 않는다. 이 원칙은
+어댑터 구현 시점에 그대로 지켜야 한다(코드는 이번 단계에서 작성하지 않음).
+
+### D.9 `support_level`은 anchor에 없다
+
+`DIRECT`/`PARTIAL`/`UNSUPPORTED`(또는 `WEAK`)는 **anchor 필드도, `EvidenceDocument`/
+`EvidenceChunk` 필드도 아니다.** anchor는 "무엇을 찾을지"를 기술하는 검색 요청일 뿐이고,
+`support_level`은 **retrieval이 끝난 뒤** 찾아온 `EvidenceHit`들을 원래 claim과 비교해서
+매기는 평가 결과다 — 그래서 `ClaimEvidenceLink.support_level`(`EVIDENCE_STORAGE_ERD.md`
+3/5절에서 이미 비영속으로 확정)에만 존재한다. **anchor 단계에서 `support_level`로 문서를
+미리 걸러내지 않는다** — 그건 아직 계산되지 않은 값이라 걸러낼 수가 없다(순서상 불가능).
+
+### D.10 Citation provenance는 anchor 바깥
+
+anchor는 `url`/`doi`/`pmid`/`page`/`section` 같은 citation 문자열을 담지 않는다 — 그건
+검색 **결과**(`EvidenceHit`)의 속성이지 검색 **입력**의 속성이 아니다. `query_text`는
+검색 입력일 뿐 citation source가 아니다 — 예를 들어 `query_text="니아신아마이드 피지
+조절"`이 검색됐다고 해서 그 문자열이 답변의 출처로 표시되는 일은 없다. 출처는 어디까지나
+retrieved `EvidenceDocument`/`EvidenceChunk`의 metadata를 Backend가 조합해서 만든다
+(`EVIDENCE_STORAGE_ERD.md` 7절 "Citation 조합 원칙"). LLM은 이 과정에 관여하지 않는다.
+
+빈 결과(`hits=[]`)는 정상적인 retrieval 결과다(D.6의 `VALID_ANCHOR_WITH_NO_HITS`). anchor
+자체에는 "결과가 없으면 이렇게 한다"는 fallback 로직이 없다 — anchor는 순수 요청 객체이고,
+빈 결과 처리(임의 근거 생성 금지, `UnverifiableReason.NO_EVIDENCE_FOUND` 반환 등)는 anchor를
+소비하는 서비스(`backend/services/`)의 책임이다.
+
+### D.11 식별자 3종 — `anchor_id` / `request_id` / `origin_ref`
+
+세 성격을 분리한다 — 하나로 합치면 "이 검색 한 건을 추적하려는 목적", "같은 사용자 요청에서
+나온 여러 검색을 묶는 목적", "이 검색이 어느 도메인 객체에서 왔는지"가 섞인다.
+
+- **`anchor_id: str`** — **원자적 anchor 하나**의 요청 내 식별자. anchor 인스턴스가 생성될
+  때마다 새로 발급한다(같은 claim으로 재검색해도, 같은 요청 안에서 topic별로 쪼개져도 전부
+  다른 `anchor_id`). DB에 저장하지 않으므로 FK도 아니다 — domain persistence key처럼 쓰지
+  않는다(재실행마다 값이 달라지는 임시 식별자라는 뜻).
+- **`request_id: str`** — **동일 사용자 요청에서 생성된 복수 anchor를 묶는** correlation ID.
+  기존 Backend contract에 이미 같은 이름·같은 목적의 필드가 있어 그대로 재사용한다
+  (`docs/contracts/backend-to-agent.md`의 `Turn.request_id` — "한 사용자 요청의 중복 방지
+  키, 재전송 시 유지"). D.4에서 하나의 사용자 요청이 여러 anchor로 쪼개질 때, 이 anchor들이
+  전부 같은 `request_id`를 공유한다 — 새 필드를 만들지 않고 기존 필드를 그대로 흘려보낸다.
+- **`origin_ref: str | None`** — anchor가 어느 도메인 객체에서 파생됐는지 가리키는 **안정
+  참조**. `origin=CLAIM_HIT`이면 `claim_statement_id`를 그대로 담아 필수값이 된다(D.3).
+  `origin=DIRECT_QUERY`는 파생 근거가 되는 Claim 레코드가 없으므로 `None`이다.
+
+### D.12 `IngredientRef.role` 처리 순서 — adapter 안에서는 버리지 않음
+
+**Claim contract는 바꾸지 않는다.** `ClaimHitToEvidenceQueryAnchorAdapter`가
+`ClaimHit.ingredient_refs`의 `role`(primary/secondary/unspecified)을 최종 anchor 필드에
+그대로 저장하지는 않지만(anchor는 `list[str]`만 가짐, D.3), **아래 4가지를 결정하기 전까지는
+`role`을 버리지 않는다**:
+
+1. 이 claim과 실제로 관련된 ingredient를 고르는 단계(예: `role=unspecified`인 부수 언급을
+   주 대상에서 뺄지 판단)
+2. `ingredient_scope`(SINGLE/MULTI) 결정
+3. `ingredient_match_mode`(ANY/ALL) 결정 — 예를 들어 `role=primary`/`secondary`가 뚜렷하게
+   구분된 `combination_claim`이면 `ALL`(상호작용 근거), 단순 나열(`role=unspecified`만
+   있음)이면 `ANY`부터 시도하는 식의 판단 근거로 쓸 수 있다
+4. `query_text` 구성(주 성분을 먼저 언급하는 등)
+
+즉 `role`은 anchor의 **입력 신호**로만 쓰이고 **출력 필드**로는 안 나타난다 — "role을 아무
+판단 없이 단순 제거"하지 않는다는 요청을 어댑터 설계 원칙으로 명문화한다(코드는 이번 단계
+에서 작성하지 않음).
+
+### D.13 기존 schema와의 조회 관계(semantics만, 코드 없음)
+
+이번 단계는 설계까지만 — 아래는 `evidence_document`/`evidence_chunk`/
+`evidence_chunk_ingredient`(`EVIDENCE_STORAGE_ERD.md`)를 anchor 필드가 어떻게 걸러내는지
+**의미**만 정의한다. 실제 SQL/repository 코드는 작성하지 않는다. (`anchor_type`이 없어졌으므로
+"free_text 전용 경로"는 이제 `NO_ANCHOR`로 처리돼 이 목록에 없다 — 여기 아래는 전부
+`ingredient_refs`가 1개 이상 있는, 즉 실제로 생성된 anchor만 다룬다.)
+
+1. **`ingredient_scope=SINGLE`** (또는 `MULTI`+`ingredient_match_mode=ANY`): "`ingredient_refs`의
+   성분 중 하나라도 연결된 `evidence_chunk_id` 집합"을 `evidence_chunk_ingredient`에서
+   `ingredient_id`로 필터링해 구하고, 그 집합 안에서 `query_text`/`query_terms`로 content
+   검색(벡터+BM25 하이브리드, `rag_chunk`와 같은 방식) + optional filter(D.5)를 적용한다.
+2. **`ingredient_scope=MULTI`, `ingredient_match_mode=ALL`**: "`ingredient_refs`의 **모든**
+   성분이 각각 연결된 `evidence_chunk_id` 집합"(연결된 서로 다른 `ingredient_id` 개수가
+   `len(ingredient_refs)`와 같은 청크만)을 구한 뒤, 그 집합 안에서 content 검색 + optional
+   filter를 적용 — 이 결과가 곧 "상호작용/병용을 실제로 같이 다룬" 근거 후보다(D.7 interaction
+   anchor).
+3. **optional filter 적용 대상**: `source_types`/`evidence_level`은 `evidence_chunk`에
+   이미 비정규화돼 있어 청크 테이블만 봐도 된다. `document_status`/`study_type`/
+   `formulation_type`/`jurisdiction`은 `evidence_document`에만 있으므로 `document_id`로
+   조인해야 한다(`evidence_chunk.document_id` FK).
+4. **`formulation_type` 필터와 `ingredient_match_mode`는 서로 다른 축이다** — 헷갈리지
+   않도록 명시한다. `formulation_type`은 **문헌(연구)이 실제로 무엇을 실험했는지**
+   (`single_ingredient` vs `combination_formulation`, 예: PMID 22206073의
+   niacinamide+glycerin 연구)를 뜻하는 `EvidenceDocument` 속성이고, **사용자가 만드는
+   완제품의 제형(크림/세럼 등)과는 무관하다.** `ingredient_match_mode`는 **사용자가 무엇을
+   묻고 있는지**(성분 여러 개를 각각 묻는지, 같이 쓰는 걸 묻는지)를 뜻하는 anchor 속성이다.
+   예를 들어 `ingredient_match_mode=ALL`으로 찾은 청크라도 그 문서의
+   `formulation_type=single_ingredient`일 수 있다(단일 성분 연구인데 논의 중에 다른
+   성분을 언급만 한 경우) — 이 경우 "직접적인 병용 연구 근거"로 격을 올리면 안 되고, 그
+   구분은 `ClaimEvidenceLink.support_level`(D.9) 평가 시점에 반영한다.
+
+### D.14 Embedding 상태 — 이번에도 변경 없음
+
+- chat/annotation LLM: Ollama / `qwen3.5:9b`(총괄 결정, config.yaml `agent.chat.provider`)
+- embedding provider/model: **2026-09-17 확정 — `BAAI/bge-m3`(local), `vector(1024)`.**
+  `config.yaml`의 전역 `agent.embedding.provider`(현재 `openai`, `rag_chunk`용)는 이 결정과
+  무관하게 유지된다 — 이건 Evidence 저장소(`evidence_chunk`)에만 적용되는 별도 확정이다.
+- `EvidenceQueryAnchor`에는 embedding vector를 포함하지 않는다 — retrieval service가
+  `query_text`로 실행 시점에 생성하는 것을 기본안으로 유지한다.
+- `evidence_chunk.embedding`은 `vector(1024)`다(`EVIDENCE_STORAGE_ERD.md`/`models/
+  evidence_chunk.py`의 `EVIDENCE_EMBEDDING_DIMENSION` 참고). `rag_chunk`의
+  `vector(1536)`/`text-embedding-3-small`은 이 결정과 무관하게 그대로 둔다.
 
 ---
 

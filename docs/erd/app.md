@@ -7,6 +7,21 @@
 (`0001_extensions` ~ `b518f9fd7cf7_add_gender_age_group_terms_agreed_`, `993200358dfb`로
 브랜치 병합). `app_user`에 회원가입 확장 필드(`gender`/`age_group`/`terms_agreed*`) 추가.
 
+**2026-09-15 갱신(1차)** — `evidence_document`/`evidence_chunk` ERD·컬럼 설계 추가(Evidence RAG,
+[EVIDENCE_RAG_DESIGN.md](../data/EVIDENCE_RAG_DESIGN.md)/[EVIDENCE_COVERAGE_AUDIT.md](../data/EVIDENCE_COVERAGE_AUDIT.md)
+기반).
+
+**2026-09-15 갱신(2차, 사용자 승인 반영)** — 성분 연결을 단일 FK에서 `evidence_chunk_ingredient`
+조인 테이블로 변경(Session A `EvidenceQueryAnchor` 다중 성분 요구사항 반영), MFDS 신규 적재
+방향 확정(`rag_chunk` 재적재 안 함), `evidence_document.evidence_level`과 Claim-Evidence
+`support_level`을 분리 명시, `chunk_id` 자연키와 citation locator(`document_id`/`page`/
+`section`/`chunk_index`/`content_hash`/`parser_version`)를 독립 컬럼으로 분리.
+
+**두 테이블(`evidence_document`/`evidence_chunk`) 모두 `models`/migration은 아직 작성하지
+않았다** — 사용자 승인 후 다음 단계에서 작성(규칙 14,
+[CLAUDE_SESSION_BOARD.md](../coordination/CLAUDE_SESSION_BOARD.md) Shared Decisions #4).
+위 mermaid/컬럼 표는 마이그레이션 전 제안 설계다.
+
 ## 전체 관계도
 
 ```mermaid
@@ -170,6 +185,57 @@ erDiagram
         timestamptz updated_at
     }
 
+    EVIDENCE_DOCUMENT {
+        uuid id PK
+        text source_id UK
+        text source_type
+        text source_title
+        text publisher
+        date document_date
+        text url
+        text doi
+        text pmid
+        text jurisdiction
+        text language
+        text evidence_level
+        array raw_ingredient_names
+        text document_status
+        text study_type
+        text formulation_type
+        array claim_topics
+        timestamptz retrieved_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    EVIDENCE_CHUNK {
+        uuid id PK
+        uuid document_id FK
+        text chunk_id UK
+        text source_type
+        text source_title
+        int page
+        text section
+        int chunk_index
+        text content
+        text content_hash
+        text parser_version
+        vector1536 embedding
+        text embedding_model
+        text url
+        text doi
+        text pmid
+        text jurisdiction
+        text evidence_level
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    EVIDENCE_CHUNK_INGREDIENT {
+        uuid evidence_chunk_id PK,FK
+        uuid ingredient_id PK,FK
+    }
+
     INGREDIENT_MASTER ||--o{ EVIDENCE : "ingredient_id"
     INGREDIENT_MASTER ||--o{ INGREDIENT_KNOWLEDGE_FACT : "ingredient_id"
     INGREDIENT_MASTER |o--o{ PRODUCT_INGREDIENT : "ingredient_id (nullable)"
@@ -177,6 +243,9 @@ erDiagram
     PRODUCT_INGREDIENT_SNAPSHOT ||--o{ PRODUCT_INGREDIENT : "snapshot_id"
     EVIDENCE |o--o{ RAG_CHUNK : "evidence_id"
     INGREDIENT_KNOWLEDGE_FACT |o--o{ RAG_CHUNK : "ingredient_knowledge_fact_id"
+    EVIDENCE_DOCUMENT ||--o{ EVIDENCE_CHUNK : "document_id"
+    EVIDENCE_CHUNK ||--o{ EVIDENCE_CHUNK_INGREDIENT : "evidence_chunk_id"
+    INGREDIENT_MASTER ||--o{ EVIDENCE_CHUNK_INGREDIENT : "ingredient_id"
 ```
 
 `PRODUCT`는 다른 테이블과 FK로 연결돼 있지 않다 — `product_ingredient_snapshot`이 상품을
@@ -407,6 +476,196 @@ CHECK 제약으로 `source_table`별 참조 컬럼 정확히 1개만 채워지�
 - 운영 임베딩 모델은 기존 `text-embedding-3-small`을 유지한다.
 - BGE-M3 1024차원 전환, 벡터 컬럼 변경, 전체 재임베딩과 재색인은 진행하지 않는다.
 
+### evidence_document — 2026-09-15(1차)/2026-09-15(2차 수정) 제안, 2026-09-17 승인·live 적용 완료
+
+[EVIDENCE_RAG_DESIGN.md](../data/EVIDENCE_RAG_DESIGN.md) B절 `EvidenceDocument`와
+[EVIDENCE_COVERAGE_AUDIT.md](../data/EVIDENCE_COVERAGE_AUDIT.md) 6-D/7절(Option B 채택)을
+그대로 테이블로 옮긴 안이다. MFDS/CIR/PubMed 문서 단위 메타데이터를 담는다 — `rag_chunk`처럼
+문서 개념 없이 "행 1개 = 청크 1개"로 두면 CIR/PubMed의 page/section 인용을 표현할 수 없어서
+(7절 Option A/B 비교) 별도 테이블로 분리한다.
+
+**2차 수정(성분 연결 방식 변경)**: `ingredient_id` 단일 FK 컬럼을 이 테이블에서 제거했다.
+하나의 evidence_chunk가 성분 병용/충돌/비교 근거처럼 여러 성분을 동시에 다룰 수 있어(아래
+`evidence_chunk_ingredient` 참고), 문서의 성분 목록은 이 테이블에 별도로 저장하지 않고
+**그 문서에 속한 chunk들의 성분 관계로부터 파생**하는 것을 기본안으로 한다(별도
+document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반영). `raw_ingredient_names`(원본
+표기 텍스트)만 문서 레벨에 남긴다.
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| id | uuid | N | `gen_random_uuid()` | PK |
+| source_id | text | N | - | 자연키 일부(`PMID:16766489`, CIR 성분코드, MFDS 게시글ID 등). 단독 UNIQUE 아님(아래 참고) |
+| source_type | text(enum) | N | - | `mfds`/`cir`/`pubmed_abstract`/`regulatory_other` |
+| source_title | text | N | - | 문서 제목 |
+| publisher | text | Y | - | 발행 기관/저널 |
+| document_date | date | Y | - | 원 출처 발행/개정일 |
+| url | text | Y | - | 출처 URL |
+| doi | text | Y | - | |
+| pmid | text | Y | - | |
+| jurisdiction | text | Y | - | MFDS만 값 있음, CIR/PubMed는 보통 NULL |
+| language | text | N | `'ko'` | |
+| evidence_level | text(enum) | N | - | `official_regulatory`/`expert_reviewed`/`peer_reviewed_study` — **문서 자체의 출처 신뢰도 등급**(`rag_chunk.confidence_tier`와 같은 성격). Claim-Evidence 매칭 강도(`DIRECT`/`PARTIAL`/`WEAK`, `NIACINAMIDE_EVIDENCE_VERTICAL_SLICE.md` 4절의 "Match" 열)와는 **다른 개념**이다 — 그건 문서 속성이 아니라 "이 claim과 이 evidence가 얼마나 관련 있는가"라는 관계 속성이라 이 테이블에 없다(아래 "쟁점→확정" 2번 참고) |
+| raw_ingredient_names | text[] | N | `{}` | 원본 표기 그대로(성분 FK 연결은 `evidence_chunk_ingredient`가 담당) |
+| document_status | text(enum) | Y | - | `final`/`amended_final`/`tentative`/`draft`/`rereview`/`unknown`. **CIR 전용**, MFDS/PubMed는 NULL |
+| study_type | text(enum) | Y | - | `human_study`/`in_vitro`/`mixed_in_vitro_and_human`/`animal_study`/`review`/`unknown`. **PubMed 전용** |
+| formulation_type | text(enum) | Y | - | `single_ingredient`/`combination_formulation`. **PubMed 전용**(niacinamide+glycerin 같은 복합 제형 구분) |
+| claim_topics | text[] | N | `{}` | `efficacy`/`precaution`/`concentration_regulation`/`usage_instruction`/`combination` 중 해당 값들 |
+| retrieved_at | timestamptz | N | `now()` | MFDS/CIR/PubMed 원문·metadata를 가져온 시각. `created_at`(DB 레코드 생성 시각)과 분리 — 기존 legacy `evidence.collected_at` 명칭은 계승하지 않고 `retrieved_at`으로 통일(2026-09-15 3차 승인 조건) |
+| created_at / updated_at | timestamptz | N | `now()` | 공통 |
+
+키: PK `id`, **UK `(source_type, source_id)` 복합**(같은 자연키 문자열이라도 소스 종류가
+다르면 다른 문서일 수 있어 `source_type`을 같이 묶는다 — 재수집 시 매칭 키는
+`rag_chunk.sync_documents`의 자연키 관례와 동일한 목적). FK 없음(위 2차 수정 참고).
+
+`url`/`doi`/`pmid`는 Board 제안명 `source_url`과 같은 역할이다 — 필드명은
+`EVIDENCE_RAG_DESIGN.md`의 기존 Pydantic 계약(`url: str | None`)을 그대로 따랐다(이름만 다름,
+누락 아님). `document_date`도 Board 제안명 `published_at`과 같은 역할(원 출처 발행/개정일).
+
+`document_status`/`study_type`/`formulation_type`/`claim_topics` 4개는
+`EVIDENCE_COVERAGE_AUDIT.md` 6절/`NIACINAMIDE_EVIDENCE_VERTICAL_SLICE.md` 6절에서 제안된
+필드를 그대로 반영했다 — MFDS 문서는 전부 NULL/빈 배열로 두면 된다(그 소스엔 해당 없음).
+
+### evidence_chunk — 2026-09-15(1차)/2026-09-15(2차 수정) 제안, 2026-09-17 승인·live 적용 완료
+
+검색·임베딩 대상 단위. `rag_chunk`의 "출처 메타데이터를 청크에 비정규화해서 조인을 피한다"
+관례를 그대로 따르되, `evidence_document`가 문서 단위 정보를 갖고 `evidence_chunk`가 그중
+검색 필터에 쓰는 필드(`source_type`/`source_title`/`url`/`doi`/`pmid`/`jurisdiction`/
+`evidence_level`)만 복사해서 들고 있다.
+
+**2차 수정**: (1) `ingredient_id` 단일 FK 컬럼을 제거하고 `evidence_chunk_ingredient` 조인
+테이블로 대체(아래 참고) — 하나의 청크가 여러 성분(병용/충돌/비교 근거)을 동시에 다룰 수
+있어서다. (2) `chunk_id` 자연키 문자열에 인용 정보를 합쳐 넣고 나중에 다시 파싱하는 구조를
+피하기 위해, 그 구성요소(`document_id`/`chunk_index`/`page`/`section`)는 이미 각자 독립
+컬럼으로 있었고 여기에 `content_hash`/`parser_version`을 추가했다 — `chunk_id`는 여전히
+자연키(재수집 매칭용)로 남지만, 실제 citation 조합은 문자열을 쪼개지 않고 아래 독립 컬럼들을
+그대로 읽어서 한다(자세한 내용은 "Citation provenance 보존 방식" 절).
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| id | uuid | N | `gen_random_uuid()` | PK |
+| document_id | uuid | N | - | FK → evidence_document.id, `ON DELETE CASCADE`. citation locator 구성요소로도 직접 쓰임(문자열 파싱 아님) |
+| chunk_id | text | N | - | UK. 결정적 자연키 `"{source_id}:{page}:{section}:{chunk_index}"`(재수집 시 같은 청크를 같은 행에 매칭하는 용도로만 씀 — citation 조합에는 안 씀) |
+| source_type | text(enum) | N | - | document에서 비정규화 |
+| source_title | text | N | - | document에서 비정규화 |
+| page | int | Y | - | CIR PDF만 값 있음. citation locator 구성요소로 직접 노출 |
+| section | text | Y | - | PubMed는 `'abstract'` 고정, MFDS는 NULL. citation locator 구성요소로 직접 노출 |
+| chunk_index | int | N | `0` | 같은 document 안에서의 순번. citation locator 구성요소로 직접 노출 |
+| content | text | N | - | 임베딩 대상 원문. 요약하지 않고 원문 그대로 |
+| content_hash | text | N | - | `content`의 sha256. 재수집 시 원문 불변 여부 확인용(`product_ingredient_snapshot.raw_text_hash`와 동일 관례) |
+| parser_version | text | N | - | 이 청크를 만든 파서/청킹 로직 버전. 파서가 바뀌면 이 값으로 재처리 대상을 가려냄 |
+| embedding | vector(1024) | N | - | `BAAI/bge-m3`(local) — 2026-09-17 확정, `rag_chunk`와 더 이상 모델·차원 통일 안 함(아래 참고) |
+| embedding_model | text | N | - | 벡터를 만든 모델명 |
+| url | text | Y | - | document에서 비정규화 |
+| doi | text | Y | - | document에서 비정규화 |
+| pmid | text | Y | - | document에서 비정규화 |
+| jurisdiction | text | Y | - | document에서 비정규화 |
+| evidence_level | text(enum) | N | - | document에서 비정규화. 문서 신뢰도 등급 — 위 evidence_document 표의 구분 설명과 동일 |
+| created_at / updated_at | timestamptz | N | `now()` | 공통 |
+
+키: PK `id`, UK `chunk_id`, FK `document_id`(CASCADE). `ingredient_id` FK 없음 — 성분 연결은
+아래 `evidence_chunk_ingredient`가 전담.
+
+인덱스(제안, `rag_chunk`와 동일한 하이브리드 검색 구성을 evidence_chunk 전용으로 재구성):
+- `ix_evidence_chunk_embedding_hnsw` — HNSW, cosine, `rag_chunk`와 동일 파라미터(m=16, ef_construction=64)
+- `ix_evidence_chunk_document_id`
+- `ix_evidence_chunk_content_bm25` — ParadeDB pg_search BM25(raw SQL, autogenerate 밖)
+
+### evidence_chunk_ingredient — 2026-09-15(2차) 제안, 2026-09-17 승인·live 적용 완료
+
+`evidence_chunk`와 `ingredient_master`의 다대다 조인 테이블. Claim 세션(Session A)이 전달한
+요구사항 — `EvidenceQueryAnchor`가 병용/충돌/비교 근거처럼 여러 성분을 동시에 참조해야 한다는
+점 — 을 Evidence 저장 구조에 반영한다.
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| evidence_chunk_id | uuid | N | - | FK → evidence_chunk.id, `ON DELETE CASCADE` |
+| ingredient_id | uuid | N | - | FK → ingredient_master.id, `ON DELETE CASCADE` |
+
+키: PK `(evidence_chunk_id, ingredient_id)`(복합, `EntityBase` 상속 안 함 — 순수 조인
+테이블이라 자체 `id`/`created_at`/`updated_at`이 필요 없다, `product_ingredient` 같은
+"조인이지만 자체 속성이 있는" 테이블과는 다른 패턴). 인덱스: `ix_evidence_chunk_ingredient_ingredient_id`
+= `(ingredient_id, evidence_chunk_id)` — "이 성분의 모든 evidence_chunk"를 조회하는
+검색 필터 경로(PK의 역방향)를 위해 별도로 둔다.
+
+`EvidenceChunk.ingredient_ids: list[UUID]`(Pydantic)는 이 테이블의
+`(evidence_chunk_id, ingredient_id)` 행 집합과 매핑한다 — 청크 하나에 여러 행이 있을 수 있다.
+
+#### Pydantic ↔ ORM 매핑
+
+`EVIDENCE_RAG_DESIGN.md` B/E절의 Pydantic 모델은 필드명을 그대로 유지했고, 표에 없는
+차이만 아래에 남긴다.
+
+| Pydantic (`EVIDENCE_RAG_DESIGN.md`) | ORM 컬럼 | 비고 |
+| --- | --- | --- |
+| `EvidenceDocument.source_id`~`raw_ingredient_names` | `evidence_document`의 동일 이름 컬럼 | 1:1. 단 `ingredient_ids: list[UUID]`는 이 테이블에 컬럼이 없다 — `evidence_chunk_ingredient`에서 파생(아래 행 참고) |
+| `EvidenceDocument.ingredient_ids: list[UUID]` | 컬럼 없음(파생값) | `SELECT DISTINCT ingredient_id FROM evidence_chunk_ingredient WHERE evidence_chunk_id IN (문서의 chunk들)`로 조회 시점에 구한다. 별도 document-ingredient 조인 테이블은 추가하지 않음(지시사항) |
+| `EvidenceDocument`에 없던 `document_status`/`study_type`/`formulation_type`/`claim_topics` | `evidence_document`의 동일 컬럼 | `EVIDENCE_COVERAGE_AUDIT.md` 6절 제안분 반영 |
+| `EvidenceChunk.chunk_id`~`chunk_index` | `evidence_chunk`의 동일 이름 컬럼 | 1:1 |
+| `EvidenceChunk.source_id` | `evidence_chunk.document_id`(FK) | Pydantic은 문자열 자연키, ORM은 FK — 조회 시 `evidence_document.source_id`로 역참조 |
+| `EvidenceChunk.ingredient_ids: list[UUID]` | `evidence_chunk_ingredient`의 `(evidence_chunk_id=이 청크, ingredient_id)` 행들 | 1개 청크 : N개 조인 행. 저장 시 리스트를 순회해 조인 행을 `batch insert`, 조회 시 `GROUP BY evidence_chunk_id`로 리스트 복원 |
+| `EvidenceHit`(E절) | 컬럼 없음 — `evidence_chunk`+`evidence_document`+`evidence_chunk_ingredient` 조회 결과 + score를 조합해 서비스 계층에서 구성 | `rag_chunk_repository.RagChunkSearchHit` 패턴과 동일하게, `EvidenceChunkRepository`가 `EvidenceChunkSearchHit(chunk, score)` DTO로 반환하는 방식을 제안(다음 단계) |
+| `ClaimEvidenceLink` | DB 테이블 없음 | Claim(Session A `claim_chunk`)과 Evidence를 런타임에 묶는 응답 객체 — 영속화 대상 아님. `support_level`(DIRECT/PARTIAL/WEAK 등, `NIACINAMIDE_EVIDENCE_VERTICAL_SLICE.md` 4절)도 이 객체가 최종 소유한다 — `evidence_document.evidence_level`(문서 신뢰도)과 혼동하지 않는다(아래 "쟁점→확정" 참고) |
+
+`RagChunkInsert`(`backend/repositories/rag_chunk_repository.py`)가 import 방향 문제로
+`models`만 참조하는 별도 DTO를 두는 것과 같은 이유로, `evidence_document`/`evidence_chunk`도
+저장 시 `EvidenceDocumentInsert`/`EvidenceChunkInsert` DTO를 `backend/repositories/`에 별도로
+둘 것을 제안한다(다음 단계, 이번엔 파일 미작성).
+
+#### Citation provenance 보존 방식
+
+`EVIDENCE_RAG_DESIGN.md` F절 원칙을 스키마로 강제한다:
+
+- **Backend citation은 `chunk_id` 문자열을 파싱해서 만들지 않는다.** `document_id`/`page`/
+  `section`/`chunk_index`가 각각 독립 컬럼으로 이미 있고, `url`/`doi`/`pmid`/`jurisdiction`도
+  (document에서 비정규화된) 독립 컬럼이므로, citation rendering은 검색 결과로 돌아온
+  `evidence_chunk`(+필요 시 `evidence_document`) row의 이 컬럼들을 그대로 조합해서 만든다.
+  `chunk_id`는 재수집 시 매칭용 자연키로만 쓰고, 파싱해서 값을 복원하는 용도로 쓰지 않는다.
+- `url`/`doi`/`pmid`/`page`/`section`/`jurisdiction`은 **최초 적재 시점에 한 번만 채우고
+  이후 절대 수정하지 않는다** — DB CHECK로는 강제할 수 없어 애플리케이션 계층 규칙으로 남긴다
+  (`EvidenceChunkRepository`에 이 필드들의 update 경로를 아예 안 만드는 방식을 제안 —
+  `rag_chunk`처럼 `content`/`content_hash`/`embedding`만 재동기화 대상으로 삼는다).
+- `chunk_id`가 `source_id:page:section:chunk_index`로 결정적이므로, 같은 문서를 재수집해도
+  같은 청크는 같은 `chunk_id`로 다시 매칭된다. `content_hash`는 그 청크의 원문이 실제로
+  바뀌었는지(재임베딩 필요 여부)를 판단하는 데 쓴다 — `chunk_id`(정체성)와 `content_hash`(내용
+  변경 여부)를 분리해서, "같은 청크인데 원문만 갱신"과 "다른 청크로 교체"를 구분할 수 있게 한다.
+- LLM은 `content`만 받고 `url`/`doi`/`pmid`/`page`/`section`은 절대 생성하지 않는다 —
+  이미 `GeneratedClaim.evidence_ids`가 이 원칙을 따르고 있음(계약 문서 8절), evidence_chunk도
+  동일 원칙을 그대로 물려받는다.
+
+#### 결정 확정 (2026-09-15, 2차 — 사용자 승인)
+
+지난 라운드의 쟁점 1~4는 아래와 같이 확정됐다:
+
+1. **성분 연결 = 조인 테이블(`evidence_chunk_ingredient`).** 단일 FK 안은 채택하지 않음 —
+   위 `evidence_chunk`/`evidence_chunk_ingredient` 절 참고.
+2. **임베딩 = `BAAI/bge-m3`(local)/`vector(1024)`.** 2026-09-17 재확정 — 이전(2026-09-15)에는
+   `text-embedding-3-small`/`vector(1536)`로 `rag_chunk`와 모델·차원을 통일하는 안이 승인됐으나,
+   저장 테이블·검색 경로가 이미 분리돼 있어 `rag_chunk`와 모델을 맞출 필요가 없다는 판단으로
+   BGE-M3/1024차원으로 변경했다. `rag_chunk.embedding`(1536, "임베딩 차원 유지 결정 —
+   2026-09-11")은 이 변경과 무관하게 그대로 유지된다 — 이번 결정은 Evidence 저장소에만
+   적용된다.
+3. **MFDS는 `evidence_document`/`evidence_chunk`로 신규 적재하고, `rag_chunk`에는 재적재하지
+   않는다.** Claim 검색(`rag_chunk`, 향후 Session A `claim_chunk`)과 Evidence 검색
+   (`evidence_document`/`evidence_chunk`)을 이중 경로로 만들지 않는다 — Evidence RAG는
+   MFDS/CIR/PubMed 전부 `evidence_chunk` 하나로 통일해서 검색한다. 기존 `evidence` 테이블
+   (8,288행)은 원본 데이터로 그대로 두고, `evidence_document`/`evidence_chunk`는 그로부터
+   변환·재투영해서 채운다(재수집 아님). `rag_chunk`의 `evidence_id` 참조 청크들은 이번 결정과
+   무관하게 유지되지만(과거 산출물), **신규 Evidence RAG 쿼리 경로는 `evidence_chunk`만
+   본다.**
+4. **Knowledgedata(`IngredientKnowledgeFact`)는 Evidence corpus에서 제외, 공식 citation
+   source로 쓰지 않는다.** 확정.
+
+#### 남은 미결정 사항
+
+- **`EvidenceQueryAnchor`의 다중 성분 지원**(Session A 전달 사항): `EvidenceQueryAnchor`는
+  DB 테이블이 아니라 `EVIDENCE_RAG_DESIGN.md` D절의 Pydantic 검색 요청 객체라 이 ERD의 범위
+  밖이다. `ingredient_id: UUID | None` 단일 필드를 `ingredient_refs: list[UUID]`로 바꾸는
+  구체적인 스키마 변경은 **다음 단계에서 `EVIDENCE_RAG_DESIGN.md`를 직접 수정**해서 반영한다
+  (이번엔 `docs/erd/app.md`만 수정하라는 지시 범위 밖). 저장 구조(`evidence_chunk_ingredient`)는
+  이미 다중 성분을 지원하므로, 검색 요청 쪽만 맞추면 된다.
+- `evidence_document.ingredient_ids` 파생 조회 쿼리의 실제 구현(위 Pydantic 매핑 표의
+  `SELECT DISTINCT` 방식)은 `EvidenceDocumentRepository` 작성 시점에 확정.
+
 ## 왜 이렇게 나눴는지
 
 - **`product`와 `product_ingredient_snapshot`을 FK로 안 묶은 이유**: 상품 카탈로그(가격·이미지,
@@ -428,9 +687,24 @@ CHECK 제약으로 `source_table`별 참조 컬럼 정확히 1개만 채워지�
 - **`rag_chunk`가 세 소스(Evidence/KnowledgeFact/NIA)를 한 테이블에 합친 이유**: "성분 X의 모든
   근거"를 벡터 검색 한 번으로 찾아야 한다. 소스별 테이블이면 검색 시점에 N개 쿼리를 합쳐야 한다.
   대신 CHECK 제약으로 소스당 참조 컬럼이 정확히 하나만 채워지도록 강제해 무결성을 지킨다.
+- **`evidence_document`/`evidence_chunk`를 `rag_chunk`에 합치지 않고 별도 테이블로 분리한
+  이유**: `rag_chunk`는 "행 1개 = 문서 1개"를 전제해 `page`/`section` 컬럼 자체가 없고,
+  `source_table` CHECK 제약이 3개 값으로 하드코딩돼 있다 — CIR(PDF page 인용)/PubMed를
+  넣으려면 사실상 기존 테이블 재설계가 필요해 위험이 크다(`EVIDENCE_COVERAGE_AUDIT.md` 7절
+  Option A/B 비교, Option B 채택). 또한 Claim(NIA)과 Evidence(MFDS/CIR/PubMed)를 테이블
+  레벨에서 명확히 분리한다는 이 프로젝트의 핵심 원칙(`CLAIM_RAG_SESSION_HANDOFF.md` 2절)과도
+  맞는다 — `rag_chunk`는 이미 NIA/MFDS/KnowledgeFact를 한 풀에 섞어 이 구분이 안 보인다는
+  문제가 지적된 바 있다(`two-layer-rag-agent-backend-contract.md` 12절).
+- **`evidence_document`와 `evidence_chunk`를 나눈 이유**: MFDS는 "API 응답 1건 = 원자적 사실"이라
+  문서 개념이 필요 없지만, CIR(PDF)/PubMed(초록)는 문서 하나가 여러 페이지/섹션으로 쪼개질 수
+  있어 문서 메타데이터(document)와 검색 단위(chunk)를 분리해야 페이지별 인용이 가능하다
+  (`EVIDENCE_RAG_DESIGN.md` B절).
 
 ## 관련 문서
 
 - [docs/data/README.md](../data/README.md) — 이 스키마를 만든 data 파트의 담당 범위·진행 상태
 - [docs/contracts/data-to-backend.md](../contracts/data-to-backend.md) — `product` 저장 계약
 - [docs/data/data.md](../data/data.md) — 파이프라인 설계 배경(일부는 이 ERD 확정 전 계획 단계 문서라 실제 구현과 다를 수 있음)
+- [docs/data/EVIDENCE_RAG_DESIGN.md](../data/EVIDENCE_RAG_DESIGN.md) — `evidence_document`/`evidence_chunk` Pydantic 스키마 원안
+- [docs/data/EVIDENCE_COVERAGE_AUDIT.md](../data/EVIDENCE_COVERAGE_AUDIT.md) — `rag_chunk` vs 별도 테이블(Option B) 의사결정 근거
+- [docs/contracts/two-layer-rag-agent-backend-contract.md](../contracts/two-layer-rag-agent-backend-contract.md) — Claim/Evidence 레이어 분리 계약

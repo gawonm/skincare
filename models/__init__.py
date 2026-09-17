@@ -9,6 +9,16 @@
 """
 
 from models.evidence import Evidence, EvidenceRegulateType, EvidenceSourceType, EvidenceTopic
+from models.evidence_chunk import EvidenceChunk, evidence_chunk_ingredient
+from models.evidence_document import (
+    EvidenceClaimTopic,
+    EvidenceDocument,
+    EvidenceDocumentSourceType,
+    EvidenceDocumentStatus,
+    EvidenceFormulationType,
+    EvidenceLevel,
+    EvidenceStudyType,
+)
 from models.ingredient import IngredientMaster
 from models.ingredient_knowledge import IngredientKnowledgeFact, RegulatoryConfidence
 from models.product import (
@@ -38,8 +48,16 @@ __all__ = [
     "EMBEDDING_DIMENSION",
     "AgeGroup",
     "Evidence",
+    "EvidenceChunk",
+    "EvidenceClaimTopic",
+    "EvidenceDocument",
+    "EvidenceDocumentSourceType",
+    "EvidenceDocumentStatus",
+    "EvidenceFormulationType",
+    "EvidenceLevel",
     "EvidenceRegulateType",
     "EvidenceSourceType",
+    "EvidenceStudyType",
     "EvidenceTopic",
     "Gender",
     "IngredientKnowledgeFact",
@@ -60,4 +78,5 @@ __all__ = [
     "RagSourceTable",
     "RegulatoryConfidence",
     "User",
+    "evidence_chunk_ingredient",
 ]

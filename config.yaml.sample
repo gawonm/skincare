@@ -10,6 +10,8 @@ database:
   # models/ 에 파일을 추가할 때마다 여기에도 모듈 경로를 추가한다.
   model_modules:
     - models.evidence
+    - models.evidence_chunk
+    - models.evidence_document
     - models.ingredient
     - models.ingredient_knowledge
     - models.product
