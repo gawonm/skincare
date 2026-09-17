@@ -1023,7 +1023,8 @@ Claim→Ingredient→Product 커버리지는 다음과 같다.
   - `git diff --check`: 통과. Windows 줄바꿈 변환 경고만 있으며 공백 오류는 없음
 - 상품 병합 구현 변경: 없음. 추가한 회귀 테스트에서 기존 `product_id` 병합 로직이 정책과
   일치함을 확인했다.
+- 구현 커밋: `f17aba7` (`feat(agent): 2-Layer RAG 검증과 상품 추천 흐름 연결`)
+- 테스트 커밋: `efcd02f` (`test(agent): 복합 Claim과 상품 병합 회귀 검증`)
 - 다음 작업:
-  - 현재 변경을 의미 단위의 Agent 커밋으로 정리
   - 최신 `origin/main` 반영 여부를 확인한 뒤 브랜치 push 및 PR 준비
   - 도구 호출 예산·성분별 Evidence 배치 정책은 별도 후속 계획으로 분리

@@ -5,7 +5,7 @@
 - 점검일: 2026-09-17
 - 원격 기준: `origin/main` `b6ef764`
 - 현재 브랜치: `feature/agent-two-layer-rag-main`
-- 마지막 커밋: `42fa02a` (`docs(agent): Claim 검증 구현 일지 갱신`)
+- 후속 통합 작업 시작 기준 커밋: `42fa02a` (`docs(agent): Claim 검증 구현 일지 갱신`)
 - 정책 기준: [`TWO_LAYER_RAG_REFACTOR_PLAN.md`](TWO_LAYER_RAG_REFACTOR_PLAN.md)
 
 현재 브랜치는 `origin/main`을 포함하며, Agent 전용 커밋과 아직 커밋하지 않은 Agent 통합 변경이
