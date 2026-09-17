@@ -153,6 +153,7 @@ DTO 변환 외에도 신규 분류,
 
 ## 관련 문서
 
+- [2-Layer RAG Agent 리팩터링 작업계획](TWO_LAYER_RAG_REFACTOR_PLAN.md)
 - [2-Layer RAG Agent — main 대비 변경점](TWO_LAYER_RAG_MAIN_DIFF.md)
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
 - [현재 구조·연결 계약 검토](AGENT_INTEGRATION_REVIEW.md)
