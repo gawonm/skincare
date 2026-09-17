@@ -30,13 +30,13 @@ class ClaimEvidenceVerifier:
         self._pipeline = pipeline
 
     async def verify(self, request: ClaimVerificationRequest) -> ClaimVerificationResult:
-        target = request.target
+        anchor = request.anchor
         bundle = await self._pipeline.run(
             EvidenceSearchRequest(
-                query=target.query,
-                target_ids=target.ingredient_ids,
+                query=anchor.query_text,
+                target_ids=anchor.ingredient_refs,
                 combination_target_ids=(
-                    target.ingredient_ids if len(target.ingredient_ids) > 1 else []
+                    anchor.ingredient_refs if len(anchor.ingredient_refs) > 1 else []
                 ),
                 known_conditions=request.known_conditions,
             )
@@ -74,7 +74,7 @@ class ClaimEvidenceVerifier:
                 "검색 자료는 있으나 검증 가능한 근거 문장이 생성되지 않았습니다.",
             )
 
-        target_ids = set(request.target.ingredient_ids)
+        target_ids = set(request.anchor.ingredient_refs)
         results = {
             item.target_id: item.result
             for item in generated.per_target
@@ -91,14 +91,14 @@ class ClaimEvidenceVerifier:
             records = self._validated_result_records(
                 bundle,
                 generated.combination,
-                request.target.ingredient_ids,
+                request.anchor.ingredient_refs,
             )
         elif len(target_ids) == 1 and all(
             ingredient_id in results and results[ingredient_id].has_verifiable_evidence
             for ingredient_id in target_ids
         ):
             # 단독 근거를 합쳐 조합 효능·안전성까지 입증한 것으로 확대하지 않도록 단일 대상에만 허용한다.
-            for ingredient_id in request.target.ingredient_ids:
+            for ingredient_id in request.anchor.ingredient_refs:
                 result = results[ingredient_id]
                 verified_results.append(result)
                 current = self._validated_result_records(bundle, result, [ingredient_id])
@@ -112,8 +112,8 @@ class ClaimEvidenceVerifier:
         )
         if verified_results and records and summaries:
             return ClaimVerificationResult(
-                statement_id=request.target.statement_id,
-                ingredient_ids=request.target.ingredient_ids,
+                statement_id=self._statement_id(request),
+                ingredient_ids=request.anchor.ingredient_refs,
                 status=ClaimVerificationStatus.SUPPORTED,
                 evidence_ids=list(records),
                 evidence_records=list(records.values()),
@@ -129,8 +129,8 @@ class ClaimEvidenceVerifier:
             elif generated.combination.has_verifiable_evidence and not records:
                 reasons.append(UnverifiableReason.CITATION_VALIDATION_FAILED.value)
         return ClaimVerificationResult(
-            statement_id=request.target.statement_id,
-            ingredient_ids=request.target.ingredient_ids,
+            statement_id=self._statement_id(request),
+            ingredient_ids=request.anchor.ingredient_refs,
             status=ClaimVerificationStatus.INSUFFICIENT,
             reasons=list(dict.fromkeys(reasons))
             or [UnverifiableReason.NO_EVIDENCE_FOUND.value],
@@ -159,7 +159,7 @@ class ClaimEvidenceVerifier:
         request: ClaimVerificationRequest,
         per_target: list[PerTargetResult],
     ) -> list[str]:
-        target_ids = set(request.target.ingredient_ids)
+        target_ids = set(request.anchor.ingredient_refs)
         return [
             item.result.unverifiable_reason.value
             for item in per_target
@@ -173,11 +173,17 @@ class ClaimEvidenceVerifier:
         reason: str,
     ) -> ClaimVerificationResult:
         return ClaimVerificationResult(
-            statement_id=request.target.statement_id,
-            ingredient_ids=request.target.ingredient_ids,
+            statement_id=self._statement_id(request),
+            ingredient_ids=request.anchor.ingredient_refs,
             status=status,
             reasons=[reason],
         )
+
+    def _statement_id(self, request: ClaimVerificationRequest) -> str:
+        statement_id = request.anchor.origin_ref
+        if statement_id is None:
+            raise ValueError("Claim 검증용 Evidence anchor에는 origin_ref가 필요합니다.")
+        return statement_id
 
 
 class IngredientRecommendationSelector:

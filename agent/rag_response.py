@@ -1,12 +1,7 @@
 """Claim 탐색 결과와 Evidence 검증 결과를 혼동하지 않고 응답 상태에 반영한다."""
 
 from agent.citations import EvidenceCitationMapper
-from agent.rag.claim_schemas import (
-    ClaimAnnotationStatus,
-    ClaimConfidence,
-    ClaimVerificationResult,
-    ClaimVerificationStatus,
-)
+from agent.rag.claim_schemas import ClaimVerificationResult, ClaimVerificationStatus
 from agent.rag.schemas import (
     ApplicabilityStatus,
     EvidenceBundle,
@@ -74,9 +69,13 @@ class RagResponseAssembler:
         verification = state.claim_verification_bundle
         if verification is None or not verification.results:
             self._append_missing_evidence_path(state)
+            self._append_unresolved_claim_anchors(state)
             return
         for result in verification.results:
             self._append_claim_verification_result(state, result)
+        self._append_unresolved_claim_anchors(state)
+
+    def _append_unresolved_claim_anchors(self, state: AgentState) -> None:
         claim = state.claim_bundle
         if claim is not None and claim.unresolved_anchors:
             state.status = ChatStatus.PARTIAL
@@ -143,15 +142,13 @@ class RagResponseAssembler:
             dict.fromkeys(
                 hit.display_text()
                 for hit in bundle.search.hits
-                if hit.annotation_status is not ClaimAnnotationStatus.REJECTED
             )
         )
         if not descriptions:
             return
-        prefix = "유사한 사용자 사례의 탐색적 주장"
-        if any(hit.confidence is ClaimConfidence.LOW for hit in bundle.search.hits):
-            prefix += "(일부 사람 검토 필요)"
-        state.response_parts.append(prefix + ": " + " / ".join(descriptions))
+        state.response_parts.append(
+            "유사한 사용자 사례의 탐색적 주장: " + " / ".join(descriptions)
+        )
 
     def _append_missing_evidence_path(self, state: AgentState) -> None:
         claim = state.claim_bundle

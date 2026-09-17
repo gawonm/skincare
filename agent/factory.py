@@ -42,6 +42,7 @@ from agent.ports import (
 )
 from agent.prompts import PromptCatalog
 from agent.rag import claim_schemas
+from agent.rag.claim_schemas import DEVELOPMENT_CLAIM_ANNOTATION_VERSION
 from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.generation.evidence_statement_generator import EvidenceStatementGeneratorFactory
@@ -105,6 +106,7 @@ class AgentDependencies(AgentModel):
     ingredients: IngredientRepository
     routine_planner: RoutinePlanner
     claim_retriever: ClaimRetriever
+    claim_annotation_version: str = Field(min_length=1)
     evidence_pipeline: EvidencePipeline
     checkpointer: BaseCheckpointSaver
 
@@ -133,7 +135,7 @@ class AgentFactory:
         )
         rag_nodes = RagWorkflowNodes(
             claim_retriever=dependencies.claim_retriever,
-            ingredient_repository=dependencies.ingredients,
+            claim_annotation_version=dependencies.claim_annotation_version,
             evidence_pipeline=dependencies.evidence_pipeline,
             response_assembler=RagResponseAssembler(
                 runtime=runtime,
@@ -169,6 +171,7 @@ class ProductionAgentConfig(AgentModel):
     embedding: TextEmbeddingConfig
     reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
     retrieval_policy: RagRetrievalPolicy
+    claim_annotation_version: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_chat_config(self) -> Self:
@@ -249,6 +252,7 @@ class ProductionAgentFactory:
                 ingredients=dependencies.ingredients,
                 routine_planner=dependencies.routine_planner,
                 claim_retriever=dependencies.claim_retriever,
+                claim_annotation_version=config.claim_annotation_version,
                 evidence_pipeline=evidence_pipeline,
                 checkpointer=dependencies.checkpointer,
             ),
@@ -287,6 +291,7 @@ class DevelopmentAgentFactory:
         llm: LlmClient | None = None,
         ingredient_repository: IngredientRepository | None = None,
         claim_retriever: ClaimRetriever | None = None,
+        claim_annotation_version: str = DEVELOPMENT_CLAIM_ANNOTATION_VERSION,
         evidence_retriever: EvidenceRetriever | None = None,
         answer_generator: AnswerGenerator | None = None,
         product_repository: ProductRepository | None = None,
@@ -298,6 +303,7 @@ class DevelopmentAgentFactory:
         self._llm = llm
         self._ingredient_repository = ingredient_repository
         self._claim_retriever = claim_retriever
+        self._claim_annotation_version = claim_annotation_version
         self._evidence_retriever = evidence_retriever
         self._answer_generator = answer_generator
         self._product_repository = product_repository
@@ -323,6 +329,7 @@ class DevelopmentAgentFactory:
                 product_taxonomy=self._product_taxonomy or FixtureProductTaxonomy().create(),
                 ingredients=self._ingredient_repository or FixtureIngredientRepository(),
                 claim_retriever=claim_retriever,
+                claim_annotation_version=self._claim_annotation_version,
                 evidence_pipeline=evidence_pipeline,
                 routine_planner=FixtureRoutinePlanner(),
                 checkpointer=checkpointer,

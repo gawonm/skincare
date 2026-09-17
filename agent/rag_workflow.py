@@ -2,12 +2,11 @@
 
 from agent.claim_verification import ClaimEvidenceVerifier, IngredientRecommendationSelector
 from agent.evidence_query_policy import EvidenceQueryPolicy
-from agent.ports import IngredientRepository
+from agent.rag.claim_anchor_adapter import ClaimHitToEvidenceQueryAnchorAdapter
 from agent.rag.claim_schemas import (
-    ClaimAnnotationStatus,
     ClaimBundle,
-    ClaimMatchingStatus,
-    ClaimResolvedTarget,
+    ClaimIngestionDecision,
+    ClaimIngredientMatchingStatus,
     ClaimSearchRequest,
     ClaimSearchResult,
     ClaimVerificationBundle,
@@ -20,8 +19,8 @@ from agent.rag.pipeline import EvidencePipeline
 from agent.rag.ports import ClaimRetriever
 from agent.rag.schemas import (
     EvidenceConditions,
+    EvidenceQueryAnchor,
     EvidenceSearchRequest,
-    IngredientResolveRequest,
     LookupStatus,
     ProductCandidate,
     ProductRecord,
@@ -39,7 +38,7 @@ class RagWorkflowNodes:
     def __init__(
         self,
         claim_retriever: ClaimRetriever,
-        ingredient_repository: IngredientRepository,
+        claim_annotation_version: str,
         evidence_pipeline: EvidencePipeline,
         response_assembler: RagResponseAssembler,
         runtime: AgentRuntime,
@@ -48,7 +47,8 @@ class RagWorkflowNodes:
         recommendation_selector: IngredientRecommendationSelector,
     ) -> None:
         self._claim_retriever = claim_retriever
-        self._ingredient_repository = ingredient_repository
+        self._claim_annotation_version = claim_annotation_version
+        self._claim_anchor_adapter = ClaimHitToEvidenceQueryAnchorAdapter()
         self._evidence_pipeline = evidence_pipeline
         self._response_assembler = response_assembler
         self._runtime = runtime
@@ -70,6 +70,7 @@ class RagWorkflowNodes:
         result = await self._claim_retriever.search(
             ClaimSearchRequest(
                 query=parsed.query,
+                annotation_version=self._claim_annotation_version,
                 skin_concerns=list(
                     dict.fromkeys(
                         parsed.skin_concerns
@@ -96,46 +97,29 @@ class RagWorkflowNodes:
             return state
 
         target_ids: list[str] = []
-        resolved_targets: list[ClaimResolvedTarget] = []
+        evidence_anchors: list[EvidenceQueryAnchor] = []
         unresolved: list[UnresolvedClaimAnchor] = []
-        resolved_names: dict[str, str | None] = {}
+        request_id = self._runtime.require_turn(state).request_id
         for hit in bundle.search.hits:
-            hit_target_ids = list(hit.matched_ingredient_ids())
-            for anchor in hit.ingredient_anchors():
-                if (
-                    anchor.matching_status is ClaimMatchingStatus.MATCHED
-                    and anchor.ingredient_id is not None
-                ):
-                    # Data가 확정한 표준 ID를 Agent가 다시 문자열 매칭하면 서로 다른 ID가 될 수 있다.
-                    continue
-                raw_name = anchor.raw_name_ko or anchor.raw_name
-                if raw_name not in resolved_names:
-                    resolved_names[raw_name] = await self._resolve_raw_name(state, raw_name)
-                ingredient_id = resolved_names[raw_name]
-                if ingredient_id is not None:
-                    hit_target_ids.append(ingredient_id)
-                else:
-                    unresolved.append(
-                        UnresolvedClaimAnchor(statement_id=hit.statement_id, raw_name=raw_name)
-                    )
-
-            unique_hit_target_ids = list(dict.fromkeys(hit_target_ids))
-            target_ids.extend(unique_hit_target_ids)
-            if unique_hit_target_ids:
-                resolved_targets.append(
-                    ClaimResolvedTarget(
-                        statement_id=hit.statement_id,
-                        ingredient_ids=unique_hit_target_ids,
-                        query=hit.verification_query(),
-                    )
+            evidence_anchor = self._claim_anchor_adapter.adapt(hit, request_id=request_id)
+            if evidence_anchor is not None:
+                evidence_anchors.append(evidence_anchor)
+                target_ids.extend(evidence_anchor.ingredient_refs)
+            unresolved.extend(
+                UnresolvedClaimAnchor(
+                    statement_id=hit.statement_id,
+                    raw_name=ingredient.raw_name or "성분명 미제공",
                 )
+                for ingredient in hit.ingredient_refs
+                if ingredient.matching_status is not ClaimIngredientMatchingStatus.MATCHED
+            )
 
         unique_target_ids = list(dict.fromkeys(target_ids))
         state.claim_bundle = bundle.model_copy(
             deep=True,
             update={
                 "target_ids": unique_target_ids,
-                "resolved_targets": resolved_targets,
+                "evidence_anchors": evidence_anchors,
                 "unresolved_anchors": unresolved,
             },
         )
@@ -156,7 +140,7 @@ class RagWorkflowNodes:
 
     async def verify_claims(self, state: AgentState) -> AgentState:
         bundle = state.claim_bundle
-        if bundle is None or not bundle.resolved_targets:
+        if bundle is None or not bundle.evidence_anchors:
             state.claim_verification_bundle = ClaimVerificationBundle()
             self._runtime.record_node(
                 state,
@@ -167,12 +151,12 @@ class RagWorkflowNodes:
 
         parsed = self._runtime.require_parsed(state)
         results: list[ClaimVerificationResult] = []
-        for target in bundle.resolved_targets:
+        for anchor in bundle.evidence_anchors:
             if not self._runtime.reserve_tool_call(state, GraphNode.VERIFY_CLAIMS):
                 break
             result = await self._claim_verifier.verify(
                 ClaimVerificationRequest(
-                    target=target,
+                    anchor=anchor,
                     known_conditions=parsed.known_conditions,
                 )
             )
@@ -277,31 +261,22 @@ class RagWorkflowNodes:
         )
         return state
 
-    async def _resolve_raw_name(self, state: AgentState, raw_name: str) -> str | None:
-        if not self._runtime.reserve_tool_call(state, GraphNode.RESOLVE_CLAIM_INGREDIENTS):
-            return None
-        result = await self._ingredient_repository.resolve(IngredientResolveRequest(name=raw_name))
-        if result.status in (LookupStatus.ERROR, LookupStatus.UNSUPPORTED):
-            self._runtime.add_tool_failure(
-                state,
-                result.error_message or f"Claim 성분을 식별하지 못했습니다: {raw_name}",
-            )
-            return None
-        if result.status is LookupStatus.SUCCESS and result.ingredient is not None:
-            return result.ingredient.ingredient_id
-        return None
-
     def _validate_claim_result(self, result: ClaimSearchResult) -> None:
         if result.status is not LookupStatus.SUCCESS:
             return
         statement_ids = [hit.statement_id for hit in result.hits]
         if len(statement_ids) != len(set(statement_ids)):
             raise ValueError("Claim 검색 결과에 동일 statement_id가 중복되었습니다.")
+        allowed_decisions = {
+            ClaimIngestionDecision.INGESTIBLE_STRUCTURED,
+            ClaimIngestionDecision.INGESTIBLE_FREE_TEXT,
+        }
+        if any(hit.decision not in allowed_decisions for hit in result.hits):
+            raise ValueError("운영 검색이 허용되지 않은 Claim이 검색 결과에 포함되었습니다.")
         if any(
-            hit.annotation_status is not ClaimAnnotationStatus.APPROVED
-            for hit in result.hits
+            hit.annotation_version != self._claim_annotation_version for hit in result.hits
         ):
-            raise ValueError("검수 승인되지 않은 Claim이 검색 결과에 포함되었습니다.")
+            raise ValueError("요청한 annotation_version과 다른 Claim이 검색되었습니다.")
 
     def _evidence_products(self, state: AgentState) -> list[ProductRecord]:
         products = list(state.resolved_entities.products)

@@ -20,16 +20,14 @@ from agent.ports import (
     TurnStorageError,
 )
 from agent.rag.claim_schemas import (
-    ClaimAnnotationStatus,
-    ClaimCaseContext,
-    ClaimConfidence,
     ClaimHit,
-    ClaimIngredientAnchor,
-    ClaimMatchingStatus,
+    ClaimIngestionDecision,
+    ClaimIngredientMatchingStatus,
+    ClaimIngredientRef,
     ClaimSearchRequest,
     ClaimSearchResult,
-    ClaimSourceSpan,
-    IngredientEffectClaimContent,
+    ClaimStatementType,
+    ClaimSupportStatus,
 )
 from agent.rag.ports import ClaimRetriever, EvidenceRetriever
 from agent.rag.retrieval.ingredient_mention_resolver import IngredientMentionResolver
@@ -497,36 +495,25 @@ class FixtureClaimRetriever(ClaimRetriever):
         query = " ".join([request.query, *request.skin_concerns]).casefold()
         if not any(keyword in query for keyword in ("피지", "좁쌀", "여드름", "모공")):
             return ClaimSearchResult(status=LookupStatus.NO_RESULTS)
-        anchor = ClaimIngredientAnchor(
-            raw_name="NIACINAMIDE",
-            raw_name_ko="나이아신아마이드",
+        ingredient_ref = ClaimIngredientRef(
+            raw_name="나이아신아마이드",
             ingredient_id="ingredient:niacinamide",
-            matching_status=ClaimMatchingStatus.MATCHED,
+            matching_status=ClaimIngredientMatchingStatus.MATCHED,
         )
         return ClaimSearchResult(
             status=LookupStatus.SUCCESS,
             hits=[
                 ClaimHit(
+                    claim_chunk_id="fixture-claim-chunk-niacinamide-1",
                     statement_id="fixture-claim-niacinamide-1",
-                    record_id="fixture-nia-record-1",
-                    content=IngredientEffectClaimContent(
-                        subject=anchor,
-                        object="피지와 피부 장벽 관련 사례에서 나이아신아마이드가 언급되었습니다.",
-                    ),
-                    source_spans=[
-                        ClaimSourceSpan(
-                            json_path="$.answer",
-                            quote="나이아신아마이드가 언급되었습니다.",
-                            start=0,
-                            end=18,
-                        )
-                    ],
-                    case_context=ClaimCaseContext(
-                        skin_concerns_raw=["여드름/뾰루지", "피지"]
-                    ),
-                    annotation_status=ClaimAnnotationStatus.APPROVED,
-                    confidence=ClaimConfidence.HIGH,
-                    retrieval_score=1.0,
+                    statement_type=ClaimStatementType.INGREDIENT_EFFECT_CLAIM,
+                    content="피지와 피부 장벽 관련 사례에서 나이아신아마이드가 언급되었습니다.",
+                    score=1.0,
+                    ingredient_refs=[ingredient_ref],
+                    source_record_id="fixture-nia-record-1",
+                    annotation_version=request.annotation_version,
+                    decision=ClaimIngestionDecision.INGESTIBLE_STRUCTURED,
+                    support_status=ClaimSupportStatus.UNVERIFIED,
                 )
             ],
         )
