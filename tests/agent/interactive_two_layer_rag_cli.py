@@ -10,13 +10,16 @@
 
 import asyncio
 import sys
+from enum import StrEnum
 from typing import ClassVar
 
+from pydantic import BaseModel, Field
 from sqlalchemy.engine import make_url
 
 from agent.adapters import FixtureProductTaxonomy
 from agent.factory import DevelopmentAgentApplication, DevelopmentAgentFactory
 from agent.llm import LlmClientFactory
+from agent.nodes import CLAIM_ONLY_PRODUCT_LIMITATION
 from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.generation.evidence_statement_generator import EvidenceStatementGeneratorFactory
@@ -25,15 +28,17 @@ from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
 from agent.rag.schemas import (
     ChatModelConfig,
     EmbeddingProvider,
+    EvidenceReviewStatus,
     LocalEmbeddingConfig,
     LocalEmbeddingModel,
     LocalModelDevice,
     LocalRerankerConfig,
     LocalRerankerModel,
+    ProductCandidateSet,
     RagRetrievalPolicy,
     TextEmbeddingConfig,
 )
-from agent.schemas import ExecutionLimits, RegisterRoomRequest
+from agent.schemas import ExecutionLimits, RegisterRoomRequest, UnresolvedKind
 from backend.services.agent_configuration import AgentConfigurationAssembler
 from backend.services.two_layer_rag_adapters import (
     TwoLayerClaimRetriever,
@@ -45,6 +50,8 @@ from core.config import settings
 from core.database import Database, DatabaseConfig
 from tests.agent.interactive_rag_cli import (
     DIVIDER_LINE,
+    SUB_DIVIDER_LINE,
+    AgentTurnResult,
     InteractiveAgentCli,
     RecordingEvidenceRetriever,
 )
@@ -77,6 +84,131 @@ class Utf8ConsoleConfigurator:
             if callable(reconfigure):
                 # 기존 CLI가 이모지를 출력하므로 cp949 콘솔에서는 결과 렌더링 전에 실패한다.
                 reconfigure(encoding=self.ENCODING, errors=self.ERROR_POLICY)
+
+
+class CliDisplayMode(StrEnum):
+    COMPACT = "compact"
+    VERBOSE = "verbose"
+
+
+class ClaimEvidenceDisplay(BaseModel):
+    """한 Claim의 Evidence 검색 결과를 사람이 빠르게 읽을 수 있는 형태로 제한한다."""
+
+    subject: str = Field(min_length=1)
+    claim_text: str | None = Field(default=None, min_length=1)
+    retrieved_count: int = Field(ge=0)
+    verified_count: int = Field(ge=0)
+    unreviewed_count: int = Field(ge=0)
+
+
+class CompactTwoLayerTurnPresenter:
+    """디버그 세부정보 대신 2-Layer 판정 흐름을 먼저 보여준다."""
+
+    CLAIM_SEPARATOR: ClassVar[str] = ":"
+
+    def print_turn(self, result: AgentTurnResult, user_message: str) -> None:
+        output = result.turn_output
+        intents = ", ".join(intent.value for intent in output.intents)
+
+        print(f"\n{DIVIDER_LINE}")
+        print(f"질문: {user_message}")
+        print(f"실행 결과: {output.status.value} | 의도: {intents}")
+        print(SUB_DIVIDER_LINE)
+
+        claim_rows = self._claim_rows(result)
+        if claim_rows:
+            print("[Claim → Evidence]")
+            for index, row in enumerate(claim_rows, start=1):
+                print(f"{index}. {row.subject}")
+                if row.claim_text:
+                    print(f"   Claim: {row.claim_text}")
+                if row.retrieved_count == 0:
+                    print("   Evidence: 검색 결과 없음 → Claim-only 유지")
+                else:
+                    print(
+                        "   Evidence: "
+                        f"검색 {row.retrieved_count}건 "
+                        f"(검수완료 {row.verified_count}, 미검수 {row.unreviewed_count})"
+                    )
+            print(f"최종 답변에 채택된 Citation: {len(output.citations)}건")
+
+        candidate_sets = [
+            artifact
+            for artifact in output.artifacts
+            if isinstance(artifact, ProductCandidateSet)
+        ]
+        candidates = [
+            candidate
+            for candidate_set in candidate_sets
+            for candidate in candidate_set.candidates
+        ]
+        if candidates:
+            print("\n[상품 후보]")
+            for candidate in candidates:
+                basis = (
+                    "Claim 기반·근거 미확인"
+                    if CLAIM_ONLY_PRODUCT_LIMITATION in candidate.unresolved
+                    else "Evidence 기반"
+                )
+                print(f"{candidate.rank}. {candidate.product.name} [{basis}]")
+
+        if output.citations:
+            print("\n[채택된 공인 근거]")
+            for citation in output.citations:
+                print(f"- {citation.source_title} ({citation.locator})")
+
+        # 상품 목록이 없는 효능·안전성 질의는 생성된 답변 문장 자체가 핵심 결과다.
+        if not candidates:
+            print("\n[Agent 최종 응답]")
+            print(output.message)
+
+        if output.unresolved:
+            print("\n[보류 요약]")
+            for kind in UnresolvedKind:
+                count = sum(item.kind is kind for item in output.unresolved)
+                if count:
+                    print(f"- {self._unresolved_label(kind)}: {count}건")
+
+        if output.error_code is not None:
+            print(f"\n오류: {output.error_code.value} | 재시도 가능: {output.retryable}")
+        if output.follow_up_question:
+            print(f"\n추가 질문: {output.follow_up_question}")
+
+        print("\n상세 검색 로그가 필요하면 명령 끝에 --verbose를 붙이세요.")
+        print(DIVIDER_LINE)
+
+    def _claim_rows(self, result: AgentTurnResult) -> list[ClaimEvidenceDisplay]:
+        rows: list[ClaimEvidenceDisplay] = []
+        for trace in result.searches:
+            subject, separator, claim_text = trace.request.query.partition(self.CLAIM_SEPARATOR)
+            chunks = trace.result.chunks if trace.result is not None else []
+            rows.append(
+                ClaimEvidenceDisplay(
+                    subject=subject.strip() or trace.request.query,
+                    claim_text=claim_text.strip() if separator and claim_text.strip() else None,
+                    retrieved_count=len(chunks),
+                    verified_count=sum(
+                        hit.chunk.evidence.review_status is EvidenceReviewStatus.VERIFIED
+                        for hit in chunks
+                    ),
+                    unreviewed_count=sum(
+                        hit.chunk.evidence.review_status is EvidenceReviewStatus.UNREVIEWED
+                        for hit in chunks
+                    ),
+                )
+            )
+        return rows
+
+    def _unresolved_label(self, kind: UnresolvedKind) -> str:
+        if kind is UnresolvedKind.NO_EVIDENCE:
+            return "공인 근거 부족"
+        if kind is UnresolvedKind.MISSING_INFORMATION:
+            return "연결 정보 부족"
+        if kind is UnresolvedKind.UNSUPPORTED_CONDITION:
+            return "현재 미지원 조건"
+        if kind is UnresolvedKind.TOOL_FAILURE:
+            return "도구 실행 실패"
+        return "근거 충돌"
 
 
 class TwoLayerAgentModelConfigFactory:
@@ -137,9 +269,16 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
     MAX_TOOL_CALLS: ClassVar[int] = 20
     TIMEOUT_SECONDS: ClassVar[float] = 180.0
     RECURSION_LIMIT: ClassVar[int] = 80
+    VERBOSE_FLAG: ClassVar[str] = "--verbose"
 
-    def __init__(self, limit: int | None = None) -> None:
+    def __init__(
+        self,
+        limit: int | None = None,
+        display_mode: CliDisplayMode = CliDisplayMode.COMPACT,
+    ) -> None:
         Utf8ConsoleConfigurator().configure()
+        self._display_mode = display_mode
+        self._compact_presenter = CompactTwoLayerTurnPresenter()
         self._actor_id = "two-layer-cli-user"
         self._chat_room_id = "two-layer-cli-room"
         self._thread_id = "two-layer-cli-thread"
@@ -196,6 +335,12 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
             )
         )
 
+    def print_turn(self, result: AgentTurnResult, user_message: str) -> None:
+        if self._display_mode is CliDisplayMode.VERBOSE:
+            super().print_turn(result, user_message)
+            return
+        self._compact_presenter.print_turn(result, user_message)
+
     def print_runtime(self) -> None:
         """실제 연결과 개발 fixture 경계를 실행 전에 표시한다."""
         chat_model = (
@@ -218,7 +363,29 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
         print("Claim·Evidence·성분·상품: skincare_latest 실제 DB")
         print("히스토리·체크포인터·루틴·상품 taxonomy: 개발용 메모리 구현")
         print("실제 OpenAI API 호출 비용이 발생합니다.")
+        print(f"출력 모드: {self._display_mode.value}")
         print(DIVIDER_LINE)
+
+    @classmethod
+    async def main(cls) -> None:
+        arguments = sys.argv[1:]
+        display_mode = (
+            CliDisplayMode.VERBOSE
+            if cls.VERBOSE_FLAG in arguments
+            else CliDisplayMode.COMPACT
+        )
+        message_parts = [argument for argument in arguments if argument != cls.VERBOSE_FLAG]
+        cli = cls(display_mode=display_mode)
+        try:
+            cli.print_runtime()
+            if message_parts:
+                user_message = " ".join(message_parts).strip()
+                result = await cli.handle_message(user_message)
+                cli.print_turn(result, user_message)
+            else:
+                await cli.run_loop()
+        finally:
+            await cli.close()
 
 
 if __name__ == "__main__":
