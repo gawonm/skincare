@@ -18,7 +18,7 @@ data 파트가 수집·정제한 성분 근거(MFDS 고시, Knowledgedata, NIA Q
 
 ## 1. 현재 이미 동작 중인 경계 (참고용 — 이 문서가 새로 만드는 계약 아님)
 
-`agent/rag/loaders/`의 `EvidenceLoader`, `KnowledgeFactLoader`, `NiaQaLoader`는 data 파트가
+`agent/rag/loaders/`의 `EvidenceLoader`, `KnowledgeFactLoader`는 data 파트가
 적재한 DB 테이블(`models/evidence.py`의 `Evidence`, `models/ingredient_knowledge.py`의
 `IngredientKnowledgeFact`)을 세션으로 직접 조회해 `RagDocument`로 변환한다. CSV나 함수 호출이
 아니라 **DB 테이블 자체가 현재의 data → agent 인터페이스**다. 이 방식은 이미 구현·검증
@@ -29,7 +29,7 @@ data 파트가 수집·정제한 성분 근거(MFDS 고시, Knowledgedata, NIA Q
 | --- | --- | --- |
 | `evidence` | `data/scripts/import_mfds_restricted_ingredients.py` | data (모델 정의: `models/evidence.py`) |
 | `ingredient_knowledge_fact` | `data/scripts/import_knowledgedata.py` | data (모델 정의: `models/ingredient_knowledge.py`) |
-| NIA Q&A (jsonl, DB 테이블 아님) | `backend/services/rag_ingestion_service.py --nia-qa-zip` 실행 시 파일에서 직접 파싱 | 원본 파일은 data 관리, 파싱은 agent(`NiaQaLoader`) |
+| NIA Q&A (AI Hub 배포 원본 Q-CoT-A, ZIP/JSONL, DB 테이블 아님) | `data/scripts/nia_original_loader.py`의 `NiaOriginalLoader` | 원본 파일 읽기와 손실 없는 `NiaOriginalRecord` 변환은 **data 소유**. `page_content`/metadata 생성과 `Document` 변환은 agent/rag 책임이며, 상세 계약과 record를 agent로 넘기는 방식은 **미정**(다음 단계에서 결정). 기존 `NiaQaLoader`는 이 방향의 기준이 아니다 |
 
 ## 2. 아직 정해지지 않은 것 (인수인계 문서 6절 인계 요구 중 미해결분)
 
