@@ -101,7 +101,10 @@ def _isolate_parser_scratch_files(tmp_path, monkeypatch):
 
 
 def _build_runner(
-    tmp_path, outcomes: dict[str, LlmNiaLabelingOutput | Exception], record_ids: list[str]
+    tmp_path,
+    outcomes: dict[str, LlmNiaLabelingOutput | Exception],
+    record_ids: list[str],
+    version: str = "llm-production-test",
 ):
     labeler = _FakeLabeler(outcomes)
     matching_stage = NiaIngredientMatchingStage(
@@ -115,7 +118,7 @@ def _build_runner(
     review_signals_path = tmp_path / "review_signals.jsonl"
     store = NiaProductionAnnotationStore(annotations_path)
     runner = NiaProductionAnnotationRunner(
-        processor, parser, store, failures_path, review_signals_path, "llm-production-test"
+        processor, parser, store, failures_path, review_signals_path, version
     )
     return runner, store, annotations_path, failures_path, review_signals_path
 
@@ -324,3 +327,111 @@ class TestRegenerateDownstream:
         )
         claim_ingestion_2 = run_module._read_jsonl(claim_ingestion_path)
         assert claim_ingestion == claim_ingestion_2
+
+
+class TestCanonicalAnnotationVersionStability:
+    """회귀 배경: `_PRODUCTION_ANNOTATION_VERSION_PREFIX`가 과거엔
+    `datetime.now(UTC).date().isoformat()`로 실행 시점마다 새로 계산됐다. 09-17에 시작한
+    production run을 09-18에 재시작(resume)했더니 같은 논리적 run 안에 annotation_version이
+    두 종류(09-17 889건, 09-18 608건) 섞여 버렸다. 이제는 날짜와 무관한 고정 상수만 쓴다."""
+
+    def test_annotation_version_is_a_fixed_constant_not_derived_from_wall_clock_date(self) -> None:
+        assert not hasattr(run_module, "_PRODUCTION_ANNOTATION_VERSION_PREFIX")
+        assert not hasattr(run_module, "datetime")
+        assert (
+            run_module._CANONICAL_PRODUCTION_ANNOTATION_VERSION
+            == "llm-production-2026-09-17-openai-gpt-4o-mini"
+        )
+
+    def test_two_run_invocations_across_a_simulated_date_change_share_one_version(
+        self, tmp_path
+    ) -> None:
+        """1번째 실행("09-17")과 재시작 후 이어지는 실행("09-18"으로 날짜가 바뀐 상태를
+        흉내)이 서로 다른 runner 인스턴스라도, `_run()`이 실제로 쓰는 canonical 상수를 넘기면
+        두 record 모두 완전히 동일한 annotation_version을 가져야 한다."""
+        ids = ["REC1", "REC2"]
+        records = {rid: _record(rid, f"{rid} 텍스트 내용입니다.") for rid in ids}
+        outcomes = {rid: _case_observation_output(records[rid]["info"]["question"]) for rid in ids}
+        canonical = run_module._CANONICAL_PRODUCTION_ANNOTATION_VERSION
+
+        import asyncio
+
+        runner_day1, store, annotations_path, _, _ = _build_runner(
+            tmp_path, outcomes, ids, version=canonical
+        )
+        asyncio.run(runner_day1.run_many(["REC1"], records, already_done=set()))
+
+        # 재시작 시뮬레이션: 새 runner 인스턴스(=프로세스 재기동)지만 같은 canonical 상수를 쓴다.
+        completed = store.load_completed_record_ids(set(ids))
+        runner_day2, _store2, annotations_path2, _, _ = _build_runner(
+            tmp_path, outcomes, ids, version=canonical
+        )
+        assert annotations_path2 == annotations_path  # 동일 output 파일에 이어서 씀
+        target_ids = [rid for rid in ids if rid not in completed]
+        asyncio.run(runner_day2.run_many(target_ids, records, already_done=completed))
+
+        persisted = run_module._read_jsonl(annotations_path)
+        versions = {d["annotation_version"] for d in persisted}
+        assert versions == {canonical}
+
+
+class TestExistingOutputResume:
+    def test_resume_with_large_existing_output_skips_done_and_appends_with_canonical_version(
+        self, tmp_path
+    ) -> None:
+        """기존 1,497건과 같은 상황을 축소 재현: 이미 완료된 record는 다시 라벨링하지 않고,
+        새로 처리되는 record만 append되며, append된 record도 기존과 동일한 canonical
+        annotation_version을 가져야 한다."""
+        canonical = run_module._CANONICAL_PRODUCTION_ANNOTATION_VERSION
+        done_ids = [f"DONE{i}" for i in range(5)]
+        new_ids = ["NEW1", "NEW2"]
+        all_ids = done_ids + new_ids
+        records = {rid: _record(rid, f"{rid} 텍스트 내용입니다.") for rid in all_ids}
+        outcomes = {
+            rid: _case_observation_output(records[rid]["info"]["question"]) for rid in all_ids
+        }
+
+        runner, store, annotations_path, _, _ = _build_runner(
+            tmp_path, outcomes, all_ids, version=canonical
+        )
+
+        import asyncio
+
+        # 기존 5건은 이미 완료된 상태를 미리 만들어 둔다.
+        asyncio.run(runner.run_many(done_ids, records, already_done=set()))
+        completed_before = store.load_completed_record_ids(set(all_ids))
+        assert completed_before == set(done_ids)
+
+        # resume: 새 2건만 대상이어야 한다.
+        target_ids = [rid for rid in all_ids if rid not in completed_before]
+        assert target_ids == new_ids
+        asyncio.run(runner.run_many(target_ids, records, already_done=completed_before))
+
+        persisted = run_module._read_jsonl(annotations_path)
+        assert {d["source"]["record_id"] for d in persisted} == set(all_ids)
+        assert {d["annotation_version"] for d in persisted} == {canonical}
+
+
+class TestMixedVersionDetection:
+    def test_load_completed_record_ids_fails_fast_on_mixed_versions(self, tmp_path) -> None:
+        """같은 production output 파일에 서로 다른 annotation_version이 섞여 있으면(이번
+        회귀의 실제 증상) silent continue하지 말고 즉시 실패해야 한다."""
+        ids = ["REC1", "REC2"]
+        records = {rid: _record(rid, f"{rid} 텍스트 내용입니다.") for rid in ids}
+        outcomes = {rid: _case_observation_output(records[rid]["info"]["question"]) for rid in ids}
+
+        import asyncio
+
+        runner_a, store, annotations_path, _, _ = _build_runner(
+            tmp_path, outcomes, ids, version="llm-production-2026-09-17-openai-gpt-4o-mini"
+        )
+        asyncio.run(runner_a.run_one("REC1", records["REC1"], already_done=set()))
+
+        runner_b, _store_b, annotations_path_b, _, _ = _build_runner(
+            tmp_path, outcomes, ids, version="llm-production-2026-09-18-openai-gpt-4o-mini"
+        )
+        assert annotations_path_b == annotations_path  # 같은 파일에 append됨
+        asyncio.run(runner_b.run_one("REC2", records["REC2"], already_done=set()))
+
+        with pytest.raises(NiaProductionOutputIntegrityError, match="annotation_version이 섞여"):
+            store.load_completed_record_ids(set(ids))
