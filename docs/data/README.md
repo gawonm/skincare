@@ -133,5 +133,6 @@ taxonomy만을 위해 data 파트가 backend 파일을 만들거나 `data/script
 - 전체 스키마·품질 기준·담당 범위: [data.md](data.md)
 - DB 스키마 ERD: [docs/erd/app.md](../erd/app.md)
 - `product` 저장 계약(backend 파트에 넘긴 인터페이스): [docs/contracts/data-to-backend.md](../contracts/data-to-backend.md)
+- 채팅 히스토리 테이블 생성 요청(backend 파트가 넘긴 인터페이스): [docs/contracts/backend-to-data.md](../contracts/backend-to-data.md)
 - 올리브영 글로벌 키워드 검색 파이프라인 인수인계: [oliveyoung_global_pipeline_handoff.md](oliveyoung_global_pipeline_handoff.md)
 - 전성분 파싱·매칭·RAG 인수인계: [SKINCARE_DATA_RAG_HANDOFF.md](SKINCARE_DATA_RAG_HANDOFF.md)
