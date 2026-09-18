@@ -148,6 +148,7 @@ uv run python -m tests.agent.two_layer_rag_dump_smoke
 ## 관련 문서
 
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
+- [Backend → Data 채팅 히스토리 테이블 생성 요청](../contracts/backend-to-data.md)
 - [Agent 통합 검토](../agent/AGENT_INTEGRATION_REVIEW.md)
 - [2-Layer RAG Agent 통합 작업계획 및 작업 일지](../agent/TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
 - [Claim → Evidence RAG 인터페이스 계약](../contracts/claim-evidence-rag-interface.md)

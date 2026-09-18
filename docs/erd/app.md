@@ -22,6 +22,14 @@
 [CLAUDE_SESSION_BOARD.md](../coordination/CLAUDE_SESSION_BOARD.md) Shared Decisions #4).
 위 mermaid/컬럼 표는 마이그레이션 전 제안 설계다.
 
+**2026-09-18 갱신 — 로그인 사용자 채팅 히스토리 (제안, 미승인)**. `agent/ports.py`의
+`ChatHistoryRepository`와 `agent/schemas.py`(`AuthorizedRoom`/`ChatMessage`/`SessionSnapshot`
+등)를 저장 계약으로 옮긴 `CHAT_ROOM`/`CHAT_MESSAGE`/`CHAT_TURN_STATE` 3개 테이블을 추가했다.
+범위는 **로그인 사용자만**이다 — 게스트(비로그인) 세션 연속성 문제는 front 쪽 논의에서 별도
+결정 사항으로 분리됐고(단기: 프론트 `sessionStorage`, 장기: Redis 세션 — 둘 다 이 ERD 밖),
+합의되면 후속 갱신으로 다룬다. **`models`/migration은 아직 작성하지 않았다** — 사용자 승인 후
+다음 단계에서 작성한다(규칙 14).
+
 ## 전체 관계도
 
 ```mermaid
@@ -236,6 +244,49 @@ erDiagram
         uuid ingredient_id PK,FK
     }
 
+    CHAT_ROOM {
+        uuid id PK
+        uuid user_id FK
+        uuid thread_id UK
+        int schema_version
+        int source_revision
+        text last_completed_request_id
+        jsonb profile
+        jsonb task_context
+        jsonb pending_question
+        jsonb candidate_set
+        jsonb routine
+        jsonb evidence
+        jsonb summary
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    CHAT_MESSAGE {
+        uuid id PK
+        uuid chat_room_id FK
+        text request_id
+        text role
+        text content
+        int sequence
+        timestamptz created_at
+    }
+
+    CHAT_TURN_STATE {
+        uuid id PK
+        uuid chat_room_id FK
+        text request_id
+        text input_fingerprint
+        text status
+        jsonb staged_output
+        jsonb staged_snapshot
+        text failure_code
+        text failure_detail
+        boolean retryable
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
     INGREDIENT_MASTER ||--o{ EVIDENCE : "ingredient_id"
     INGREDIENT_MASTER ||--o{ INGREDIENT_KNOWLEDGE_FACT : "ingredient_id"
     INGREDIENT_MASTER |o--o{ PRODUCT_INGREDIENT : "ingredient_id (nullable)"
@@ -246,11 +297,14 @@ erDiagram
     EVIDENCE_DOCUMENT ||--o{ EVIDENCE_CHUNK : "document_id"
     EVIDENCE_CHUNK ||--o{ EVIDENCE_CHUNK_INGREDIENT : "evidence_chunk_id"
     INGREDIENT_MASTER ||--o{ EVIDENCE_CHUNK_INGREDIENT : "ingredient_id"
+    APP_USER ||--o{ CHAT_ROOM : "user_id"
+    CHAT_ROOM ||--o{ CHAT_MESSAGE : "chat_room_id"
+    CHAT_ROOM ||--o{ CHAT_TURN_STATE : "chat_room_id"
 ```
 
 `PRODUCT`는 다른 테이블과 FK로 연결돼 있지 않다 — `product_ingredient_snapshot`이 상품을
 `(source, source_product_id)` 문자열 쌍으로만 참조하기 때문이다(아래 "왜 이렇게 나눴는지"
-참고). `APP_USER`도 이번 스키마 어디와도 FK 관계가 없다(로그인 계정만 담당).
+참고). `APP_USER`는 `CHAT_ROOM`에만 연결된다(로그인 계정 1명당 채팅방 여러 개).
 
 ## 테이블별 컬럼
 
@@ -666,6 +720,70 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 - `evidence_document.ingredient_ids` 파생 조회 쿼리의 실제 구현(위 Pydantic 매핑 표의
   `SELECT DISTINCT` 방식)은 `EvidenceDocumentRepository` 작성 시점에 확정.
 
+### chat_room — 2026-09-18 제안, 미승인
+
+로그인 사용자의 채팅방 하나. `agent/schemas.py`의 `AuthorizedRoom`/`SessionSnapshot`을
+저장 계약으로 옮긴다.
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| id | uuid | N | `gen_random_uuid()` | PK. 문자열로 캐스팅해 Agent `AuthorizedRoom.chat_room_id`로 그대로 쓴다 |
+| user_id | uuid | N | - | FK → app_user.id, `ON DELETE CASCADE`. 로그인 사용자 전용이라 NULL 없음 |
+| thread_id | uuid | N | `gen_random_uuid()` | UK. LangGraph 체크포인터 네임스페이스(`AuthorizedRoom.thread_id`) |
+| schema_version | int | N | `1` | `SessionSnapshot.schema_version` 그대로 저장 |
+| source_revision | int | N | `0` | 낙관적 잠금 카운터. 턴이 커밋될 때마다 +1. `SaveSummaryRequest.expected_revision`이 이 값과 비교된다 |
+| last_completed_request_id | text | Y | - | 멱등성 확인용 — 마지막으로 완전히 커밋된 턴의 `request_id` |
+| profile | jsonb | N | `'{}'` | `UserProfile` 직렬화 |
+| task_context | jsonb | N | `'{}'` | `TaskContext` 직렬화 |
+| pending_question | jsonb | Y | - | `PendingQuestion` 직렬화 |
+| candidate_set | jsonb | Y | - | `ProductCandidateSet` 직렬화. 가장 최근 것 하나만(계약 자체가 단일 필드) |
+| routine | jsonb | Y | - | `RoutinePlan` 직렬화. 가장 최근 것 하나만 |
+| evidence | jsonb | N | `'[]'` | `EvidenceRecord` 목록 직렬화 |
+| summary | jsonb | Y | - | `ConversationSummary` 직렬화 |
+| created_at / updated_at | timestamptz | N | `now()` | 공통 |
+
+키: PK `id`, FK `user_id`(CASCADE — 계정 삭제 시 대화도 함께 삭제), UK `thread_id`.
+
+### chat_message — 2026-09-18 제안, 미승인
+
+방 안의 메시지 한 건. `agent/schemas.py`의 `ChatMessage`를 그대로 옮긴다.
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| id | uuid | N | - | PK. Agent가 발급하는 `ChatMessage.message_id`를 그대로 uuid로 저장 |
+| chat_room_id | uuid | N | - | FK → chat_room.id, `ON DELETE CASCADE` |
+| request_id | text | N | - | 이 메시지를 만든 턴의 `request_id` |
+| role | text(enum) | N | - | `user`/`assistant` |
+| content | text | N | - | 본문 |
+| sequence | int | N | - | 방 내 순번, 1부터 증가. UK `(chat_room_id, sequence)` |
+| created_at | timestamptz | N | `now()` | |
+
+키: PK `id`, FK `chat_room_id`(CASCADE), UK `(chat_room_id, sequence)`(페이징 겸용
+인덱스), UK `(chat_room_id, request_id, role)` — 같은 턴이 같은 role 메시지를 두 번
+만들지 못하게 막아 멱등성을 보조한다.
+
+### chat_turn_state — 2026-09-18 제안, 미승인
+
+턴의 시작(`begin_turn`)~확정(`complete_turn`)/실패(`mark_turn_failed`) 생애주기와
+`request_id` 재요청 충돌 감지 전용 테이블. `chat_message`와 분리한 이유는 아래
+"왜 이렇게 나눴는지" 참고.
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| id | uuid | N | `gen_random_uuid()` | PK |
+| chat_room_id | uuid | N | - | FK → chat_room.id, `ON DELETE CASCADE` |
+| request_id | text | N | - | UK `(chat_room_id, request_id)` |
+| input_fingerprint | text | N | - | 같은 `request_id`로 다른 입력이 재요청되면 `REQUEST_CONFLICT` 판정에 사용 |
+| status | text(enum) | N | - | `in_progress`/`staged`/`completed`/`failed` |
+| staged_output | jsonb | Y | - | `ChatTurnOutput` 직렬화. `complete_turn` 전 임시 보관(`stage_turn_result`) |
+| staged_snapshot | jsonb | Y | - | `SessionSnapshot` 직렬화. 위와 동일 시점에 임시 보관 |
+| failure_code | text(enum) | Y | - | `graph`/`storage`(`TurnFailureCode`) |
+| failure_detail | text | Y | - | |
+| retryable | boolean | Y | - | |
+| created_at / updated_at | timestamptz | N | `now()` | |
+
+키: PK `id`, FK `chat_room_id`(CASCADE), UK `(chat_room_id, request_id)`.
+
 ## 왜 이렇게 나눴는지
 
 - **`product`와 `product_ingredient_snapshot`을 FK로 안 묶은 이유**: 상품 카탈로그(가격·이미지,
@@ -699,6 +817,30 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
   문서 개념이 필요 없지만, CIR(PDF)/PubMed(초록)는 문서 하나가 여러 페이지/섹션으로 쪼개질 수
   있어 문서 메타데이터(document)와 검색 단위(chunk)를 분리해야 페이지별 인용이 가능하다
   (`EVIDENCE_RAG_DESIGN.md` B절).
+- **`chat_room`의 `profile`/`task_context`/`pending_question`/`candidate_set`/`routine`/
+  `evidence`/`summary`를 정규화하지 않고 JSONB로 저장하는 이유**: 이 값들은 Agent가 소유한
+  Pydantic DTO(`UserProfile`, `ProductCandidateSet`, `RoutinePlan` 등, `agent/schemas.py`/
+  `agent/rag/schemas.py`)를 그대로 왕복 저장하는 세션 캐시다. Backend가 그 내부 필드로 SQL
+  검색을 할 일이 없다 — 실제 검색은 이미 `claim_chunk`/`evidence_chunk`/`product` 전용
+  테이블이 담당한다. 정규화하면 Agent DTO가 바뀔 때마다 마이그레이션이 필요해지는데, 이
+  값들은 Backend가 의미를 해석하지 않고 Agent에게 그대로 돌려주기만 하는 값이라 JSONB
+  round-trip으로 충분하다.
+- **`candidate_set`/`routine`을 이력 테이블이 아니라 `chat_room`에 "최신 값 하나"로만 두는
+  이유**: `SessionSnapshot` 계약 자체가 각각 최대 1개만 들고 다닌다(list가 아니라 단일
+  nullable 필드). Agent가 여러 개를 동시에 참조하지 않으므로 이력 테이블은 지금 범위에서
+  과설계다.
+- **`chat_turn_state`를 `chat_message`와 분리한 이유**: 턴 하나가 메시지를 만들기 전에
+  실패하거나 재시도될 수 있다. 이때 "이 `request_id`는 처리 중/실패"라는 사실을 메시지 없이도
+  알아야 `REQUEST_CONFLICT`/`REQUEST_IN_PROGRESS` 판정(`agent/ports.py` 실패 계약)이
+  가능하다. `chat_message`에 상태 컬럼을 얹으면 "메시지는 아직 없는데 턴 상태만 있는" 경우를
+  표현할 수 없다.
+- **`thread_id`를 `chat_room.id`와 별도 컬럼으로 둔 이유**: Agent 계약(`AuthorizedRoom`)이
+  `chat_room_id`와 `thread_id`를 별도 필드로 요구한다. 지금은 1:1이지만, 나중에 방은
+  유지한 채 LangGraph 스레드만 새로 시작하는 시나리오(예: "대화 초기화" 버튼)가 생기면
+  `thread_id`만 재발급할 수 있게 미리 분리해 둔다.
+- **게스트(비로그인) 세션이 이 ERD에 없는 이유**: 사용자 확인 완료 — 이번 범위는 로그인
+  사용자만이다. 게스트 연속성은 front 쪽에서 별도로 논의 중이며(단기: 프론트
+  `sessionStorage`, 장기: Redis 세션 이관) 합의되면 후속 갱신으로 다룬다.
 
 ## 관련 문서
 
@@ -708,3 +850,5 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 - [docs/data/EVIDENCE_RAG_DESIGN.md](../data/EVIDENCE_RAG_DESIGN.md) — `evidence_document`/`evidence_chunk` Pydantic 스키마 원안
 - [docs/data/EVIDENCE_COVERAGE_AUDIT.md](../data/EVIDENCE_COVERAGE_AUDIT.md) — `rag_chunk` vs 별도 테이블(Option B) 의사결정 근거
 - [docs/contracts/two-layer-rag-agent-backend-contract.md](../contracts/two-layer-rag-agent-backend-contract.md) — Claim/Evidence 레이어 분리 계약
+- [docs/contracts/backend-to-agent.md](../contracts/backend-to-agent.md) — `ChatHistoryRepository` 포트 계약
+- `agent/schemas.py`, `agent/ports.py` — `chat_room`/`chat_message`/`chat_turn_state`가 옮기는 원 계약
