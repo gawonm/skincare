@@ -31,7 +31,6 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from backend.repositories.ingredient_master_repository import IngredientMasterRepository
@@ -64,7 +63,15 @@ _PRODUCTION_CLAIM_INGESTION_PATH = _OUT_DIR / "nia_10s_30s_claim_ingestion_produ
 _PARSER_SCRATCH_DOC_PATH = _OUT_DIR / ".nia_production_parser_scratch_doc.json"
 _PARSER_SCRATCH_RECORD_PATH = _OUT_DIR / ".nia_production_parser_scratch_record.json"
 
-_PRODUCTION_ANNOTATION_VERSION_PREFIX = f"llm-production-{datetime.now(UTC).date().isoformat()}"
+# 이 production corpus 전체(resume 포함)가 공유하는 유일한 annotation_version.
+# 과거에는 실행 시점의 wall-clock 날짜로 매번 새로 계산했는데, 그 상태로 resume하다가 날짜가
+# 바뀌면 같은 논리적 production run 안에 서로 다른 annotation_version이 섞여 버렸다(1~889번째
+# 줄은 09-17, 890~1497번째 줄은 09-18). 날짜와 무관하게 고정된 값을 쓰도록 상수로 못 박는다.
+# provider/model이 바뀌면 이 상수도 더 이상 맞지 않으므로 `_run()`에서 그 조합을 검증한다.
+_CANONICAL_PRODUCTION_ANNOTATION_VERSION = "llm-production-2026-09-17-openai-gpt-4o-mini"
+
+_CANONICAL_PRODUCTION_PROVIDER = "openai"
+_CANONICAL_PRODUCTION_MODEL = "gpt-4o-mini"
 
 # nia_pilot_runner.py의 review_reasons 문자열과 동일한 markers - 새로 만들지 않고 그대로 맞춘다.
 _BLOCKING_REASON_MARKERS = ("span_semantic_mismatch", "span_semantic_confidence_low", "span fuzzy")
@@ -110,6 +117,7 @@ class NiaProductionAnnotationStore:
         if not self._path.exists():
             return set()
         completed: set[str] = set()
+        versions: set[str] = set()
         with self._path.open("r", encoding="utf-8") as f:
             for line_no, line in enumerate(f, start=1):
                 line = line.rstrip("\n")
@@ -129,6 +137,15 @@ class NiaProductionAnnotationStore:
                 if rid not in valid_record_ids:
                     raise NiaProductionOutputIntegrityError(
                         f"{self._path}:{line_no} record_id {rid!r}가 input corpus(nia_qa_10s_30s.jsonl)에 없습니다"
+                    )
+                # 하나의 논리적 production run은 annotation_version이 하나여야 한다 - 섞여
+                # 있으면(예: resume 도중 날짜가 바뀌어 버전이 자동으로 달라짐) silent continue
+                # 하지 말고 여기서 즉시 멈춘다.
+                versions.add(doc.annotation_version)
+                if len(versions) > 1:
+                    raise NiaProductionOutputIntegrityError(
+                        f"{self._path}:{line_no} annotation_version이 섞여 있습니다: {sorted(versions)!r} "
+                        "- 하나의 production run은 annotation_version이 하나여야 합니다"
                     )
                 completed.add(rid)
         return completed
@@ -341,9 +358,17 @@ async def _run() -> None:
             "provider=openai인데 config.yaml에 openai 블록이 없어 실행할 수 없습니다."
         )
     labeler = NiaLlmLabeler(settings.agent.chat, settings.openai)
-    annotation_version = (
-        f"{_PRODUCTION_ANNOTATION_VERSION_PREFIX}-{labeler.provider}-{labeler.model}"
-    )
+    if (
+        labeler.provider != _CANONICAL_PRODUCTION_PROVIDER
+        or labeler.model != _CANONICAL_PRODUCTION_MODEL
+    ):
+        raise RuntimeError(
+            f"canonical annotation_version {_CANONICAL_PRODUCTION_ANNOTATION_VERSION!r}은 "
+            f"provider={_CANONICAL_PRODUCTION_PROVIDER}/model={_CANONICAL_PRODUCTION_MODEL} 전용입니다. "
+            f"현재 provider={labeler.provider}, model={labeler.model}로는 사용할 수 없습니다 - "
+            "이 run의 provider/model 설정이 의도한 것인지 먼저 확인하세요."
+        )
+    annotation_version = _CANONICAL_PRODUCTION_ANNOTATION_VERSION
     print(
         f"production LLM provider={labeler.provider} model={labeler.model} annotation_version={annotation_version}"
     )
