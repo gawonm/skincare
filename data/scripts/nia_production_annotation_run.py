@@ -36,7 +36,7 @@ from pathlib import Path
 from backend.repositories.ingredient_master_repository import IngredientMasterRepository
 from core.config import settings
 from core.database import Database
-from data.manual_review.nia_labeling_schemas import NiaLabelingDocument
+from data.scripts.nia_labeling_schemas import NiaLabelingDocument
 from data.scripts.ingredient_name_matcher import IngredientNameMatcher
 from data.scripts.ingredient_name_normalizer import IngredientNameNormalizer
 from data.scripts.nia_claim_ingestion_policy import NiaClaimIngestionPolicy
