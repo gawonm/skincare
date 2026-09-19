@@ -36,6 +36,10 @@ data 파트가 수집·정제한 성분 근거(MFDS 고시, Knowledgedata, NIA Q
 `NiaOriginalRecord` 1건 → `NiaCaseDocument` 1건. 사례를 question/answer/CoT 단계별 조각으로
 쪼개지 않는다(검색 결과 단위가 "유사 사례 Top-3" 이므로).
 
+연령 범위: 팀 corpus는 `meta.age` 10~39세다. `NiaOriginalLoader`는 전체 원본을 읽고, 그 다음 단계인
+`NiaOriginalAgeFilter`(`data/scripts/nia_original_age_filter.py`)가 `10 <= age <= 39`만 통과시킨 뒤
+`NiaCaseDocumentBuilder`로 넘긴다. 필터는 loader 안에 넣지 않는다.
+
 - `page_content` = 질문 + 답변 + CoT 전체. 형식은 `[질문]` / `[답변]` / `[추론]` 라벨과
   `{step}. {title}` 줄바꿈뿐이며, 원문은 요약·재작성·strip 하지 않는다. `initial_skin_condition`,
   `external` 은 넣지 않는다.
