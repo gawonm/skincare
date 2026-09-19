@@ -29,7 +29,25 @@ data 파트가 수집·정제한 성분 근거(MFDS 고시, Knowledgedata, NIA Q
 | --- | --- | --- |
 | `evidence` | `data/scripts/import_mfds_restricted_ingredients.py` | data (모델 정의: `models/evidence.py`) |
 | `ingredient_knowledge_fact` | `data/scripts/import_knowledgedata.py` | data (모델 정의: `models/ingredient_knowledge.py`) |
-| NIA Q&A (AI Hub 배포 원본 Q-CoT-A, ZIP/JSONL, DB 테이블 아님) | `data/scripts/nia_original_loader.py`의 `NiaOriginalLoader` | 원본 파일 읽기와 손실 없는 `NiaOriginalRecord` 변환은 **data 소유**. `page_content`/metadata 생성과 `Document` 변환은 agent/rag 책임이며, 상세 계약과 record를 agent로 넘기는 방식은 **미정**(다음 단계에서 결정). 기존 `NiaQaLoader`는 이 방향의 기준이 아니다 |
+| NIA Q&A (AI Hub 배포 원본 Q-CoT-A, ZIP/JSONL, DB 테이블 아님) | `data/scripts/nia_original_loader.py`의 `NiaOriginalLoader` → `data/scripts/nia_case_document_builder.py`의 `NiaCaseDocumentBuilder` | 원본 읽기(`NiaOriginalRecord`)와 검색용 사례 Document(`NiaCaseDocument`) 생성까지 **data 소유**(팀 합의: Data/DB 먼저 구현, 이후 Backend/Agent가 맞춤). 아래 "NIA 사례 Document 계약" 참고. 기존 `NiaQaLoader`는 이 방향의 기준이 아니다 |
+
+### NIA 사례 Document 계약 (v1)
+
+`NiaOriginalRecord` 1건 → `NiaCaseDocument` 1건. 사례를 question/answer/CoT 단계별 조각으로
+쪼개지 않는다(검색 결과 단위가 "유사 사례 Top-3" 이므로).
+
+- `page_content` = 질문 + 답변 + CoT 전체. 형식은 `[질문]` / `[답변]` / `[추론]` 라벨과
+  `{step}. {title}` 줄바꿈뿐이며, 원문은 요약·재작성·strip 하지 않는다. `initial_skin_condition`,
+  `external` 은 넣지 않는다.
+- `embedding_text` = `page_content` (v1). `text_version` 으로 형식 버전을 기록한다.
+- `metadata` = 검색 filter 후보(`target_concern`, `gender`, `age`, `skin_type`, `skin_concerns`),
+  출처(`case_id`, `source_survey_id`, `image_filename`, `evidence_sources`), 문맥
+  (`initial_skin_condition`, `external`). 저장소와 무관한 논리 구조이며 list/객체를 펴는 일(JSON 문자열,
+  boolean 키 등)은 벡터 저장소 어댑터가 한다.
+
+Backend/Agent가 이어받을 지점: `NiaCaseDocument` 를 agent 쪽 입력으로 넘기는 방식(agent 는 data 를
+import 하지 않으므로 backend mapper 경유)과 저장소별 metadata 변환은 **미정**이며, 임베딩·검색·
+성분 추출 단계에서 별도 계약으로 정한다.
 
 ## 2. 아직 정해지지 않은 것 (인수인계 문서 6절 인계 요구 중 미해결분)
 
