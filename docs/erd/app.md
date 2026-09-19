@@ -22,19 +22,21 @@
 [CLAUDE_SESSION_BOARD.md](../coordination/CLAUDE_SESSION_BOARD.md) Shared Decisions #4).
 위 mermaid/컬럼 표는 마이그레이션 전 제안 설계다.
 
-**2026-09-18 갱신 — 로그인 사용자 채팅 히스토리 (제안, 미승인)**. `agent/ports.py`의
+**2026-09-18 갱신 — 로그인 사용자 채팅 히스토리 (2026-09-19 사용자 승인)**. `agent/ports.py`의
 `ChatHistoryRepository`와 `agent/schemas.py`(`AuthorizedRoom`/`ChatMessage`/`SessionSnapshot`
 등)를 저장 계약으로 옮긴 `CHAT_ROOM`/`CHAT_MESSAGE`/`CHAT_TURN_STATE` 3개 테이블을 추가했다.
 범위는 **로그인 사용자만**이다 — 게스트(비로그인) 세션 연속성 문제는 front 쪽 논의에서 별도
 결정 사항으로 분리됐고(단기: 프론트 `sessionStorage`, 장기: Redis 세션 — 둘 다 이 ERD 밖),
-합의되면 후속 갱신으로 다룬다. **`models`/migration은 아직 작성하지 않았다** — 사용자 승인 후
-다음 단계에서 작성한다(규칙 14).
+합의되면 후속 갱신으로 다룬다. 사용자가 2026-09-19에 이 ERD를 승인했다(규칙 14).
+**`models`/migration은 아직 작성하지 않았다** — data 파트가
+[backend-to-data.md](../contracts/backend-to-data.md) 요청에 따라 작성한다. LangGraph
+체크포인터 저장소는 이 ERD 범위 밖이다(Agent가 이전 대화를 기억하는 근거는 `chat_room`의
+`SessionSnapshot`이며, 체크포인터 전용 테이블은 만들지 않는다).
 
 **2026-09-19 갱신 — 사용자당 채팅방 1개.** Agent 담당자 확인으로 방 식별이 "사용자당 방 1개"로
 확정돼 `chat_room.user_id`를 UNIQUE로 바꾸고 `APP_USER`–`CHAT_ROOM` 관계를 1:0..1로 고쳤다.
 사용자가 화면을 벗어났다 다시 들어오면 화면은 빈 상태지만 Agent는 이전 대화를 기억한다.
-아직 미승인 제안이며, `docs/contracts/backend-to-data.md`의 `ChatRoom` 코드 예시는 이 변경을
-아직 반영하지 않았다(ERD가 최신).
+`docs/contracts/backend-to-data.md`의 `ChatRoom` 코드 예시에도 같은 변경을 반영했다.
 
 ## 전체 관계도
 
@@ -726,7 +728,7 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 - `evidence_document.ingredient_ids` 파생 조회 쿼리의 실제 구현(위 Pydantic 매핑 표의
   `SELECT DISTINCT` 방식)은 `EvidenceDocumentRepository` 작성 시점에 확정.
 
-### chat_room — 2026-09-18 제안, 미승인
+### chat_room — 2026-09-18 제안, 2026-09-19 승인
 
 로그인 사용자의 채팅방 하나. `agent/schemas.py`의 `AuthorizedRoom`/`SessionSnapshot`을
 저장 계약으로 옮긴다.
@@ -751,7 +753,7 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 키: PK `id`, FK `user_id`(CASCADE — 계정 삭제 시 대화도 함께 삭제), UK `user_id`, UK `thread_id`.
 `user_id` UNIQUE 덕분에 서버는 로그인 사용자의 방을 `user_id`로 조회하거나(없으면 생성) 할 수 있다.
 
-### chat_message — 2026-09-18 제안, 미승인
+### chat_message — 2026-09-18 제안, 2026-09-19 승인
 
 방 안의 메시지 한 건. `agent/schemas.py`의 `ChatMessage`를 그대로 옮긴다.
 
@@ -769,7 +771,7 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 인덱스), UK `(chat_room_id, request_id, role)` — 같은 턴이 같은 role 메시지를 두 번
 만들지 못하게 막아 멱등성을 보조한다.
 
-### chat_turn_state — 2026-09-18 제안, 미승인
+### chat_turn_state — 2026-09-18 제안, 2026-09-19 승인
 
 턴의 시작(`begin_turn`)~확정(`complete_turn`)/실패(`mark_turn_failed`) 생애주기와
 `request_id` 재요청 충돌 감지 전용 테이블. `chat_message`와 분리한 이유는 아래
