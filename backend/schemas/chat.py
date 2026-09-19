@@ -1,8 +1,9 @@
 """AI 채팅 HTTP API 요청/응답 모델 (로그인 사용자 전용).
 
 방 접근 권한(`actor_id`)은 세션에서 얻으므로 요청 본문에 넣지 않는다
-(`backend/api/dependencies.py`의 `CurrentUserDep`과 같은 패턴). 게스트(비로그인) 채팅은
-이번 범위에 없다.
+(`backend/api/dependencies.py`의 `CurrentUserDep`과 같은 패턴). 채팅방도 사용자당 1개라
+서버가 로그인 사용자로 방을 찾으므로 요청 본문에 방 식별자를 받지 않는다. 게스트(비로그인)
+채팅은 이번 범위에 없다.
 
 `agent/schemas.py`의 `ChatServiceRequest`/`ChatTurnOutput`을 그대로 복제하지 않는다.
 그 타입은 agent가 소유한 backend→agent 계약이라 backend가 사본을 만들면 두 정의가
@@ -30,9 +31,8 @@ from agent.schemas import (
 
 
 class ChatSendMessageRequest(BaseModel):
-    """방 하나에 메시지 한 턴을 보낸다."""
+    """로그인 사용자의 채팅방에 메시지 한 턴을 보낸다."""
 
-    chat_room_id: str = Field(min_length=1)
     # 클라이언트가 네트워크 재시도로 같은 요청을 다시 보내도 같은 턴으로 인식되도록
     # (`REQUEST_CONFLICT`/`REQUEST_IN_PROGRESS`, backend-to-agent.md 6절) 서버가 아니라
     # 클라이언트가 발급해 보낸다.
