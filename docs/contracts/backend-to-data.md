@@ -25,18 +25,33 @@ class ChatRoom(EntityBase):
     user_id: Mapped[UUID] = mapped_column(
         ForeignKey("app_user.id", ondelete="CASCADE"), unique=True, nullable=False
     )
-    thread_id: Mapped[UUID] = mapped_column(Uuid, unique=True, nullable=False, default=uuid4)
-    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    source_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    thread_id: Mapped[UUID] = mapped_column(
+        Uuid, unique=True, nullable=False, default=uuid4, server_default=text("gen_random_uuid()")
+    )
+    schema_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    source_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     last_completed_request_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    profile: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    task_context: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    profile: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    task_context: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     pending_question: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     candidate_set: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     routine: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    evidence: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    evidence: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
     summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 ```
+
+`server_default`는 ERD "기본값" 칸의 DB 기본값과 맞추기 위한 것이다. 파이썬 `default`만 있으면
+프로그램을 거치지 않고 행을 넣을 때 DB가 값을 채우지 못한다. `text`는 `sqlalchemy`에서 import한다.
 
 키: PK `id`(`EntityBase`), FK `user_id` → `app_user.id` (`ON DELETE CASCADE`), UK `user_id`
 (사용자당 방 1개, 2026-09-19 Agent 담당자 확인), UK `thread_id`.
@@ -64,6 +79,9 @@ class ChatMessage(EntityBase):
 
 키: PK `id`, FK `chat_room_id`(CASCADE), UK `(chat_room_id, sequence)`,
 UK `(chat_room_id, request_id, role)`.
+
+`id`는 Agent가 발급하는 `ChatMessage.message_id`를 지정해서 넣을 수 있다(`EntityBase`의 `default`는
+값을 안 넘겼을 때만 쓰인다). `EntityBase` 상속이라 `updated_at`도 생기지만 메시지는 수정하지 않는다.
 
 ### `chat_turn_state`
 

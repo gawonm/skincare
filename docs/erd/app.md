@@ -759,13 +759,13 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 
 | 컬럼 | 타입 | NULL | 기본값 | 설명 |
 | --- | --- | --- | --- | --- |
-| id | uuid | N | - | PK. Agent가 발급하는 `ChatMessage.message_id`를 그대로 uuid로 저장 |
+| id | uuid | N | `gen_random_uuid()` | PK. Agent가 발급하는 `ChatMessage.message_id`를 지정해 넣으면 그 값을 그대로 uuid로 저장 |
 | chat_room_id | uuid | N | - | FK → chat_room.id, `ON DELETE CASCADE` |
 | request_id | text | N | - | 이 메시지를 만든 턴의 `request_id` |
 | role | text(enum) | N | - | `user`/`assistant` |
 | content | text | N | - | 본문 |
 | sequence | int | N | - | 방 내 순번, 1부터 증가. UK `(chat_room_id, sequence)` |
-| created_at | timestamptz | N | `now()` | |
+| created_at / updated_at | timestamptz | N | `now()` | 공통(`EntityBase`). 메시지는 수정하지 않아 `updated_at`은 쓰이지 않지만, 다른 테이블과 같은 기본 틀을 유지하려고 둔다 |
 
 키: PK `id`, FK `chat_room_id`(CASCADE), UK `(chat_room_id, sequence)`(페이징 겸용
 인덱스), UK `(chat_room_id, request_id, role)` — 같은 턴이 같은 role 메시지를 두 번
