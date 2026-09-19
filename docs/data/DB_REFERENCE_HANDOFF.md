@@ -28,15 +28,23 @@
 별도 부분 데이터다(`product_candidates.csv` 범위만 적재됨). dump가 없으면 이 문서의 수치는 재현되지 않는다.
 
 dump는 용량과 성격상 git에 올리지 않는다(`.gitignore`가 `skincare_latest_2026-09-17.dump`를 제외한다).
-전달 경로는 Data 담당자에게 받는다.
+## 2. 전달 방법 (Google Drive)
 
-## 2. 복원 방법
+기준 dump는 팀 Google Drive로 전달한다. 저장소에는 dump가 없다.
+
+- Google Drive: <DRIVE_LINK>  <!-- 업로드 후 이 자리에 팀 공유 폴더 링크를 넣는다 -->
+- 폴더에는 파일 두 개가 있다.
+  - `skincare_latest_2026-09-17.dump`
+  - `skincare_latest_2026-09-17.dump.sha256` (내용 한 줄: `534e41c6e65c8bedab53dfbce1acc2c888bc2e79afc458c630a413002f16d91f  skincare_latest_2026-09-17.dump`)
+- 내려받은 뒤 SHA-256이 위 표의 값과 **일치할 때만** 복원한다. 다르면 복원하지 말고 Data 담당자에게 알린다.
+
+## 3. 복원 방법
 
 기존 DB를 덮어쓰지 않도록 **빈 새 DB**에 복원한다. `<TARGET_DB>`는 각자 정한다.
 
 ```bash
-# dump 를 data/ 아래(gitignored)에 둔다
-shasum -a 256 data/skincare_latest_2026-09-17.dump   # 위 SHA-256 과 같은지 먼저 확인
+# Drive 에서 받은 dump 를 data/ 아래(gitignored)에 둔다
+shasum -a 256 data/skincare_latest_2026-09-17.dump   # 534e41c6…f16d91f 와 같을 때만 다음 단계로
 
 docker compose exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" <TARGET_DB>'
 docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d <TARGET_DB> --exit-on-error --no-owner' \
@@ -47,7 +55,7 @@ docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d <TARGET
 - `--no-owner`: dump 소유자 role이 각자 환경에 없어도 복원되게 한다.
 - 복원한 DB를 쓰려면 `config.yaml`의 `database.url` 끝의 DB명을 `<TARGET_DB>`로 바꾼다. 이 파일은 gitignored이다.
 
-## 3. 복원 후 검증
+## 4. 복원 후 검증
 
 ```sql
 SELECT version_num FROM alembic_version;   -- 3165318c750d
@@ -65,7 +73,7 @@ SELECT
 `ingredient_id`/`snapshot_id` orphan 0건, confirmed인데 `ingredient_id`가 NULL인 행 0건, 상품 없는
 snapshot 0건, `ingredient_knowledge_fact` orphan 0건.
 
-## 4. NIA Data 산출물
+## 5. NIA Data 산출물
 
 ```
 AI Hub 배포 원본 Q-CoT-A (ZIP/JSONL)
@@ -107,7 +115,7 @@ for entry in loader.iter_entries(zip_paths):      # 제너레이터, 전체를 �
 **이어받을 지점**: `NiaCaseDocument` 이후(embedding, 인덱스, 검색, Top-3, 성분 추출)는 Agent/RAG 담당이다. agent는 data를
 import하지 않으므로 `NiaCaseDocument`를 agent 입력으로 넘기는 방식은 backend mapper 경유가 될 것이며 아직 정해지지 않았다.
 
-## 5. 알려진 데이터 특성
+## 6. 알려진 데이터 특성
 
 - **지식 없음은 정상 상태다.** confirmed 성분 2,832개 중 `ingredient_knowledge_fact`가 있는 것은 972개(행 기준 약 51%)뿐이다.
   추천 성분에 근거가 없을 수 있고, 이는 오류가 아니다. 근거 없음과 상품 없음을 구분해서 다뤄야 한다.
