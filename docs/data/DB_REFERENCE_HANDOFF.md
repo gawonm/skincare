@@ -32,7 +32,7 @@ dump는 용량과 성격상 git에 올리지 않는다(`.gitignore`가 `skincare
 
 기준 dump는 팀 Google Drive로 전달한다. 저장소에는 dump가 없다.
 
-- Google Drive: <DRIVE_LINK>  <!-- 업로드 후 이 자리에 팀 공유 폴더 링크를 넣는다 -->
+- Google Drive: https://drive.google.com/drive/u/0/folders/1BprrOow_A461_lnjf6rtPpXpY_Zm3-nl
 - 폴더에는 파일 두 개가 있다.
   - `skincare_latest_2026-09-17.dump`
   - `skincare_latest_2026-09-17.dump.sha256` (내용 한 줄: `534e41c6e65c8bedab53dfbce1acc2c888bc2e79afc458c630a413002f16d91f  skincare_latest_2026-09-17.dump`)
@@ -76,15 +76,22 @@ snapshot 0건, `ingredient_knowledge_fact` orphan 0건.
 ## 5. NIA Data 산출물
 
 ```
-AI Hub 배포 원본 Q-CoT-A (ZIP/JSONL)
-  → NiaOriginalLoader          → NiaOriginalRecord   (손실 없는 원본)
+AI Hub 배포 원본 Q-CoT-A 전체 (ZIP/JSONL)
+  → NiaOriginalLoader          → NiaOriginalEntry    (손실 없는 원본, 필터 없음)
+  → NiaOriginalAgeFilter       → 10 <= meta.age <= 39 만 통과
   → NiaCaseDocumentBuilder     → NiaCaseDocument     (사례 1건 = 문서 1건)
 ```
+
+**NIA 원본 corpus는 dump에 포함되지 않는다.** 각자 보유한 AI Hub Q-CoT-A 전체 원본을 `NiaOriginalLoader`로 읽은 뒤,
+`meta.age` 기준 10~39세(10대~30대)만 걸러 `NiaCaseDocumentBuilder`로 변환한다. 연령 필터는 loader 내부가 아니라
+loader 이후 Data 단계(`NiaOriginalAgeFilter`)에서 적용한다. loader는 항상 전체를 읽는다.
+로컬 확보분 기준으로 전체 9,000건 중 10~39세는 3,581건이었다(코드에 고정된 값이 아니라 loader 출력으로 계산한 결과다).
 
 | 역할 | 파일 |
 | --- | --- |
 | 원본 loader | `data/scripts/nia_original_loader.py` |
 | 원본 스키마 | `data/scripts/nia_original_schemas.py` |
+| 연령 필터 (10~39세) | `data/scripts/nia_original_age_filter.py` |
 | Document builder | `data/scripts/nia_case_document_builder.py` |
 | Document 스키마 | `data/scripts/nia_case_document_schemas.py` |
 | 계약 | `docs/contracts/data-to-agent.md` ("NIA 사례 Document 계약") |
@@ -97,14 +104,15 @@ AI Hub 배포 원본 Q-CoT-A (ZIP/JSONL)
 - **metadata**: `case_id`, `source_survey_id`, `target_concern`, `gender`, `age`, `skin_type`, `skin_concerns`,
   `initial_skin_condition`, `external`, `image_filename`, `evidence_sources`. 저장소와 무관한 논리 구조이며 list/객체를
   펴는 일은 벡터 저장소 어댑터가 한다.
-- 연령 필터, embedding, 벡터 적재는 Data가 하지 않았다.
+- embedding, 벡터 적재는 Data가 하지 않았다.
 
 사용 예:
 
 ```python
 loader = NiaOriginalLoader()
 builder = NiaCaseDocumentBuilder()
-for entry in loader.iter_entries(zip_paths):      # 제너레이터, 전체를 메모리에 올리지 않는다
+age_filter = NiaOriginalAgeFilter()                # 기본 10 <= age <= 39
+for entry in age_filter.filter(loader.iter_entries(zip_paths)):   # 제너레이터, 전체를 메모리에 올리지 않는다
     document = builder.build(entry.record)
 ```
 
