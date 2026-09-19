@@ -22,13 +22,21 @@
 [CLAUDE_SESSION_BOARD.md](../coordination/CLAUDE_SESSION_BOARD.md) Shared Decisions #4).
 위 mermaid/컬럼 표는 마이그레이션 전 제안 설계다.
 
-**2026-09-18 갱신 — 로그인 사용자 채팅 히스토리 (제안, 미승인)**. `agent/ports.py`의
+**2026-09-18 갱신 — 로그인 사용자 채팅 히스토리 (2026-09-19 사용자 승인)**. `agent/ports.py`의
 `ChatHistoryRepository`와 `agent/schemas.py`(`AuthorizedRoom`/`ChatMessage`/`SessionSnapshot`
 등)를 저장 계약으로 옮긴 `CHAT_ROOM`/`CHAT_MESSAGE`/`CHAT_TURN_STATE` 3개 테이블을 추가했다.
 범위는 **로그인 사용자만**이다 — 게스트(비로그인) 세션 연속성 문제는 front 쪽 논의에서 별도
 결정 사항으로 분리됐고(단기: 프론트 `sessionStorage`, 장기: Redis 세션 — 둘 다 이 ERD 밖),
-합의되면 후속 갱신으로 다룬다. **`models`/migration은 아직 작성하지 않았다** — 사용자 승인 후
-다음 단계에서 작성한다(규칙 14).
+합의되면 후속 갱신으로 다룬다. 사용자가 2026-09-19에 이 ERD를 승인했다(규칙 14).
+**`models`/migration은 아직 작성하지 않았다** — data 파트가
+[backend-to-data.md](../contracts/backend-to-data.md) 요청에 따라 작성한다. LangGraph
+체크포인터 저장소는 이 ERD 범위 밖이다(Agent가 이전 대화를 기억하는 근거는 `chat_room`의
+`SessionSnapshot`이며, 체크포인터 전용 테이블은 만들지 않는다).
+
+**2026-09-19 갱신 — 사용자당 채팅방 1개.** Agent 담당자 확인으로 방 식별이 "사용자당 방 1개"로
+확정돼 `chat_room.user_id`를 UNIQUE로 바꾸고 `APP_USER`–`CHAT_ROOM` 관계를 1:0..1로 고쳤다.
+사용자가 화면을 벗어났다 다시 들어오면 화면은 빈 상태지만 Agent는 이전 대화를 기억한다.
+`docs/contracts/backend-to-data.md`의 `ChatRoom` 코드 예시에도 같은 변경을 반영했다.
 
 ## 전체 관계도
 
@@ -297,14 +305,14 @@ erDiagram
     EVIDENCE_DOCUMENT ||--o{ EVIDENCE_CHUNK : "document_id"
     EVIDENCE_CHUNK ||--o{ EVIDENCE_CHUNK_INGREDIENT : "evidence_chunk_id"
     INGREDIENT_MASTER ||--o{ EVIDENCE_CHUNK_INGREDIENT : "ingredient_id"
-    APP_USER ||--o{ CHAT_ROOM : "user_id"
+    APP_USER ||--o| CHAT_ROOM : "user_id (UNIQUE, 사용자당 1개)"
     CHAT_ROOM ||--o{ CHAT_MESSAGE : "chat_room_id"
     CHAT_ROOM ||--o{ CHAT_TURN_STATE : "chat_room_id"
 ```
 
 `PRODUCT`는 다른 테이블과 FK로 연결돼 있지 않다 — `product_ingredient_snapshot`이 상품을
 `(source, source_product_id)` 문자열 쌍으로만 참조하기 때문이다(아래 "왜 이렇게 나눴는지"
-참고). `APP_USER`는 `CHAT_ROOM`에만 연결된다(로그인 계정 1명당 채팅방 여러 개).
+참고). `APP_USER`는 `CHAT_ROOM`에만 연결된다(로그인 계정 1명당 채팅방 1개).
 
 ## 테이블별 컬럼
 
@@ -720,7 +728,7 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 - `evidence_document.ingredient_ids` 파생 조회 쿼리의 실제 구현(위 Pydantic 매핑 표의
   `SELECT DISTINCT` 방식)은 `EvidenceDocumentRepository` 작성 시점에 확정.
 
-### chat_room — 2026-09-18 제안, 미승인
+### chat_room — 2026-09-18 제안, 2026-09-19 승인
 
 로그인 사용자의 채팅방 하나. `agent/schemas.py`의 `AuthorizedRoom`/`SessionSnapshot`을
 저장 계약으로 옮긴다.
@@ -728,7 +736,7 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 | 컬럼 | 타입 | NULL | 기본값 | 설명 |
 | --- | --- | --- | --- | --- |
 | id | uuid | N | `gen_random_uuid()` | PK. 문자열로 캐스팅해 Agent `AuthorizedRoom.chat_room_id`로 그대로 쓴다 |
-| user_id | uuid | N | - | FK → app_user.id, `ON DELETE CASCADE`. 로그인 사용자 전용이라 NULL 없음 |
+| user_id | uuid | N | - | FK → app_user.id, `ON DELETE CASCADE`. UK — 사용자당 방 1개. 로그인 사용자 전용이라 NULL 없음 |
 | thread_id | uuid | N | `gen_random_uuid()` | UK. LangGraph 체크포인터 네임스페이스(`AuthorizedRoom.thread_id`) |
 | schema_version | int | N | `1` | `SessionSnapshot.schema_version` 그대로 저장 |
 | source_revision | int | N | `0` | 낙관적 잠금 카운터. 턴이 커밋될 때마다 +1. `SaveSummaryRequest.expected_revision`이 이 값과 비교된다 |
@@ -742,27 +750,28 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 | summary | jsonb | Y | - | `ConversationSummary` 직렬화 |
 | created_at / updated_at | timestamptz | N | `now()` | 공통 |
 
-키: PK `id`, FK `user_id`(CASCADE — 계정 삭제 시 대화도 함께 삭제), UK `thread_id`.
+키: PK `id`, FK `user_id`(CASCADE — 계정 삭제 시 대화도 함께 삭제), UK `user_id`, UK `thread_id`.
+`user_id` UNIQUE 덕분에 서버는 로그인 사용자의 방을 `user_id`로 조회하거나(없으면 생성) 할 수 있다.
 
-### chat_message — 2026-09-18 제안, 미승인
+### chat_message — 2026-09-18 제안, 2026-09-19 승인
 
 방 안의 메시지 한 건. `agent/schemas.py`의 `ChatMessage`를 그대로 옮긴다.
 
 | 컬럼 | 타입 | NULL | 기본값 | 설명 |
 | --- | --- | --- | --- | --- |
-| id | uuid | N | - | PK. Agent가 발급하는 `ChatMessage.message_id`를 그대로 uuid로 저장 |
+| id | uuid | N | `gen_random_uuid()` | PK. Agent가 발급하는 `ChatMessage.message_id`를 지정해 넣으면 그 값을 그대로 uuid로 저장 |
 | chat_room_id | uuid | N | - | FK → chat_room.id, `ON DELETE CASCADE` |
 | request_id | text | N | - | 이 메시지를 만든 턴의 `request_id` |
 | role | text(enum) | N | - | `user`/`assistant` |
 | content | text | N | - | 본문 |
 | sequence | int | N | - | 방 내 순번, 1부터 증가. UK `(chat_room_id, sequence)` |
-| created_at | timestamptz | N | `now()` | |
+| created_at / updated_at | timestamptz | N | `now()` | 공통(`EntityBase`). 메시지는 수정하지 않아 `updated_at`은 쓰이지 않지만, 다른 테이블과 같은 기본 틀을 유지하려고 둔다 |
 
 키: PK `id`, FK `chat_room_id`(CASCADE), UK `(chat_room_id, sequence)`(페이징 겸용
 인덱스), UK `(chat_room_id, request_id, role)` — 같은 턴이 같은 role 메시지를 두 번
 만들지 못하게 막아 멱등성을 보조한다.
 
-### chat_turn_state — 2026-09-18 제안, 미승인
+### chat_turn_state — 2026-09-18 제안, 2026-09-19 승인
 
 턴의 시작(`begin_turn`)~확정(`complete_turn`)/실패(`mark_turn_failed`) 생애주기와
 `request_id` 재요청 충돌 감지 전용 테이블. `chat_message`와 분리한 이유는 아래
@@ -834,10 +843,16 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
   알아야 `REQUEST_CONFLICT`/`REQUEST_IN_PROGRESS` 판정(`agent/ports.py` 실패 계약)이
   가능하다. `chat_message`에 상태 컬럼을 얹으면 "메시지는 아직 없는데 턴 상태만 있는" 경우를
   표현할 수 없다.
+- **`user_id`를 UNIQUE로 둔 이유(사용자당 방 1개)**: Agent 담당자 확인 결과, 사용자가 채팅
+  화면을 벗어났다 다시 들어오면 화면은 초기화된 것처럼 보이지만 Agent는 이전 대화를 기억한다.
+  방이 여러 개면 "어느 방에 이어 붙이는지"를 프론트가 들고 다녀야 하는데, 방 1개로 정해지면
+  서버가 `user_id`로 방을 찾을 수 있다. UNIQUE가 없으면 동시 요청이나 버그로 한 사용자에게
+  방이 둘 생겨도 DB가 막지 못하고, 어느 방의 기억을 쓸지 모호해진다.
 - **`thread_id`를 `chat_room.id`와 별도 컬럼으로 둔 이유**: Agent 계약(`AuthorizedRoom`)이
-  `chat_room_id`와 `thread_id`를 별도 필드로 요구한다. 지금은 1:1이지만, 나중에 방은
-  유지한 채 LangGraph 스레드만 새로 시작하는 시나리오(예: "대화 초기화" 버튼)가 생기면
-  `thread_id`만 재발급할 수 있게 미리 분리해 둔다.
+  `chat_room_id`와 `thread_id`를 별도 필드로 요구한다. 지금은 1:1이지만, 사용자당 방이 1개라
+  방을 새로 만들어 대화를 리셋할 수 없으므로, 나중에 "대화 초기화" 기능이 생기면 방(메시지
+  기록·프로필)은 유지한 채 `thread_id`만 재발급해 LangGraph 기억만 새로 시작할 수 있게
+  미리 분리해 둔다. 현재 요구된 기능은 아니다.
 - **게스트(비로그인) 세션이 이 ERD에 없는 이유**: 사용자 확인 완료 — 이번 범위는 로그인
   사용자만이다. 게스트 연속성은 front 쪽에서 별도로 논의 중이며(단기: 프론트
   `sessionStorage`, 장기: Redis 세션 이관) 합의되면 후속 갱신으로 다룬다.

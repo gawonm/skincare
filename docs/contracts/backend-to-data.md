@@ -22,21 +22,39 @@ backend가 `agent/ports.py`의 `ChatHistoryRepository` 포트를 구현하려면
 class ChatRoom(EntityBase):
     __tablename__ = "chat_room"
 
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False)
-    thread_id: Mapped[UUID] = mapped_column(Uuid, unique=True, nullable=False, default=uuid4)
-    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    source_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    thread_id: Mapped[UUID] = mapped_column(
+        Uuid, unique=True, nullable=False, default=uuid4, server_default=text("gen_random_uuid()")
+    )
+    schema_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    source_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     last_completed_request_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    profile: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    task_context: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    profile: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    task_context: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     pending_question: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     candidate_set: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     routine: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    evidence: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    evidence: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
     summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 ```
 
-키: PK `id`(`EntityBase`), FK `user_id` → `app_user.id` (`ON DELETE CASCADE`), UK `thread_id`.
+`server_default`는 ERD "기본값" 칸의 DB 기본값과 맞추기 위한 것이다. 파이썬 `default`만 있으면
+프로그램을 거치지 않고 행을 넣을 때 DB가 값을 채우지 못한다. `text`는 `sqlalchemy`에서 import한다.
+
+키: PK `id`(`EntityBase`), FK `user_id` → `app_user.id` (`ON DELETE CASCADE`), UK `user_id`
+(사용자당 방 1개, 2026-09-19 Agent 담당자 확인), UK `thread_id`.
 
 ### `chat_message`
 
@@ -61,6 +79,9 @@ class ChatMessage(EntityBase):
 
 키: PK `id`, FK `chat_room_id`(CASCADE), UK `(chat_room_id, sequence)`,
 UK `(chat_room_id, request_id, role)`.
+
+`id`는 Agent가 발급하는 `ChatMessage.message_id`를 지정해서 넣을 수 있다(`EntityBase`의 `default`는
+값을 안 넘겼을 때만 쓰인다). `EntityBase` 상속이라 `updated_at`도 생기지만 메시지는 수정하지 않는다.
 
 ### `chat_turn_state`
 
@@ -108,16 +129,22 @@ DB 제약으로 반드시 강제해야 한다 — 애플리케이션 계층에�
 
 임의로 채우지 않는다(규칙 3). 확인 후 이 문서와 ERD를 함께 갱신한다.
 
-- LangGraph 체크포인터를 별도 Postgres 체크포인터 라이브러리로 운영할지, 위 JSONB
-  스냅샷(`chat_room`의 `profile`/`candidate_set`/... 컬럼)으로 대신할지. 후자라면 별도
-  체크포인터 테이블은 만들지 않는다.
-- 사용자가 이전 채팅방 목록을 조회하는 API/화면 필요 여부(front 요구사항 미정) — 필요하면
-  `chat_room`에 표시용 제목 컬럼이 추가로 필요할 수 있다.
-- 방 삭제·보관(soft delete) 정책.
+- **LangGraph 체크포인터**: 이 요청과 무관하다. Agent가 이전 대화를 기억하는 근거는 체크포인터가
+  아니라 `chat_room`의 `SessionSnapshot`(아래 JSONB 컬럼들)이라, 체크포인터 전용 테이블은
+  만들지 않는다. 당분간 Agent가 구현해 둔 `InMemorySaver`를 그대로 쓰고, 운영 저장소는 후속
+  결정으로 남긴다. 그 결과 이 3개 테이블은 체크포인터 결정을 기다릴 필요가 없다.
+
+이번 요청에서는 아래 두 가지 없이 시작한다(2026-09-19). 필요해지면 컬럼을 추가하는
+마이그레이션으로 다룬다.
+
+- 채팅방 목록·표시용 제목 컬럼: 사용자당 방이 1개로 확정돼 방 목록 화면이 없을 것이라 넣지
+  않는다.
+- 방 삭제·보관(soft delete): 방 삭제 기능이 없다. 계정을 지우면 `ON DELETE CASCADE`로 함께
+  삭제된다.
 
 ## 절차
 
-1. (완료) ERD 초안 작성 및 사용자 확인 — [docs/erd/app.md](../erd/app.md).
+1. (완료) ERD 초안 작성 및 사용자 승인(2026-09-19) — [docs/erd/app.md](../erd/app.md).
 2. (완료) backend가 이 계약 문서 초안 작성.
 3. data 파트 담당자 확인.
 4. 확정 후 data 파트가 `models/` 3개 파일 + migration 작성, `config.yaml`
