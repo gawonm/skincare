@@ -22,7 +22,9 @@ backend가 `agent/ports.py`의 `ChatHistoryRepository` 포트를 구현하려면
 class ChatRoom(EntityBase):
     __tablename__ = "chat_room"
 
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
     thread_id: Mapped[UUID] = mapped_column(Uuid, unique=True, nullable=False, default=uuid4)
     schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     source_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -36,7 +38,8 @@ class ChatRoom(EntityBase):
     summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 ```
 
-키: PK `id`(`EntityBase`), FK `user_id` → `app_user.id` (`ON DELETE CASCADE`), UK `thread_id`.
+키: PK `id`(`EntityBase`), FK `user_id` → `app_user.id` (`ON DELETE CASCADE`), UK `user_id`
+(사용자당 방 1개, 2026-09-19 Agent 담당자 확인), UK `thread_id`.
 
 ### `chat_message`
 
