@@ -14,6 +14,25 @@
 [NOT_IMPLEMENTED] 설계도 코드도 없다
 ```
 
+> **2026-09-20 사실 동기화 (Data 저장소 기준)**: 아래 본문은 설계 당시(2026-09) 스냅샷이라 태그가 일부 낡았다.
+> 설계 결정은 바꾸지 않고 사실만 갱신한다. **저장·적재 완료와 runtime RAG(검색 → Agent → citation 표시) 완료를
+> 구분한다.**
+>
+> - **저장 [CURRENT]**: `evidence_document`/`evidence_chunk`/`evidence_chunk_ingredient`가 구현·적용돼 있다
+>   (`evidence_chunk.embedding` = `vector(1024)`, `BAAI/bge-m3`). MFDS legacy `evidence` 8,288건을 document 11 /
+>   chunk 8,288 / 링크 8,288로 전량 적재했고, PubMed는 smoke 3건, CIR은 적재된 것이 없다(합계 document 14 /
+>   chunk 8,291 / 링크 8,291). `rag_chunk`는 기준 dump에서 0건이며 MFDS를 `rag_chunk`에 재적재하지 않았다.
+>   신규 Evidence 검색 저장소는 `evidence_chunk`다. 근거: `docs/erd/app.md`, `docs/data/DB_REFERENCE_HANDOFF.md`.
+> - **Claim [CURRENT, 시범 데이터]**: `claim_document` 1건 / `claim_chunk` 5건은 2-Layer pilot이며 NIA production
+>   corpus가 아니다.
+> - **`IngredientKnowledgeFact`** 는 공식 Evidence corpus/citation source가 아니다. **`ClaimEvidenceLink`** 는 DB에
+>   저장하지 않는 비영속 runtime 객체다(`docs/erd/app.md`).
+> - **runtime [CURRENT이나 부분적]**: Backend에 `evidence_chunk`를 읽는 `TwoLayerEvidenceSearchBackend`
+>   (`backend/services/two_layer_rag_adapters.py`, `EvidenceSearchRepository`)가 있고, Agent에는 Evidence 메타데이터를
+>   `Citation`으로 바꾸는 `EvidenceCitationMapper`(`agent/citations.py`)가 있다. 그러나 Agent/RAG 전체 연결과 운영
+>   배포는 완료로 보지 않는다(Agent 담당 문서 `docs/agent/README.md`, `docs/backend/README.md` 기준). 이 문서의 8절
+>   citation rendering 서비스, 6절 `EvidenceRecord` 확장 필드, 7절 Claim-Evidence 연결은 여전히 [PROPOSED]다.
+
 ---
 
 ## 1. Purpose
@@ -40,7 +59,7 @@ Claim RAG (NIA)                                [DESIGNED] 데이터만, Agent �
 Ingredient Resolution                          [CURRENT] IngredientResolveResult (agent)
         ↓                                       ⚠ 단, NIA raw_name → ingredient_id
         ↓                                         결정적 매칭은 data 쪽에만 있음(6절)
-Evidence RAG (MFDS 지금 / CIR·PubMed 예정)      [CURRENT: MFDS만] EvidencePort.search()
+Evidence RAG (MFDS 지금 / CIR·PubMed 예정)      [CURRENT: 저장은 MFDS 전량+PubMed smoke 3건, CIR 없음] EvidencePort.search()
         ↓
  ┌───────────────┬────────────────┐
  ↓               ↓                ↓
@@ -59,6 +78,9 @@ NIA도 그냥 "신뢰도가 `ai_generated_reviewed`로 낮게 표시되는 Evide
 취급되고 있다(`RagConfidenceTier.AI_GENERATED_REVIEWED`, [CURRENT]). 이 문서가 제안하는
 분리는 이 상태를 바꾸자는 것이다.
 
+(2026-09-20: 위는 설계 당시 코드 확인 결과다. 현재 Data 저장소는 Evidence가 `evidence_chunk`로 분리돼 있고
+`rag_chunk`는 0건이다. 위 상단 "사실 동기화" 참고.)
+
 ---
 
 ## 3. Responsibility Boundary
@@ -68,7 +90,8 @@ NIA도 그냥 "신뢰도가 `ai_generated_reviewed`로 낮게 표시되는 Evide
 **책임**:
 - Claim retrieval을 위한 원본 준비 — NIA annotation(`NiaLabelingDocument`, [DESIGNED])
 - Ingredient resolution 지원 — `IngredientNameMatcher`(deterministic, [CURRENT], `data/scripts/`)
-- Evidence corpus 준비 — MFDS(`Evidence` 테이블, [CURRENT]), CIR/PubMed([DESIGNED] 스키마만, 수집 [NOT_IMPLEMENTED])
+- Evidence corpus 준비 — MFDS: legacy `Evidence` 8,288건을 `evidence_document`/`evidence_chunk`로 전량 적재([CURRENT]);
+  PubMed: 스키마 + smoke 3건 적재([CURRENT, pilot]), 대량 수집 [NOT_IMPLEMENTED]; CIR: 스키마만([DESIGNED]), 적재 [NOT_IMPLEMENTED]
 - Evidence provenance 보존 — source_url/jurisdiction/doi/pmid 등
 - Claim ↔ Evidence 연결 — `EvidenceQueryAnchor`/`ClaimEvidenceLink`([PROPOSED], 7절)
 
@@ -112,7 +135,7 @@ NIA도 그냥 "신뢰도가 `ai_generated_reviewed`로 낮게 표시되는 Evide
 
 ```
 Intent/Concern → Claim RAG[PROPOSED 연동] → Ingredient Resolution[CURRENT]
-→ Evidence RAG[CURRENT, MFDS만] → Answer[CURRENT]
+→ Evidence RAG[CURRENT, 저장은 MFDS 중심(PubMed smoke 3건)] → Answer[CURRENT]
 ```
 
 Claim RAG 없이는 "피지"라는 자유 텍스트 고민에서 후보 성분을 고를 근거가 없다 — 지금은
@@ -190,15 +213,15 @@ Source: `NiaLabelingDocument`(`data/manual_review/nia_labeling_schemas.py`, free
 
 ## 6. Evidence RAG Contract
 
-**상태: [CURRENT] MFDS만 / [DESIGNED] CIR·PubMed 스키마만 / 수집 [NOT_IMPLEMENTED]**
+**상태: 저장 [CURRENT] MFDS 전량(8,288건)+PubMed smoke 3건 / CIR 적재 [NOT_IMPLEMENTED] / PubMed 대량 수집 [NOT_IMPLEMENTED]**
 
 기존 타입을 그대로 재사용한다 — 새로 안 만든다:
 
 | 요청서의 제안 이름 | 실제 재사용할 타입 | 상태 |
 |---|---|---|
 | `EvidenceQuery`/`EvidenceQueryAnchor` | `EvidenceSearchRequest`(`query`, `target_ids`, `known_conditions`, `combination_target_ids`) | [CURRENT], 단 `claim_statement_id`/`claim_topic`/`anchor_type` 필드는 없음 — [PROPOSED] 확장 |
-| `EvidenceHit` | `EvidenceRecord` + `RetrievedChunk`(`EvidenceSearchResult.chunks`) | [CURRENT], 단 `page`/`section`/`doi`/`pmid`가 없음 — [PROPOSED] 확장(아래) |
-| `ClaimEvidenceLink` | `EvidenceBundle`(search+assessments+generated) | [CURRENT] 구조는 있으나 "이 claim의 근거"라는 연결 개념이 없음 — Evidence만 있고 Claim이 없어서 |
+| `EvidenceHit` | `EvidenceRecord` + `RetrievedChunk`(`EvidenceSearchResult.chunks`) | [CURRENT], 단 Agent DTO에 `page`/`section`/`doi`/`pmid`가 없음(저장 컬럼 `evidence_chunk.page`/`section`/`doi`/`pmid`는 이미 있음) — [PROPOSED] 확장(아래) |
+| `ClaimEvidenceLink` | `EvidenceBundle`(search+assessments+generated) | [CURRENT] 구조는 있으나 "이 claim의 근거"라는 연결 개념이 없음 — Evidence만 있고 Claim이 없어서. DB 테이블은 없으며 영속화하지 않는 runtime 객체다 |
 
 ### `EvidenceRecord`에 없는 필드 — [PROPOSED] 확장
 
@@ -217,7 +240,7 @@ formulation_type: Literal["single_ingredient","combination_formulation"] | None
 
 `EvidenceRecord.source_type`은 이미 `CIR`/`PAPER` 값을 갖고 있다([CURRENT] — 값만 있고
 실제로 채워지는 경로는 없음, `EvidenceSourceType`). 즉 **enum은 미래를 이미 예상해뒀지만
-실제 CIR/PubMed 수집·매핑 코드가 없는 상태**다 — 새 enum을 만들 필요는 없고, 위 7개
+실제 CIR/PubMed 대량 수집·매핑 코드가 없는 상태**다(PubMed smoke 3건은 pilot으로 적재됐다) — 새 enum을 만들 필요는 없고, 위 7개
 필드만 `EvidenceRecord`에 추가하면 된다(이번엔 하지 않음, [PROPOSED]로만 기록).
 
 `hits=[]`(또는 `EvidenceSearchResult.records=[]`)는 **이미 정상 값이다** — `LookupStatus.NO_RESULTS`가
@@ -259,7 +282,9 @@ EvidenceRecord.(source_id/source_title/url/...) → Backend → citation renderi
 ([CURRENT], `agent/rag/schemas.py:488`) — **"citation을 LLM이 생성하지 않는다"는 원칙이
 이미 타입 레벨에서 지켜지고 있다.** 다만 그 `evidence_ids`를 실제 "CIR Report, p.24" 같은
 표시 문자열로 바꾸는 **전용 rendering 함수/서비스는 저장소에서 못 찾았다**([PROPOSED],
-Backend 소유 제안 — `backend/services/`).
+Backend 소유 제안 — `backend/services/`). (2026-09-20: Agent에 `EvidenceCitationMapper`(`agent/citations.py`)가 있어
+`EvidenceRecord` 메타데이터를 `Citation`(source_id/locator/url 등)으로 옮긴다. 다만 `page`/`section`/`doi`/`pmid`는
+아직 Agent DTO에 없고 표시 문자열 rendering은 여전히 [PROPOSED]다.)
 
 보존 가능한 metadata(6절의 [PROPOSED] 확장 필드 포함): `evidence_id`, `source_type`,
 `source_title`, `url`, `pmid`(신규), `doi`(신규), `page`(신규), `section`(신규),
