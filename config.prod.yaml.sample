@@ -13,6 +13,9 @@ database:
   url: postgresql+asyncpg://app:app@postgres:5432/app
 
   model_modules:
+    - models.chat_message
+    - models.chat_room
+    - models.chat_turn_state
     - models.claim_chunk
     - models.claim_document
     - models.evidence
