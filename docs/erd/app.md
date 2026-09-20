@@ -28,7 +28,7 @@
   `evidence_chunk_ingredient` 8,288건으로 **전량 적재**했다(재수집이 아니라 재투영). PubMed는 smoke 3건만
   있고(`evidence_document` 3 / `evidence_chunk` 3 / 링크 3), CIR은 적재된 것이 없다.
   합계는 `evidence_document` 14 / `evidence_chunk` 8,291 / `evidence_chunk_ingredient` 8,291이다.
-- `rag_chunk`에는 MFDS를 재적재하지 않았고(기준 dump `skincare_reference_2026-09-20.dump`에서 0건), 신규 Evidence
+- `rag_chunk`에는 MFDS를 재적재하지 않았고(기준 dump `skincare_reference_2026-09-20_v2.dump`에서 0건), 신규 Evidence
   검색 저장소는 `evidence_chunk`다. `ingredient_knowledge_fact`는 공식 Evidence corpus/citation source가 아니다.
 - **저장·적재 완료와 runtime RAG 완료는 다르다.** 검색 어댑터·Agent 연결·citation 표시가 어디까지 구현됐는지는
   Backend/Agent 문서(`docs/backend/README.md`, `docs/agent/README.md`,
@@ -423,8 +423,8 @@ erDiagram
 | maker | text | Y | - | 제조사 |
 | category1 | text | N | - | 대분류 |
 | category2 / category3 | text | Y | - | 중/소분류 |
-| product_type_normalized | varchar(40), enum | Y | NULL | 제품 세부 유형. 컬럼은 적용됨(migration `2d1f4b6a8c90`). 2026-09-20 기준 dump에서 값은 2,262건 전부 NULL(분류 백필 미실행) |
-| service_category | varchar(20), enum | Y | NULL | 화면용 제품 그룹. 컬럼은 적용됨(migration `2d1f4b6a8c90`). 2026-09-20 기준 dump에서 값은 2,262건 전부 NULL(분류 백필 미실행) |
+| product_type_normalized | varchar(40), enum | Y | NULL | 제품 세부 유형. 컬럼은 적용됨(migration `2d1f4b6a8c90`). 2026-09-20 기준 dump(`_v2`): 2,108건 분류, 154건 NULL(자동 분류 근거 부족으로 의도적 유지) |
+| service_category | varchar(20), enum | Y | NULL | 화면용 제품 그룹. 컬럼은 적용됨(migration `2d1f4b6a8c90`). 2026-09-20 기준 dump(`_v2`): 2,108건 분류, 154건 NULL(`product_type_normalized`와 항상 함께 NULL) |
 | lowest_price / highest_price | int | N | - | 올리브영: 할인가/정가 |
 | price_band | text(enum) | N | - | lowest_price 기준 가격대 |
 | volume_value | numeric | Y | - | 단일 용량. 미확정이면 NULL(0 아님) |
@@ -442,14 +442,17 @@ erDiagram
 키: PK `id`, UK `(source, source_product_id)`. FK 없음(아래 참고).
 
 
-#### 상품 분류 확장안 — 2026-09-11, 사용자 확인 완료·컬럼 적용 완료(값 백필 미실행)
+#### 상품 분류 확장안 — 2026-09-11, 사용자 확인 완료·컬럼 적용 및 값 백필 완료
 
 **2026-09-20 상태 동기화**: 이 확장안의 스키마는 이미 구현·적용돼 있다 — `models/product.py`에 두 컬럼과
 Enum(`ProductTypeNormalized` 27개 값, `ProductServiceCategory` 8개 값)이 있고, migration `2d1f4b6a8c90`
 (`add product taxonomy`)이 두 컬럼만 추가했으며 기준 dump(Alembic `2063ce3feae3`)에도 존재한다(둘 다
 `varchar`, nullable). 새 테이블·FK·유니크·인덱스는 추가되지 않았고 `product`의 제약은 PK와
-`uq_product_source_product_id`뿐이다. **다만 실제 분류 값은 채워지지 않았다** — 기준 dump의 `product` 2,262건은
-두 컬럼이 전부 NULL이다. 아래 본문은 설계 당시 서술이며 설계 결정은 바뀌지 않았다.
+`uq_product_source_product_id`뿐이다. **분류 값 백필도 완료됐다** — 기준 dump(`skincare_reference_2026-09-20_v2.dump`)의
+`product` 2,262건 중 2,108건이 두 컬럼 모두 채워졌고 154건은 NULL이다(한쪽만 NULL인 행 0건, 유형↔서비스 그룹 매핑
+불일치 0건). 154건은 상품명과 원본 `category3`로 형태를 자동 확정할 근거가 부족해 **의도적으로 NULL로 유지**한 것이며
+오류가 아니다. 서비스 그룹 분포는 클렌저 549 / 크림·로션 461 / 에센스·세럼 355 / 기타 203 / 토너·패드 194 / 앰플 180 /
+마스크·패치 159 / 선케어 7 / NULL 154다. 아래 본문은 설계 당시 서술이며 설계 결정은 바뀌지 않았다.
 
 - 기존 `product_type`(쇼핑몰 상품 구분)과 `category1/2/3`(원본 분류)는 보존한다.
 - 두 필드는 기존 모델의 `native_enum=False` 관례를 따라 VARCHAR에 Enum 값을 저장한다.
@@ -479,7 +482,7 @@ Enum(`ProductTypeNormalized` 27개 값, `ProductServiceCategory` 8개 값)이 �
 
 새 마이그레이션은 구현 시 head를 다시 확인하고 두 컬럼만 추가한다.
 기존 데이터 분류·갱신은 별도 실행으로 분리하며, 기존 RAG 인덱스와 테이블은 변경하지 않는다.
-(migration은 위 설계대로 적용됐고, 별도 실행인 분류 백필은 아직 수행되지 않았다.)
+(migration은 위 설계대로 적용됐고, 별도 실행인 분류 백필도 2026-09-20에 수행됐다.)
 
 ### product_ingredient_snapshot
 

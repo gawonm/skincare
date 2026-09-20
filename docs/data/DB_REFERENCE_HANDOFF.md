@@ -7,29 +7,34 @@
 
 ## 1. DB 기준본 (source of truth)
 
-현재 기준본은 **`skincare_reference_2026-09-20.dump`** 이다.
+현재 기준본은 **`skincare_reference_2026-09-20_v2.dump`** 이다(Product taxonomy backfill까지 반영된 최종본).
 
 | 항목 | 값 |
 | --- | --- |
-| dump 파일 | `skincare_reference_2026-09-20.dump` |
-| 크기 | 54,391,839 bytes |
-| SHA-256 | `9c9bb2dd7b0f8e359364262029a90c907ac1a51a89ef67cc0214383b9102291d` |
+| dump 파일 | `skincare_reference_2026-09-20_v2.dump` |
+| 크기 | 54,399,358 bytes |
+| SHA-256 | `5ecd670ee1e85553008abb5d7c43da0700a3149089eeb4c061948361271a5d54` |
 | 형식 | PostgreSQL custom format (`pg_dump -Fc --no-owner --no-acl`) |
-| 생성 | 2026-09-20 09:44 UTC, `pg_dump` 17.x, 원본 DB명 `skincare_data_finalize` |
+| 생성 | 2026-09-20 10:22 UTC, `pg_dump` 17.x, 원본 DB명 `skincare_data_finalize` |
 | Alembic revision | `2063ce3feae3` (현재 main의 migration head와 동일. chat history 테이블 migration까지 포함, `alembic upgrade`가 필요 없다) |
 | 서버 | `paradedb/paradedb:0.18.6-pg17` (compose의 `postgres`, `vector`/`pg_search` 확장 포함). 그보다 낮은 PostgreSQL 버전에는 복원되지 않는다 |
-| 복원 검증 | **PASS** — 새 빈 DB에 `pg_restore --exit-on-error --no-owner`로 복원해 revision과 핵심 행 수 22개 지표가 원본과 모두 일치함을 확인했다 |
+| 복원 검증 | **PASS** — 새 빈 DB에 `pg_restore --exit-on-error --no-owner`로 복원해 revision과 핵심 행 수 21개 지표가 원본과 모두 일치함을 확인했다. taxonomy도 2,262행의 (자연키, 유형, 서비스 그룹) 해시가 원본과 같다(**PASS**) |
 
 ### 이전 dump는 SUPERSEDED (사용 중단)
 
-`skincare_latest_2026-09-17.dump` (8,817,775 bytes, SHA-256 `534e41c6e65c8bedab53dfbce1acc2c888bc2e79afc458c630a413002f16d91f`,
-revision `3165318c750d`)는 **더 이상 쓰지 않는다.** 이유는 다음과 같다.
+**`skincare_reference_2026-09-20.dump`** (v1, 54,391,839 bytes, SHA-256
+`9c9bb2dd7b0f8e359364262029a90c907ac1a51a89ef67cc0214383b9102291d`)는 **더 이상 쓰지 않는다.** Product taxonomy
+backfill을 반영하기 전에 만든 파일이라 `product_type_normalized`/`service_category`가 채워져 있지 않다. 이 파일을
+받았다면 `_v2` 파일로 교체한다.
+
+**`skincare_latest_2026-09-17.dump`** (8,817,775 bytes, SHA-256 `534e41c6e65c8bedab53dfbce1acc2c888bc2e79afc458c630a413002f16d91f`,
+revision `3165318c750d`)도 **더 이상 쓰지 않는다.** 이유는 다음과 같다.
 
 - Product `display_title`이 2,262건 중 83건만 한글화돼 있다(현재 기준본은 2,259건 반영).
 - MFDS Evidence가 `evidence_document`/`evidence_chunk`에 적재되지 않았다(신규 저장소에는 시범 3건뿐).
-- chat history 테이블(`chat_room`, `chat_message`, `chat_turn_state`)이 없다.
+- chat history 테이블(`chat_room`, `chat_message`, `chat_turn_state`)이 없고 Product taxonomy도 반영되지 않았다.
 
-Drive나 로컬에 이 파일이 남아 있으면 삭제하거나 "구버전"으로 구분해 두고, 새 dump만 복원한다.
+Drive나 로컬에 위 파일들이 남아 있으면 삭제하거나 "구버전"으로 구분해 두고, 새 dump만 복원한다.
 
 ### 최종 행 수
 
@@ -66,6 +71,35 @@ dump와 체크섬 파일은 용량과 성격상 git에 올리지 않는다. `dat
 친화형 표시명**이다. 영문 고유명과 라인명이 일부 남는 것은 정상이며 추가 localization QA는 하지 않는다.
 `untranslated` 3건은 검토 대기(needs_review)로 남긴 상품이다(`GA260540664`, `GA260238129`, `GA221116814`).
 
+### Product taxonomy (`product_type_normalized` / `service_category`)
+
+taxonomy backfill은 **완료**됐다. 현재 main의 `ProductTaxonomyNormalizer` 규칙(PR #51)으로 계산해
+`skincare_data_finalize`에 반영한 결과이며, 로컬 `app` DB의 기존 값을 복사한 것이 아니다.
+
+| 항목 | 값 |
+| --- | --- |
+| 전체 상품 | 2,262 |
+| 분류됨(두 컬럼 모두 값 있음) | 2,108 |
+| NULL | 154 |
+| 한쪽만 NULL인 행 | 0 |
+| 유형 ↔ 서비스 그룹 매핑 불일치 | 0 |
+
+| `service_category` | 건수 |
+| --- | --- |
+| 클렌저 | 549 |
+| 크림·로션 | 461 |
+| 에센스·세럼 | 355 |
+| 기타 | 203 |
+| 토너·패드 | 194 |
+| 앰플 | 180 |
+| 마스크·패치 | 159 |
+| 선케어 | 7 |
+| NULL | 154 |
+
+**NULL 154건은 미완성 오류가 아니라 의도적으로 유지한 상태다.** 상품명과 원본 `category3`로 제품 형태를 자동으로 확정할
+근거가 부족해(대부분 `category3=Moisturizers`처럼 유형이 섞인 카테고리) 억지로 채우지 않았다. `Milk`, `Moisturizer`,
+`Tonic`, `Oil` 같은 표현은 유형이 하나로 정해지지 않아 자동 규칙을 두지 않았다. `service_category`로 조회하거나 메뉴를 나누는 쪽은 NULL 값이 존재한다는 점을 처리해야 한다.
+
 ### Evidence
 
 - legacy `evidence` 8,288건은 그대로 남아 있고, 이를 MFDS 관할(jurisdiction)별 `evidence_document` 11건과
@@ -87,9 +121,9 @@ dump와 체크섬 파일은 용량과 성격상 git에 올리지 않는다. `dat
 
 - Google Drive: https://drive.google.com/drive/u/0/folders/1BprrOow_A461_lnjf6rtPpXpY_Zm3-nl
 - 폴더에는 새 기준본 파일 두 개가 있어야 한다.
-  - `skincare_reference_2026-09-20.dump`
-  - `skincare_reference_2026-09-20.dump.sha256` (내용 한 줄: `9c9bb2dd7b0f8e359364262029a90c907ac1a51a89ef67cc0214383b9102291d  skincare_reference_2026-09-20.dump`)
-- 폴더에 `skincare_latest_2026-09-17.dump`가 보이면 **구 기준본(SUPERSEDED)** 이므로 받지 않는다. 파일명을 꼭 확인한다.
+  - `skincare_reference_2026-09-20_v2.dump`
+  - `skincare_reference_2026-09-20_v2.dump.sha256` (내용 한 줄: `5ecd670ee1e85553008abb5d7c43da0700a3149089eeb4c061948361271a5d54  skincare_reference_2026-09-20_v2.dump`)
+- 폴더에 `skincare_reference_2026-09-20.dump`(v1, `_v2` 없음)나 `skincare_latest_2026-09-17.dump`가 보이면 **구 기준본(SUPERSEDED)** 이므로 받지 않는다. 파일명 끝의 `_v2`를 꼭 확인한다.
 - 내려받은 뒤 SHA-256이 위 표의 값과 **일치할 때만** 복원한다. 다르면 복원하지 말고 Data 담당자에게 알린다.
 
 ## 3. 복원 방법
@@ -98,11 +132,11 @@ dump와 체크섬 파일은 용량과 성격상 git에 올리지 않는다. `dat
 
 ```bash
 # Drive 에서 받은 dump 를 data/ 아래(gitignored)에 둔다
-shasum -a 256 data/skincare_reference_2026-09-20.dump   # 9c9bb2dd…2291d 와 같을 때만 다음 단계로
+shasum -a 256 data/skincare_reference_2026-09-20_v2.dump   # 5ecd670e…a5d54 와 같을 때만 다음 단계로
 
 docker compose exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" <TARGET_DB>'
 docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d <TARGET_DB> --exit-on-error --no-owner' \
-  < data/skincare_reference_2026-09-20.dump
+  < data/skincare_reference_2026-09-20_v2.dump
 ```
 
 - `--exit-on-error`: 일부만 복원된 채로 조용히 끝나는 것을 막는다.
@@ -120,6 +154,8 @@ SELECT
   (SELECT count(*) FROM product WHERE title_source = 'translated')                   AS title_translated,           -- 2236
   (SELECT count(*) FROM product WHERE title_source = 'oliveyoung_kr')                AS title_oliveyoung_kr,        -- 23
   (SELECT count(*) FROM product WHERE title_source = 'untranslated')                 AS title_untranslated,         -- 3
+  (SELECT count(*) FROM product WHERE product_type_normalized IS NOT NULL)           AS taxonomy_populated,         -- 2108
+  (SELECT count(*) FROM product WHERE product_type_normalized IS NULL)               AS taxonomy_null,              -- 154
   (SELECT count(*) FROM product_ingredient_snapshot)                                 AS snapshot,                   -- 2216
   (SELECT count(*) FROM product_ingredient)                                          AS product_ingredient,         -- 84390
   (SELECT count(*) FROM product_ingredient WHERE match_acceptance = 'confirmed')     AS confirmed,                  -- 78280
@@ -198,6 +234,7 @@ import하지 않으므로 `NiaCaseDocument`를 agent 입력으로 넘기는 방�
 - `product` 2,262개 중 46개는 snapshot이 없다(전성분 텍스트가 없는 상품으로 추정, CSV로 대조하지는 않았다).
 - `needs_review` 2,693건, `unmatched` 3,417건은 성분이 확정되지 않은 토큰이다. 성분 → 상품 조회는 `confirmed`만 쓴다.
 - `product.source`는 전부 `oliveyoung_global`이다.
+- `product`의 taxonomy NULL 154건은 의도적으로 유지한 상태다(위 "Product taxonomy" 참고).
 - Evidence는 저장소 적재까지만 끝났다. 검색(retrieval), citation 표시, reranker는 이 dump의 범위 밖이다.
 - **NIA 원본은 dump에 없다.** 원본 ZIP은 재배포가 금지된 AI Hub 데이터이고, embedding/index/retrieval은 Agent/RAG 단계라서
   각자 5절 방식으로 원본을 읽어 처리한다. dump의 Claim 시범 데이터(1/5건)와 혼동하지 않는다.
