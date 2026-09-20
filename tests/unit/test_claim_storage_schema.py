@@ -131,7 +131,7 @@ def test_claim_chunk_has_no_matched_ingredient_unique_constraint_yet() -> None:
     assert unique_like == []
 
 
-def test_alembic_single_head_after_claim_migration() -> None:
+def test_alembic_single_head_keeps_claim_and_nia_case_migration_chain() -> None:
     config = Config(str(_REPO_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(_REPO_ROOT / "migrations"))
     script = ScriptDirectory.from_config(config)
@@ -140,4 +140,9 @@ def test_alembic_single_head_after_claim_migration() -> None:
 
     head_revision = script.get_revision(heads[0])
     assert head_revision is not None
-    assert head_revision.down_revision == "11cdc111cf27"
+    assert head_revision.revision == "a7d3c91e5f42"
+    assert head_revision.down_revision == "3165318c750d"
+
+    claim_revision = script.get_revision("3165318c750d")
+    assert claim_revision is not None
+    assert claim_revision.down_revision == "11cdc111cf27"

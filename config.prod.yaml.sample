@@ -20,6 +20,7 @@ database:
     - models.evidence_document
     - models.ingredient
     - models.ingredient_knowledge
+    - models.nia_case_document
     - models.product
     - models.product_ingredient
     - models.rag_chunk
