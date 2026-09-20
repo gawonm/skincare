@@ -95,6 +95,11 @@ main의 동기식 구형 `OpenAiEmbedder` 구현은 제거했고, 같은 경로�
 unresolved 처리와 세 가지 지원 Claim 타입을 맞췄다. 2026-09-20 최신 main, NIA Case와 v2 DB
 통합 기준은 [현재 작업 합본](RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md)에 누적한다.
 
+2026-09-21 P3 방향은 전체 offline Claim index를 선행 구축하지 않고, 유사 Case rerank Top-3에서
+런타임 LLM이 exact quote 기반 Claim을 추출한 뒤 룰 검증·성분 Resolution·Evidence 검색으로
+연결하는 방식으로 변경했다. 현재 코드는 아직 기존 `ClaimRetriever` 경로이며, 새 계획과 계약을
+기준으로 후속 구현한다. 기존 offline annotation/Claim 적재 코드는 후속 최적화용으로 보존한다.
+
 ## Backend 담당자 확인 항목
 
 main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거와 후속 항목은
@@ -139,6 +144,7 @@ DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump
 
 ## 관련 문서
 
+- [구현 계획 — NIA Case 런타임 Claim 추출](RAG_YK/2026-09-21_0219_RUNTIME_CASE_CLAIM_EXTRACTION_PLAN.md)
 - [현재 작업 합본 — NIA Case 기반 2-Layer RAG 통합](RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md)
 - [완료 이력 — 2-Layer RAG Agent 작업일지](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
 - [Claim → Evidence RAG 인터페이스 계약](../contracts/claim-evidence-rag-interface.md)

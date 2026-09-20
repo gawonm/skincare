@@ -1,7 +1,7 @@
 # NIA Case 기반 2-Layer RAG 통합 작업 합본
 
 - 작성 일시: 2026-09-20 23:24 KST
-- 최종 갱신: 2026-09-20 23:48 KST
+- 최종 갱신: 2026-09-21 02:19 KST
 - 작업 브랜치: `integration/nia-case-rag`
 - 문서 역할: 2026-09-20까지의 결정, 구현, DB 상태와 다음 작업을 한곳에서 확인하는 운영 기준
 - 현재 상태: P1·P2, 최신 `origin/main` 병합, 통합 DB 구성 및 실제 BGE-M3 smoke 완료
@@ -11,15 +11,17 @@
 
 ## 1. 최종 목표와 확정 정책
 
-피부 고민형 질문은 유사 NIA 사례를 먼저 찾은 뒤, 사례에 연결된 Claim을 공인 Evidence로
-검증하고 confirmed 성분이 들어간 상품을 찾는다. 명시적인 성분 질문은 Case와 Claim을 생략하고
-Evidence로 바로 갈 수 있다.
+피부 고민형 질문은 유사 NIA 사례를 먼저 찾은 뒤, Top-3 원문에서 런타임 LLM이 사용자 질문과
+관련된 Claim을 exact quote로 추출한다. 규칙 검증과 표준 성분 ID 확정 후 공인 Evidence를
+검증하고 confirmed 성분이 들어간 상품을 찾는다. 명시적인 성분 질문은 Case와 Claim 추출을
+생략하고 Evidence로 바로 갈 수 있다.
 
 ```text
 피부 고민형
   → NIA Case 후보 20건
   → BGE reranker Top-3
-  → Top-3 case_id에 연결된 Claim
+  → Top-3 원문의 런타임 Claim 추출
+  → exact quote·성분명 규칙 검증
   → 표준 성분 ID
   → Evidence
   → Product
@@ -33,7 +35,7 @@ Evidence로 바로 갈 수 있다.
 
 확정한 원칙은 다음과 같다.
 
-- Case, Claim, Evidence는 서로 다른 DTO와 LangGraph State로 유지한다.
+- Case, 런타임 Claim, Evidence는 서로 다른 DTO와 LangGraph State로 유지한다.
 - `nia_case_document`를 Claim이나 `rag_chunk`에 섞지 않는다.
 - Case는 탐색 자료이며 Citation이나 공인 근거가 아니다.
 - Evidence가 없거나 아직 검수되지 않아도 유효한 Claim과 연결 상품은
@@ -42,9 +44,10 @@ Evidence로 바로 갈 수 있다.
 - 복합 성분 Claim은 조합 전체를 직접 지원하는 Evidence가 있을 때만 `SUPPORTED`로 승격한다.
 - 같은 상품은 `product_id`로 병합하고 Evidence-supported 연결을 우선한다.
 - 경로, 필터, 검증, fallback, Citation 채택은 규칙 기반으로 처리한다.
-- LLM은 의도·조건 추출과 자연어 응답 생성을 담당하며 런타임 Claim 생성에는 사용하지 않는다.
-- Case → Claim은 전체 실행 시마다 LLM을 호출하지 않고 Data의 오프라인 annotation을 사용한다.
-- NIA 전체 3,581건 Claim annotation은 비용이 발생하므로 구조 완성 후 별도 승인한다.
+- 런타임 LLM은 Top-3 원문에서 raw 성분명과 exact quote를 선택하며 ingredient ID·Evidence 상태를
+  결정하지 않는다.
+- Case ID, quote, 성분명, 단일/조합 형태 검증과 Ingredient Resolution은 규칙·저장소가 담당한다.
+- NIA 전체 3,581건 offline Claim annotation은 P3 선행 조건에서 제외하고 후속 최적화로 보류한다.
 
 ## 2. 라우팅·성분 식별에서 유지할 기존 규칙
 
@@ -258,6 +261,10 @@ sample 설정의 기본 DB명은 변경하지 않았다.
 
 ## 9. P3 구현 계획
 
+> 이 절의 Case-scoped offline Claim 검색안은 2026-09-21 결정으로 대체됐다. 최신 계획은
+> `2026-09-21_0219_RUNTIME_CASE_CLAIM_EXTRACTION_PLAN.md`, 최신 계약은
+> `docs/contracts/backend-to-agent.md` 10절을 따른다. 아래 내용은 결정 이력으로만 보존한다.
+
 ### Agent
 
 - `CaseSearchRequest`, `CaseSearchHit`, `CaseSearchResult`, `CaseBundle` 추가
@@ -320,8 +327,9 @@ Claim은 현재 smoke 수준이므로 Case 검색 품질과 Case→Claim coverag
 다음:
 
 - [ ] Evidence 검수 상태 정책 합의·수정
-- [ ] P3 Case 검색 및 LangGraph 연결
-- [ ] P4 전체 Claim annotation 별도 승인
+- [ ] P3 Case 검색·런타임 Claim 추출·LangGraph 연결
+- [ ] 런타임 방식 골든 셋·비용·지연 평가
+- [ ] 필요할 때만 offline Claim annotation 재검토
 
 최종 smoke 결과:
 
@@ -492,3 +500,45 @@ uv run pytest tests/unit/test_nia_annotation_corpus_exporter.py `
 - [ ] 5건 Claim export·DB 적재·검색 smoke
 - [ ] 전체 3,581건 annotation — 5건 결과 확인 후 별도 승인 필요
 - [ ] P3 Case 검색 및 LangGraph 연결
+
+## 14. P3 런타임 Claim 추출 방식으로 전환 — 2026-09-21 02:19 KST
+
+### 결정
+
+피부 고민형 P3의 기본 흐름을 Case-scoped Claim 벡터 검색에서 다음 구조로 변경한다.
+
+```text
+사용자 질문
+  → NIA Case 벡터 검색
+  → BGE reranker Top-3
+  → 런타임 LLM exact-quote Claim 추출
+  → 룰 기반 Claim 검증
+  → Ingredient Resolution
+  → Evidence/Product
+```
+
+실제 Case 문서 길이는 평균 약 1,859자이며 중앙값 Top-3 합계가 약 5,547자여서, 선택된 세 사례를
+구조화 추출 모델에 전달할 수 있는 규모임을 확인했다.
+
+### LLM과 규칙의 경계
+
+- LLM은 Top-3 원문에서 관련 성분 raw name과 exact quote만 선택한다.
+- LLM은 ingredient ID, Evidence 상태, Citation, 상품 추천 가능 여부를 결정하지 않는다.
+- 코드가 Case ID, quote 포함 여부, 성분명 포함 여부, 단일/조합 형태와 중복을 검증한다.
+- 표준 성분 ID는 기존 Ingredient Repository가 조회한다.
+- 검증·매칭된 성분만 Evidence/Product 단계로 넘긴다.
+- Evidence 없음/미검수 상태에서도 기존 Claim-only 상품 정책은 유지한다.
+
+### 기존 offline 경로
+
+13절에서 구현한 annotation corpus, production runner, Claim export, BGE-M3 적재 코드는 삭제하지
+않는다. 다만 현재 P3 완료 조건에서 5건/3,581건 production annotation을 실행하지 않으며,
+production 완료 건수는 계속 0건이다. 런타임 방식의 비용·지연·재현성이 문제가 되면 후속 비교
+평가에 재사용한다.
+
+### 다음 구현 기준
+
+- 최신 계획:
+  `docs/agent/RAG_YK/2026-09-21_0219_RUNTIME_CASE_CLAIM_EXTRACTION_PLAN.md`
+- 최신 경계 계약: `docs/contracts/backend-to-agent.md` 10절
+- 기존 P3 Case-scoped Claim RAG 계획은 새 계획으로 교체했다.

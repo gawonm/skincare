@@ -173,9 +173,12 @@ Agent는 위 Data 타입을 import하지 않는다. Backend가 다음 정보만 
 - 검색 점수와 원본 archive/member/line provenance
 - 원문 metadata 중 `evidence_sources`는 표시용 Citation에서 제외
 
-Case와 Claim의 결정적 연결 키는
+현재 P3 기본 경로는 Backend가 전달한 Top-3 Case 원문에서 Agent가 런타임 Claim을 추출한다.
+따라서 Agent가 Case를 받기 위해 offline `claim_document`가 존재할 필요는 없다.
+
+후속 offline Claim index를 사용하는 경우의 결정적 연결 키는
 `NiaCaseDocument.case_id == claim_document.source_record_id`다. Claim의
-`annotation_version`은 이 연결 키에 섞지 않고 기존 운영 설정에서 별도로 선택한다.
+`annotation_version`은 이 연결 키에 섞지 않고 운영 설정에서 별도로 선택한다.
 
 ### 5.5 실패 계약
 

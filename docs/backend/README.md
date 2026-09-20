@@ -210,9 +210,15 @@ Evidence RAG 저장·검수 흐름을 구현하기 전까지는 다음 기준을
 
 ## NIA Claim 적재 연결 (2026-09-21)
 
+> 상태: **코드와 계약은 보존하되, 현재 P3 기본 경로에서는 실행 보류**
+
 Data가 생성한 `nia_claim_documents_production.jsonl`과 manifest를 검증하고, 검색 가능한
 `ingestible_structured`/`ingestible_free_text` statement만 BGE-M3 1,024차원으로 임베딩해
 기존 Claim 테이블에 동기화한다.
+
+2026-09-21 합의에 따라 피부 고민형 P3는 Case Top-3에서 Agent가 런타임 Claim을 추출한다.
+따라서 아래 명령은 현재 P3 준비·실행 절차에 포함하지 않는다. offline Claim index를 후속
+최적화로 다시 채택할 때 사용할 수 있도록 구현은 삭제하지 않는다.
 
 ```powershell
 uv run python -m backend.services.claim_ingestion_service

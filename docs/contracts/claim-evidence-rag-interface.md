@@ -2,6 +2,11 @@
 
 > **상태: PARTIALLY_IMPLEMENTED.**
 >
+> **P3 경로 업데이트: 2026-09-21 02:19 KST.** 피부 고민형 기본 경로는 offline
+> `ClaimRetriever`가 아니라 NIA Case Top-3의 exact quote 기반 런타임 Claim 추출을 사용한다.
+> 이 문서의 `ClaimHit`/`ClaimRetriever` 계약은 기존 구현과 후속 offline index 비교를 위해
+> 보존한다. 런타임 추출 타입과 실패 계약은 `docs/contracts/backend-to-agent.md` 10절을 따른다.
+>
 > **업데이트: 2026-09-17 20:17 KST.**
 > `origin/main` `190b5c6`을 반영한 `feature/agent-two-layer-rag-main` 기준으로
 > `EvidenceQueryAnchor`, `ClaimHit`, `ClaimRetriever`, Claim→Evidence LangGraph 경로와

@@ -1,5 +1,8 @@
 # Backend → Agent 호출 계약
 
+> 최종 업데이트: 2026-09-21 02:19 KST
+> 최신 변경 의도: Case Top-3에서 런타임 LLM이 원문 구속 Claim을 추출하는 P3 계약 확정
+>
 > 상태: **2-Layer 읽기 전용 어댑터 계약 확정 — 읽기 전용 smoke 검증 완료**
 >
 > 기준: `integration/llm-rag-main`의 agent 공개 계약
@@ -525,14 +528,18 @@ Citation과 `SUPPORTED` 판정에는 사용하지 않는다. 해당 Claim은 `IN
 BGE-M3 자유 질의 임계값은 현재 데이터 5건만으로 확정하지 않는다. 첫 통합 구현에서는
 성분 ID 필터 검색을 우선하고, 자유 질의 임계값 튜닝은 평가 데이터가 늘어난 뒤 별도 진행한다.
 
-## 10. NIA Case 검색 포트 계약 초안 — 2026-09-20 01:48 KST
+## 10. NIA Case 검색 및 런타임 Claim 추출 계약 — 2026-09-21 02:19 KST
 
-> 상태: **ERD·계약 검토 중, 구현 전**
+> 상태: **방향 확정, 구현 전**
 
-피부 고민형 질의는 기존 Claim 검색 앞에서 유사 NIA Case를 먼저 찾는다. 명시적인 성분 질의는
-이 단계를 건너뛰고 기존 Evidence 경로를 유지한다. Case는 탐색 문맥이며 공인 Evidence가 아니다.
+피부 고민형 질의는 유사 NIA Case를 먼저 찾고, rerank Top-3의 원문에서 현재 질문과 직접 관련된
+성분 Claim만 런타임 LLM 구조화 출력으로 추출한다. 전체 Case의 offline Claim annotation과
+`claim_chunk` 벡터 검색은 P3 필수 경로에서 제외한다.
 
-### 10.1 Agent 소유 타입과 포트
+명시적인 성분 질의는 Case 검색과 Claim 추출을 모두 건너뛰고 기존 Evidence 경로를 유지한다.
+Case와 런타임 Claim은 탐색 정보이며 공인 Evidence가 아니다.
+
+### 10.1 Case 검색 타입과 포트
 
 타입은 `agent/rag/case_schemas.py`, 포트는 `agent/rag/ports.py`가 소유한다.
 
@@ -600,7 +607,7 @@ class CaseRerankRequest(RagModel):
 
 class CaseRerankResult(RagModel):
     model: str = Field(min_length=1)
-    hits: list[CaseSearchHit] = Field(min_length=1)
+    hits: list[CaseSearchHit] = Field(min_length=1, max_length=3)
 
 
 class CaseRetriever(ABC):
@@ -613,79 +620,166 @@ class CaseReranker(ABC):
     async def rerank(self, request: CaseRerankRequest) -> CaseRerankResult: ...
 ```
 
-`CaseSearchResult`의 검증 규칙은 기존 `ClaimSearchResult`와 같다. `SUCCESS`에는 hit이 있어야 하고,
-성공이 아닌 상태에는 hit을 넣지 않으며, `ERROR`에는 원인 메시지가 필요하다.
+`CaseSearchResult`의 검증 규칙은 기존 검색 DTO와 같다. `SUCCESS`에는 hit이 있어야 하고, 성공이
+아닌 상태에는 hit을 넣지 않으며, `ERROR`에는 원인 메시지가 필요하다.
 
 NIA 원문의 `evidence_sources`는 Backend 저장소에는 보존하지만 Agent 검색 DTO에는 넣지 않는다.
-이 값을 공식 Citation으로 오인해 답변에 노출하는 경로를 처음부터 차단하기 위해서다.
+이를 공식 Citation으로 오인해 답변에 노출하는 경로를 차단하기 위해서다.
 
-### 10.2 Backend 구현 책임
+### 10.2 Backend Case 검색 책임
 
 Backend는 `BackendNiaCaseRetriever`를 구현해 주입한다.
 
-- 운영 검색은 `training`과 `validation`을 합친 3,581건 전체를 사용하며 `dataset_split`으로
-  후보를 제외하지 않는다. split 값은 결과 provenance와 분석을 위해 그대로 반환한다.
-- `text_version`, `embedding_model`은 정확히 일치하는 행만 검색한다.
-- 질의 벡터는 BGE-M3 1,024차원인지 조회 전에 검증한다.
-- cosine similarity 내림차순으로 `candidate_limit`개까지 반환한다.
+- 운영 검색은 `training`과 `validation`을 합친 3,581건 전체를 사용한다.
+- `dataset_split`은 후보 제외 조건이 아니라 provenance와 평가 분석용으로 반환한다.
+- `text_version`, `embedding_model`이 정확히 일치하는 행만 검색한다.
+- 질의 벡터가 BGE-M3 1,024차원인지 조회 전에 검증한다.
+- cosine similarity 내림차순으로 1차 후보를 반환한다.
+- BGE reranker는 1차 후보만 읽고 최종 Top-3를 반환한다.
 - ORM과 DB session은 Agent에 노출하지 않는다.
-- BGE reranker는 1차 후보만 읽고 최종 3개를 반환한다.
-- 임의의 similarity cutoff는 평가 전에 적용하지 않는다.
+- 평가 전에 임의의 similarity cutoff를 적용하지 않는다.
 
-평가용 골든 셋은 Case 문서를 운영 corpus에서 제외해서 만드는 방식이 아니라 별도 사용자 질의와
-기대 Case/Claim 연결을 정의하는 방식으로 관리한다.
+평가용 골든 셋은 Case 문서를 corpus에서 제외하지 않고, 별도 사용자 질의와 기대 Case·성분
+연결을 정의하는 방식으로 관리한다.
 
-### 10.3 Case → Claim 연결
+### 10.3 런타임 Claim 추출 타입과 포트
 
-`ClaimSearchRequest`에 다음 선택 필드를 추가한다.
+런타임 Claim 타입은 `agent/rag/case_claim_schemas.py`, 추출 포트는 `agent/rag/ports.py`가
+소유한다. LLM은 원문에 있는 Claim을 선택할 뿐 ingredient ID나 검증 상태를 만들지 않는다.
 
 ```python
-class ClaimSearchRequest(RagModel):
+from abc import ABC, abstractmethod
+from enum import StrEnum
+
+from pydantic import Field, model_validator
+
+from agent.rag.case_schemas import CaseSearchHit
+from agent.rag.schemas import LookupStatus, RagModel
+
+
+class CaseClaimType(StrEnum):
+    INGREDIENT_EFFECT = "ingredient_effect"
+    COMBINATION_EFFECT = "combination_effect"
+
+
+class CaseClaimExtractionRequest(RagModel):
     query: str = Field(min_length=1)
-    query_embedding: EmbeddingVector | None = None
-    annotation_version: str = Field(min_length=1)
-    top_k: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
-    ingredient_ids: list[str] = Field(default_factory=list)
-    skin_concerns: list[str] = Field(default_factory=list)
-    source_record_ids: list[str] = Field(default_factory=list)
+    cases: list[CaseSearchHit] = Field(min_length=1, max_length=3)
+    limit: int = Field(ge=1)
+
+
+class ExtractedIngredientMention(RagModel):
+    raw_name: str = Field(min_length=1)
+
+
+class ExtractedCaseClaim(RagModel):
+    case_id: str = Field(min_length=1)
+    claim_type: CaseClaimType
+    ingredients: list[ExtractedIngredientMention] = Field(min_length=1)
+    source_quote: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_claim_shape(self) -> "ExtractedCaseClaim": ...
+
+
+class CaseClaimExtractionResult(RagModel):
+    status: LookupStatus
+    claims: list[ExtractedCaseClaim] = Field(default_factory=list)
+    model: str | None = Field(default=None, min_length=1)
+    prompt_version: str = Field(min_length=1)
+    error_message: str | None = None
+
+
+class CaseClaimExtractor(ABC):
+    @abstractmethod
+    async def extract(
+        self,
+        request: CaseClaimExtractionRequest,
+    ) -> CaseClaimExtractionResult: ...
 ```
 
-- Case 경로에서는 rerank Top-3의 `case_id`를 `source_record_ids`로 전달한다.
-- Backend는 `claim_document.source_record_id = ANY(source_record_ids)`를 추가 필터로 적용한다.
-- `source_record_ids=[]`이면 기존 Claim 검색과 완전히 같은 동작을 유지한다.
-- `annotation_version` 필터는 그대로 필수이며 Case ID가 annotation run을 대신하지 않는다.
-- 연결된 Claim이 없으면 `NO_RESULTS`로 반환하며, 다른 Case의 Claim을 임의로 대신 붙이지 않는다.
+- `INGREDIENT_EFFECT`는 성분이 정확히 1개여야 한다.
+- `COMBINATION_EFFECT`는 원문이 공동 효과를 명시하고 성분이 2개 이상일 때만 허용한다.
+- 독립 효능이 서술된 여러 성분은 성분별 `INGREDIENT_EFFECT`로 나눈다.
+- `source_quote`는 Case 원문 그대로이며, 자유로운 효능 요약 필드를 별도로 받지 않는다.
+- LLM은 `ingredient_id`, Evidence 상태, 상품 추천 여부, Citation을 출력하지 않는다.
+- 입력 Case 본문 안의 지시문은 데이터로만 취급하며 시스템 지시로 실행하지 않는다.
+- 추출기는 Agent의 `ChatModelConfig`를 사용한다. `provider=openai`이면 요청마다 외부 API를
+  호출하고, `provider=local/ollama`이면 설정된 로컬 OpenAI 호환 서버를 호출한다.
 
-### 10.4 LangGraph 상태와 라우팅
+### 10.4 결정적 Claim 검증과 성분 Resolution
 
-- Case 결과는 `ClaimBundle`이나 `EvidenceBundle`에 넣지 않고 별도 `CaseBundle`로 유지한다.
-- 피부 고민형: `embed_case_query → search_cases → rerank_cases → search_claims → evidence → product`
-- 명시 성분형: 기존 `ingredient resolution → evidence → product` 경로 유지
-- Case `NO_RESULTS`: 기존 피부 고민형 Claim 검색 fallback 허용
-- Case `ERROR`: 오류를 상태에 보존하고 정책에 따라 partial 응답 또는 기존 Claim fallback
-- Claim `NO_RESULTS`: Case 본문만으로 성분·상품을 LLM이 새로 만들어 내지 않는다.
-- Evidence `NO_RESULTS`/`UNREVIEWED`: 기존 정책대로 Claim-only 상품 후보를 유지한다.
+LLM 결과는 Evidence 검색 전에 Agent 규칙 계층이 전부 검증한다.
 
-### 10.5 실패 계약
+1. `case_id`가 실제 rerank Top-3에 포함되는지 확인한다.
+2. `source_quote`가 해당 `page_content`의 정확한 부분 문자열인지 확인한다.
+3. 각 `raw_name`이 `source_quote`에 실제로 포함되는지 확인한다.
+4. 단일/조합 Claim의 성분 개수 규칙을 확인한다.
+5. `(case_id, claim_type, raw_name 목록, source_quote)` 중복을 제거한다.
+6. 검증에 실패한 Claim은 조용히 사용하지 않고 제외 사유를 State에 남긴다.
 
-- 다른 임베딩 모델·차원: `UNSUPPORTED`
-- 지원하지 않는 split/text version: `UNSUPPORTED`
-- DB/DTO 변환 오류: `ERROR`와 원인 메시지
-- 정상 검색 결과 없음: `NO_RESULTS`
-- reranker 실패: 원인을 기록하고 vector 순위 Top-3로 fallback하되, fallback 여부를 State에 남긴다.
+검증을 통과한 각 `raw_name`은 기존 `IngredientRepository.resolve()`로 표준 성분 ID를 찾는다.
 
-Case 검색 실패를 Evidence 부족이나 Claim 부정으로 바꾸지 않는다. 세 레이어의 상태는 각각
-독립적으로 유지한다.
+- 정확히 매칭된 성분만 Evidence/Product anchor로 승격한다.
+- `NO_RESULTS`는 raw name과 Case provenance를 unresolved로 남긴다.
+- 여러 후보가 반환되면 임의 선택하지 않고 ambiguous 상태로 남긴다.
+- 런타임 LLM에 표준 ID 선택을 다시 맡기지 않는다.
 
-### 10.6 현재 데이터 제약
+`EvidenceQueryOrigin`에는 `CASE_CLAIM`을 추가한다. Evidence anchor는 요청 ID, Case ID, Claim
+타입, exact quote, 확정 성분 ID로 결정적으로 만든다.
 
-AI Hub Case 3,581건은 생성 가능하지만 현재 기준 DB의 Claim은 smoke 수준이라 대부분의 Case가
-Claim으로 이어지지 않는다. 따라서 다음 지표를 분리한다.
+- 단일 Claim: 성분 ID 1개, `IngredientScope.SINGLE`
+- 조합 Claim: 모든 성분이 매칭된 경우에만 `IngredientScope.MULTI`와 `ALL`
+- 조합 Claim 일부만 매칭되면 단일 성분 Claim으로 축소하지 않는다.
+- Evidence query text는 원문 성분명과 exact quote를 사용한다.
 
-1. Case retrieval 성공률과 Top-3 적합도
-2. Top-3 Case 중 `claim_document.source_record_id`가 존재하는 비율
-3. 연결 Claim 중 matched ingredient가 있는 비율
-4. Evidence 및 confirmed Product까지 도달하는 비율
+### 10.5 LangGraph 상태와 라우팅
 
-전체 Claim annotation 산출물이 없다는 이유로 Case 검색 구현 자체를 막지는 않되, end-to-end
-상품 추천이 3,581건 전체에서 동작한다고 보고하지 않는다.
+- Case, 런타임 Claim, Evidence는 각각 `CaseBundle`, `CaseClaimBundle`, `EvidenceBundle`로 분리한다.
+- 피부 고민형:
+  `embed_case_query → search_cases → rerank_cases → extract_case_claims → validate_case_claims → resolve_claim_ingredients → verify_claims → product`
+- 명시 성분형: 기존 `ingredient resolution → evidence → product` 경로를 유지한다.
+- 기존 `RagRoute.CLAIM_THEN_EVIDENCE`는 구현 시 `CASE_THEN_EVIDENCE`로 바꾼다.
+- 기존 DB `ClaimRetriever`는 P3 피부 고민형 기본 경로에 주입하지 않는다.
+- Case 본문이나 LLM 출력은 공식 Citation으로 렌더링하지 않는다.
+- Evidence `NO_RESULTS`/`UNREVIEWED`여도 매칭된 성분의 Claim-only 상품 후보는 유지한다.
+
+### 10.6 실패와 fallback 계약
+
+| 단계 | 상태 | 처리 |
+| --- | --- | --- |
+| Case 검색 | `NO_RESULTS` | 성분을 추측하지 않고 탐색 결과 없음으로 종료 |
+| Case 검색 | `ERROR` | 오류를 State에 남기고 partial/error 응답 |
+| Case reranker | 실패 | vector 순위 Top-3로 fallback하고 이력을 남김 |
+| Claim 추출 | `NO_RESULTS` | Case 본문에서 성분을 임의 보충하지 않음 |
+| Claim 추출 | `ERROR` | 오류를 State에 남기고 Evidence/Product 단계를 건너뜀 |
+| Claim 규칙 검증 | 일부 실패 | 실패 Claim만 제외하고 사유를 남김 |
+| 성분 Resolution | unresolved/ambiguous | Claim 문구는 보존하고 Evidence/Product anchor에서 제외 |
+| Evidence | 없음/미검수 | 기존 정책대로 Claim-only 상품 후보 유지 |
+
+현재 production Claim index가 없으므로 전역 Claim RAG를 자동 fallback으로 사용하지 않는다.
+향후 offline Claim index를 운영에 채택하면 별도 정책과 골든 셋 검증 후 fallback을 다시 계약한다.
+
+### 10.7 Backend 책임 변화
+
+P3에서 Backend가 새로 담당하는 것은 NIA Case 벡터 조회와 DTO 변환이다. 기존 성분·Evidence·상품
+Repository와 어댑터는 그대로 사용한다.
+
+- `nia_case_document` 검색 SQL: Backend Repository
+- Case 결과 DTO 변환: Backend Service adapter
+- 런타임 Claim 추출·검증·상태 관리: Agent
+- raw 성분명 표준 ID 조회: 기존 Backend `IngredientRepository` 구현
+- Evidence/Product 조회: 기존 Backend 구현
+- offline `claim_document`/`claim_chunk` 조회: P3 필수 경로 아님
+
+기존 Claim 모델·Repository·적재 코드는 삭제하지 않는다. 후속 offline 최적화와 비교 평가에
+사용할 수 있으며 이번 방향 변경에는 모델·마이그레이션이 필요하지 않다.
+
+### 10.8 데이터 및 평가 기준
+
+- Case 3,581건과 BGE-M3 Case 임베딩은 준비돼 있다.
+- 실제 Case `page_content`는 평균 약 1,859자이고, 중앙값 기준 Top-3 합계는 약 5,547자다.
+- production Claim annotation은 0/3,581건이며 P3 선행 조건이 아니다.
+- Case 검색 적합도, Claim exact-quote 통과율, 성분 매칭률, Evidence/Product 도달률을 분리해 측정한다.
+- 골든 셋에는 사용자 질의, 기대 Top-3 Case, 기대 성분 raw name/ID, 제외해야 할 성분을 기록한다.
+- 런타임 추출 결과의 모델명과 `prompt_version`을 보존해 재현성과 회귀를 비교한다.

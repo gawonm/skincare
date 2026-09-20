@@ -534,18 +534,22 @@ class NiaCaseIngestionResult(BaseModel):
 - 런타임 Case 검색은 `training`과 `validation`을 합친 3,581건 전체를 사용한다.
 - `dataset_split`은 provenance와 분석용 metadata로 보존하되 운영 검색 제외 조건으로 쓰지 않는다.
 - 검색 평가는 corpus 문서를 빼두는 방식이 아니라 별도 골든 질의·정답 세트를 만들어 수행한다.
-- `case_id`와 Claim 연결은 FK가 아니라
-  `nia_case_document.case_id = claim_document.source_record_id` 동등 조건으로 조회한다.
-- Claim 조회에는 기존과 동일하게 명시적인 `annotation_version`을 추가 조건으로 사용한다.
+- 후속 offline Claim index를 사용할 때 Case와 Claim 연결은 FK가 아니라
+  `nia_case_document.case_id = claim_document.source_record_id` 동등 조건을 사용한다.
+- 후속 Claim 조회에는 명시적인 `annotation_version`을 추가 조건으로 사용한다.
 
-## NIA Claim production 산출물 적재 계약 — 2026-09-21 01:11 KST 초안
+## NIA Claim production 산출물 적재 계약 — 2026-09-21 02:19 KST
 
-> 상태: **사용자 방향 승인, 구현 진행 중**
+> 상태: **구현 자산 보존, 현재 P3 기본 경로에서는 실행 보류**
 
 이 절은 AI Hub 원본에서 생성한 오프라인 Claim annotation을 Data가 파일 산출물로 내보내고,
 Backend가 BGE-M3로 임베딩하여 기존 `claim_document` / `claim_chunk` /
-`claim_chunk_ingredient`에 적재하는 경계를 정의한다. 런타임 Agent가 Case 본문에서 성분이나
-Claim을 새로 추론하는 경로는 만들지 않는다.
+`claim_chunk_ingredient`에 적재하는 선택 경계를 정의한다.
+
+2026-09-21 P3 방향 변경으로 피부 고민형 기본 경로는 Case Top-3 원문에서 런타임 LLM이
+exact quote 기반 Claim을 추출한다. 따라서 이 offline 계약은 삭제하지 않지만 P3의 선행 조건이나
+기본 런타임 의존성이 아니다. 런타임 비용·지연·재현성 평가 후 offline index가 필요할 때 다시
+사용한다.
 
 ### 선행 corpus 검증
 
@@ -628,8 +632,8 @@ class ClaimExportRecord(BaseModel):
 모든 statement와 decision은 export에 보존한다. Backend 적재는 운영 검색 정책과 동일하게
 `ingestible_structured`와 `ingestible_free_text`만 저장하며 `blocked`와 `human_review`는
 제외한다. 따라서 전체 Case가 성공적으로 annotation되어도 모든 Case에 검색 가능한 Claim이
-생긴다고 보장하지 않는다. 연결 Claim이 없는 Case는 Agent의 기존 제한 없는 Claim 검색
-fallback 대상이다.
+생긴다고 보장하지 않는다. 현재 P3 Agent는 이 offline Claim index를 자동 fallback으로 사용하지
+않는다. 후속 도입 시 별도 검색 정책과 골든 셋 검증을 먼저 계약한다.
 
 ### Backend Claim 적재
 
