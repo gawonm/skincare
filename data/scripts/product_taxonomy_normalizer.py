@@ -175,7 +175,7 @@ class ProductTaxonomyNormalizer:
         ),
         ProductTaxonomyRule(
             product_type=ProductTypeNormalized.CREAM,
-            keywords=("cream", "크림"),
+            keywords=("cream", "creme", "크림"),
         ),
     )
 
@@ -198,12 +198,17 @@ class ProductTaxonomyNormalizer:
         }
     )
 
-    # 상품명으로 분류하지 못했을 때만 쓰는 원본 category3. 제품 형태와 1:1로 대응하는 값만 둔다.
-    # `Moisturizers`처럼 크림·오일·토너가 섞인 넓은 카테고리는 유형을 추정할 수 없어 넣지 않는다.
-    _TYPE_BY_SOURCE_CATEGORY: ClassVar[dict[str, ProductTypeNormalized]] = {
-        "cleansers": ProductTypeNormalized.CLEANSER,
+    # 제품 형태가 category3 하나로 확정되는 값. 상품명에 다른 형태 단어가 섞여 있어도
+    # (예: category3=Sunscreen인 "UV Essence") 이 값이 상품명보다 우선한다.
+    # `Moisturizers`, `Skincare`처럼 유형이 섞인 넓은 카테고리는 여기 넣지 않는다.
+    _AUTHORITATIVE_TYPE_BY_SOURCE_CATEGORY: ClassVar[dict[str, ProductTypeNormalized]] = {
         "sunscreen": ProductTypeNormalized.SUNSCREEN,
         "sheet masks": ProductTypeNormalized.SHEET_MASK,
+    }
+
+    # 상품명으로 분류하지 못했을 때만 쓰는 원본 category3.
+    _FALLBACK_TYPE_BY_SOURCE_CATEGORY: ClassVar[dict[str, ProductTypeNormalized]] = {
+        "cleansers": ProductTypeNormalized.CLEANSER,
     }
 
     _SERVICE_CATEGORY_BY_TYPE: ClassVar[dict[ProductTypeNormalized, ServiceCategory]] = {
@@ -237,6 +242,15 @@ class ProductTaxonomyNormalizer:
     }
 
     def classify(self, row: ProductCandidateRow) -> ProductTaxonomyResult:
+        source_category = self._normalize(row.category3)
+        authoritative_type = self._AUTHORITATIVE_TYPE_BY_SOURCE_CATEGORY.get(source_category)
+        if authoritative_type is not None:
+            return self._result(
+                product_type=authoritative_type,
+                basis=TaxonomyDecisionBasis.SOURCE_CATEGORY,
+                matched_keyword=row.category3,
+            )
+
         raw_text = f"{row.raw_title} {row.display_title}"
         title = self._normalize(raw_text)
         middle_form: tuple[ProductTaxonomyRule, str] | None = None
@@ -266,7 +280,7 @@ class ProductTaxonomyNormalizer:
                 matched_keyword=matched_keyword,
             )
 
-        source_category_type = self._TYPE_BY_SOURCE_CATEGORY.get(self._normalize(row.category3))
+        source_category_type = self._FALLBACK_TYPE_BY_SOURCE_CATEGORY.get(source_category)
         if source_category_type is not None:
             return self._result(
                 product_type=source_category_type,
