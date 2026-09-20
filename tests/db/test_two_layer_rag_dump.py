@@ -3,7 +3,6 @@
 from typing import ClassVar
 
 import pytest
-from sqlalchemy.engine import make_url
 
 from agent.claim_verification import ClaimEvidenceVerifier, IngredientRecommendationSelector
 from agent.rag.claim_anchor_adapter import ClaimHitToEvidenceQueryAnchorAdapter
@@ -38,7 +37,7 @@ from backend.services.two_layer_rag_adapters import (
     TwoLayerProductRepository,
 )
 from core.config import settings
-from core.database import Database, DatabaseConfig
+from core.database import Database
 
 
 class FixedBgeM3Embedder(TextEmbedder):
@@ -54,18 +53,10 @@ class FixedBgeM3Embedder(TextEmbedder):
 
 
 class LatestDumpDatabaseFactory:
-    """공용 설정의 접속 정보는 유지하고 smoke DB 이름만 명시적으로 바꾼다."""
-
-    DATABASE_NAME: ClassVar[str] = "skincare_latest"
+    """config.yaml이 명시한 현재 기준 DB로 통합 동작을 검증한다."""
 
     def create(self) -> Database:
-        url = make_url(settings.database.url).set(database=self.DATABASE_NAME)
-        return Database(
-            DatabaseConfig(
-                url=url.render_as_string(hide_password=False),
-                model_modules=settings.database.model_modules,
-            )
-        )
+        return Database(settings.database)
 
 
 @pytest.mark.integration
@@ -132,7 +123,7 @@ class TestTwoLayerRagLatestDump:
             )
 
             assert evidence.status is LookupStatus.SUCCESS
-            assert len(evidence.records) == 3
+            assert 1 <= len(evidence.records) <= 5
             assert all(
                 record.review_status is EvidenceReviewStatus.UNREVIEWED
                 for record in evidence.records

@@ -40,7 +40,7 @@ from backend.services.two_layer_rag_adapters import (
     TwoLayerProductRepository,
 )
 from core.config import settings
-from core.database import Database, DatabaseConfig
+from core.database import Database
 
 
 class TwoLayerDumpSmokeReport(BaseModel):
@@ -61,7 +61,6 @@ class TwoLayerDumpSmokeReport(BaseModel):
 class TwoLayerRagDumpSmokeRunner:
     """외부 LLM 없이 실제 BGE-M3와 복원 DB의 연결만 확인한다."""
 
-    DATABASE_NAME: ClassVar[str] = "skincare_latest"
     QUERY: ClassVar[str] = "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?"
     SKIN_CONCERNS: ClassVar[list[str]] = ["여드름/뾰루지"]
     NIACINAMIDE_NAME: ClassVar[str] = "나이아신아마이드"
@@ -70,6 +69,7 @@ class TwoLayerRagDumpSmokeRunner:
 
     def __init__(self) -> None:
         self._database = self._create_database()
+        self._database_name = self._configured_database_name()
         self._embedder = LocalBgeM3Embedder(self._embedding_config())
         self._claims = TwoLayerClaimRetriever(
             self._database.session_factory,
@@ -173,7 +173,7 @@ class TwoLayerRagDumpSmokeRunner:
                 )
             with_product = await self._claim_only_with_products(claim_only_ids)
             return TwoLayerDumpSmokeReport(
-                database=self.DATABASE_NAME,
+                database=self._database_name,
                 embedding_model=self._claims.embedding_model.value,
                 claim_count=len(claims.hits),
                 evidence_record_count=len(evidence.records),
@@ -204,13 +204,14 @@ class TwoLayerRagDumpSmokeRunner:
         return count
 
     def _create_database(self) -> Database:
-        url = make_url(settings.database.url).set(database=self.DATABASE_NAME)
-        return Database(
-            DatabaseConfig(
-                url=url.render_as_string(hide_password=False),
-                model_modules=settings.database.model_modules,
-            )
-        )
+        # 최신 기준 DB 이름은 개발자마다 다르므로 config.yaml의 명시적 대상을 그대로 검증한다.
+        return Database(settings.database)
+
+    def _configured_database_name(self) -> str:
+        database_name = make_url(settings.database.url).database
+        if database_name is None or not database_name.strip():
+            raise RuntimeError("config.yaml의 database.url에 DB 이름이 없습니다.")
+        return database_name
 
     def _embedding_config(self) -> LocalEmbeddingConfig:
         embedding = settings.agent.embedding
