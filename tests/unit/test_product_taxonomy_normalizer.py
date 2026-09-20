@@ -184,11 +184,59 @@ class TestProductTaxonomyNormalizer:
         assert result.product_type_normalized is None
         assert result.basis is TaxonomyDecisionBasis.UNCLASSIFIED
 
-    def test_title_type_beats_source_category(self) -> None:
-        result = self._classify("Daily Toner 200ml", category3="Sunscreen")
+    def test_title_type_beats_non_authoritative_source_category(self) -> None:
+        # Cleansers 는 제목에 근거가 없을 때만 쓰는 fallback 이다
+        result = self._classify("Daily Toner 200ml", category3="Cleansers")
 
         assert result.product_type_normalized is ProductTypeNormalized.TONER
         assert result.basis is TaxonomyDecisionBasis.TITLE
+
+    def test_sunscreen_category_overrides_title_form_word(self) -> None:
+        result = self._classify(
+            "d'Alba Watefull UV Essence Vitamin C & Collagen 50ml",
+            category3="Sunscreen",
+            display_title="달바 워터풀 UV 에센스 비타민C&콜라겐 50ml",
+        )
+
+        assert result.product_type_normalized is ProductTypeNormalized.SUNSCREEN
+        assert result.service_category is ServiceCategory.SUNCARE
+        assert result.basis is TaxonomyDecisionBasis.SOURCE_CATEGORY
+
+    def test_sheet_masks_category_overrides_generic_mask_title(self) -> None:
+        result = self._classify(
+            "INNISFREE Retinol Cica Ampoule in Hydrogel Mask 4ea", category3="Sheet Masks"
+        )
+
+        assert result.product_type_normalized is ProductTypeNormalized.SHEET_MASK
+        assert result.basis is TaxonomyDecisionBasis.SOURCE_CATEGORY
+
+    def test_broad_categories_never_override_the_title(self) -> None:
+        for category3 in ("Moisturizers", "Skincare", "Body Moisturizers"):
+            result = self._classify("Daily Essence 100ml", category3=category3)
+
+            assert result.product_type_normalized is ProductTypeNormalized.ESSENCE, category3
+
+    def test_creme_spelling_is_cream(self) -> None:
+        result = self._classify(
+            "Abib Jericho Rose Creme Nutrition Tube 75ml",
+            display_title="아비브 Jericho 로즈 Creme Nutrition Tube 75ml",
+        )
+
+        assert result.product_type_normalized is ProductTypeNormalized.CREAM
+        assert result.service_category is ServiceCategory.CREAM_LOTION
+
+    def test_context_dependent_words_stay_unclassified(self) -> None:
+        # Milk/Moisturizer/Tonic/Oil 은 유형이 하나로 정해지지 않아 자동 규칙을 두지 않는다
+        for title in (
+            "Hadalabo Gokujyun Milk 140ml",
+            "LANEIGE HOMME Active Water Moisturizer 125ml",
+            "isoi Acni Dr. 1st Control Tonic 90ml",
+            "ROVECTIN Intense Glow Oil 30ml",
+        ):
+            result = self._classify(title, category3="Moisturizers")
+
+            assert result.product_type_normalized is None, title
+            assert result.basis is TaxonomyDecisionBasis.UNCLASSIFIED, title
 
     def test_every_normalized_type_has_service_category(self) -> None:
         normalizer = ProductTaxonomyNormalizer()
