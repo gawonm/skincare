@@ -4,6 +4,8 @@
 거기 정리하기 애매한, 실제로 개발하면서 부딪힌 특성과 상황만 적는다 — 같은 내용을 두 곳에
 적지 않는다.
 
+> 기준 DB dump 복원과 NIA Data 산출물 전달은 [DB_REFERENCE_HANDOFF.md](DB_REFERENCE_HANDOFF.md)를 먼저 본다.
+
 ## 이 저장소를 열 때 먼저 볼 것
 
 이 프로젝트는 같은 브랜치(`feature/rag-pipeline`)를 **워크트리 여러 개로 동시에 작업 중**이다
