@@ -151,7 +151,7 @@ class ProductTaxonomyNormalizer:
         ),
         ProductTaxonomyRule(
             product_type=ProductTypeNormalized.AMPOULE,
-            keywords=("ampoule", "앰플"),
+            keywords=("ampoule", "ampule", "앰플"),
         ),
         ProductTaxonomyRule(
             product_type=ProductTypeNormalized.SERUM,
@@ -175,9 +175,41 @@ class ProductTaxonomyNormalizer:
         ),
         ProductTaxonomyRule(
             product_type=ProductTypeNormalized.CREAM,
-            keywords=("cream", "크림"),
+            keywords=("cream", "creme", "크림"),
         ),
     )
+
+    # 앰플·세럼·에센스는 제품명 앞쪽에 수식어로 자주 붙는다("Ampoule Toner", "Essence Cream").
+    # 그래서 이 세 유형과 아래 최종 형태 키워드가 함께 나오면, 최종 형태 키워드가 상품명에서
+    # 더 뒤에 있을 때만 그쪽을 본체로 본다. 각 묶음 안의 우선순위(_RULES 순서)는 그대로 둔다.
+    _MIDDLE_FORM_TYPES: ClassVar[frozenset[ProductTypeNormalized]] = frozenset(
+        {
+            ProductTypeNormalized.AMPOULE,
+            ProductTypeNormalized.SERUM,
+            ProductTypeNormalized.ESSENCE,
+        }
+    )
+    _FINAL_FORM_TYPES: ClassVar[frozenset[ProductTypeNormalized]] = frozenset(
+        {
+            ProductTypeNormalized.TONER,
+            ProductTypeNormalized.EMULSION,
+            ProductTypeNormalized.LOTION,
+            ProductTypeNormalized.CREAM,
+        }
+    )
+
+    # 제품 형태가 category3 하나로 확정되는 값. 상품명에 다른 형태 단어가 섞여 있어도
+    # (예: category3=Sunscreen인 "UV Essence") 이 값이 상품명보다 우선한다.
+    # `Moisturizers`, `Skincare`처럼 유형이 섞인 넓은 카테고리는 여기 넣지 않는다.
+    _AUTHORITATIVE_TYPE_BY_SOURCE_CATEGORY: ClassVar[dict[str, ProductTypeNormalized]] = {
+        "sunscreen": ProductTypeNormalized.SUNSCREEN,
+        "sheet masks": ProductTypeNormalized.SHEET_MASK,
+    }
+
+    # 상품명으로 분류하지 못했을 때만 쓰는 원본 category3.
+    _FALLBACK_TYPE_BY_SOURCE_CATEGORY: ClassVar[dict[str, ProductTypeNormalized]] = {
+        "cleansers": ProductTypeNormalized.CLEANSER,
+    }
 
     _SERVICE_CATEGORY_BY_TYPE: ClassVar[dict[ProductTypeNormalized, ServiceCategory]] = {
         ProductTypeNormalized.SERUM: ServiceCategory.ESSENCE_SERUM,
@@ -210,19 +242,48 @@ class ProductTaxonomyNormalizer:
     }
 
     def classify(self, row: ProductCandidateRow) -> ProductTaxonomyResult:
-        title = self._normalize(f"{row.raw_title} {row.display_title}")
+        source_category = self._normalize(row.category3)
+        authoritative_type = self._AUTHORITATIVE_TYPE_BY_SOURCE_CATEGORY.get(source_category)
+        if authoritative_type is not None:
+            return self._result(
+                product_type=authoritative_type,
+                basis=TaxonomyDecisionBasis.SOURCE_CATEGORY,
+                matched_keyword=row.category3,
+            )
+
+        raw_text = f"{row.raw_title} {row.display_title}"
+        title = self._normalize(raw_text)
+        middle_form: tuple[ProductTaxonomyRule, str] | None = None
+        final_form: tuple[ProductTaxonomyRule, str] | None = None
         for rule in self._RULES:
             matched_keyword = self._matches_rule(title, rule)
-            if matched_keyword is not None:
+            if matched_keyword is None:
+                continue
+            # 구체적인 규칙은 먼저 나온 것이 그대로 이긴다. 형태 키워드는 뒤에서 함께 비교한다.
+            if rule.product_type in self._MIDDLE_FORM_TYPES:
+                middle_form = middle_form or (rule, matched_keyword)
+            elif rule.product_type in self._FINAL_FORM_TYPES:
+                final_form = final_form or (rule, matched_keyword)
+            else:
                 return self._result(
                     product_type=rule.product_type,
                     basis=TaxonomyDecisionBasis.TITLE,
                     matched_keyword=matched_keyword,
                 )
 
-        if self._normalize(row.category3) == "cleansers":
+        form = self._choose_form(raw_text, middle_form, final_form)
+        if form is not None:
+            rule, matched_keyword = form
             return self._result(
-                product_type=ProductTypeNormalized.CLEANSER,
+                product_type=rule.product_type,
+                basis=TaxonomyDecisionBasis.TITLE,
+                matched_keyword=matched_keyword,
+            )
+
+        source_category_type = self._FALLBACK_TYPE_BY_SOURCE_CATEGORY.get(source_category)
+        if source_category_type is not None:
+            return self._result(
+                product_type=source_category_type,
                 basis=TaxonomyDecisionBasis.SOURCE_CATEGORY,
                 matched_keyword=row.category3,
             )
@@ -266,6 +327,25 @@ class ProductTaxonomyNormalizer:
     def _contains(self, text: str, keyword: str) -> bool:
         normalized_keyword = self._normalize(keyword)
         return f" {normalized_keyword} " in f" {text} "
+
+    def _choose_form(
+        self,
+        raw_text: str,
+        middle_form: tuple[ProductTaxonomyRule, str] | None,
+        final_form: tuple[ProductTaxonomyRule, str] | None,
+    ) -> tuple[ProductTaxonomyRule, str] | None:
+        if middle_form is None or final_form is None:
+            return middle_form or final_form
+
+        # "(+Toner 2.4ml+Cream 1.5g)"처럼 괄호 안의 증정·구성품은 제품 본체가 아니라서 위치 비교에서 뺀다.
+        main_title = self._normalize(re.sub(r"\([^)]*\)", " ", raw_text))
+        middle_position = self._last_keyword_position(main_title, middle_form[0])
+        final_position = self._last_keyword_position(main_title, final_form[0])
+        return final_form if final_position > middle_position else middle_form
+
+    def _last_keyword_position(self, title: str, rule: ProductTaxonomyRule) -> int:
+        padded_title = f" {title} "
+        return max(padded_title.rfind(f" {self._normalize(keyword)} ") for keyword in rule.keywords)
 
     def _matches_rule(self, title: str, rule: ProductTaxonomyRule) -> str | None:
         if any(self._contains(title, keyword) for keyword in rule.excluded_keywords):
