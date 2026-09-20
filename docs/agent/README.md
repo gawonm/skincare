@@ -90,10 +90,10 @@ main의 다음 구형 파일은 최종 Agent 구성에서 제외했다. NIA 적�
 main의 동기식 구형 `OpenAiEmbedder` 구현은 제거했고, 같은 경로에는 현재 `TextEmbedder` 비동기
 계약을 구현하는 `OpenAiTextEmbedder`를 새로 연결했다.
 
-2026-09-17 `origin/main` `190b5c6`을 현재 기능 브랜치에 충돌 없이 병합했다. 이후 main의
+2026-09-17 당시 `origin/main` `190b5c6`을 기능 브랜치에 병합했다. 이후 main의
 `claim-evidence-rag-interface.md`를 기준으로 `annotation_version`, Claim 최소 DTO,
-unresolved 처리와 세 가지 지원 Claim 타입을 맞췄다. 현재 병합 기준과 검증 기록은
-[통합 작업계획 및 작업 일지](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)에 누적한다.
+unresolved 처리와 세 가지 지원 Claim 타입을 맞췄다. 2026-09-20 최신 main, NIA Case와 v2 DB
+통합 기준은 [현재 작업 합본](RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md)에 누적한다.
 
 ## Backend 담당자 확인 항목
 
@@ -139,12 +139,11 @@ DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump
 
 ## 관련 문서
 
-- [2026-09-17 17:51 피부 고민형 Intent 라우팅 보정](2026-09-17_1751_INTENT_ROUTING_UPDATE.md)
-- [2-Layer RAG Agent 통합 작업계획 및 작업 일지](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
-- [NIA Case Document 이후 통합 RAG 구현 계획](2026-09-20_0023_NIA_CASE_DOCUMENT_AGENT_HANDOFF.md)
+- [현재 작업 합본 — NIA Case 기반 2-Layer RAG 통합](RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md)
+- [완료 이력 — 2-Layer RAG Agent 작업일지](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
 - [Claim → Evidence RAG 인터페이스 계약](../contracts/claim-evidence-rag-interface.md)
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
-- [현재 구조·연결 계약 검토](AGENT_INTEGRATION_REVIEW.md)
+- [역사 문서 — 2026-09-11 구조·연결 계약 검토](AGENT_INTEGRATION_REVIEW.md)
 - [DB·히스토리 연동 요청서](RAG_YK/LLM_RAG_DB_CONTRACT.md)
 - [개발 요청서](RAG_YK/LLM_RAG_DEVELOPMENT_REQUEST.md)
 - [초기 파이프라인 설계](RAG_YK/LLM_RAG_PIPELINE.md)
@@ -164,9 +163,9 @@ DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump
 - `evidence_level=peer_reviewed_study`는 자료 유형·근거 등급이지 사람 검수 완료 상태가 아니다.
   이 값만으로 `VERIFIED`로 승격하지 않는다.
 
-최신 `skincare_latest` dump의 `evidence_document.document_status` 허용값은 `final`,
-`amended_final`, `tentative`, `draft`, `rereview`, `unknown`, `NULL`이다. 현재 세 PubMed 행은
-`NULL`이므로 Agent에서 모두 `UNREVIEWED`로 보이는 것이 정상이다.
+최신 `skincare_reference_2026-09-20_v2` dump의 `evidence_document.document_status` 허용값은
+`final`, `amended_final`, `tentative`, `draft`, `rereview`, `unknown`, `NULL`이다. MFDS 11문서와
+PubMed 3문서는 모두 `NULL`이므로 현재 Agent에서는 모두 `UNREVIEWED`로 보인다.
 
 현재 Backend 어댑터가 확인하는 문자열 `verified`는 dump의 CHECK 제약조건에 존재하지 않아 실제로
 성립할 수 없다. 이는 Evidence RAG 계약 확정 전의 임시 매핑이며, 운영 가능한 검수 상태 계약으로

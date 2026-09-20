@@ -1,0 +1,324 @@
+# NIA Case 기반 2-Layer RAG 통합 작업 합본
+
+- 작성 일시: 2026-09-20 23:24 KST
+- 작업 브랜치: `integration/nia-case-rag`
+- 문서 역할: 2026-09-20까지의 결정, 구현, DB 상태와 다음 작업을 한곳에서 확인하는 운영 기준
+- 현재 상태: P1·P2 완료, 최신 `origin/main` 병합 및 Alembic merge revision 검증 완료
+
+이 문서를 먼저 읽는다. 이전 설계·작업일지는 배경 확인이 필요할 때만 참고한다. 코드와 계약이
+이 문서와 다르면 실제 코드, `docs/contracts/`, 최신 DB 검증 결과 순으로 확인한다.
+
+## 1. 최종 목표와 확정 정책
+
+피부 고민형 질문은 유사 NIA 사례를 먼저 찾은 뒤, 사례에 연결된 Claim을 공인 Evidence로
+검증하고 confirmed 성분이 들어간 상품을 찾는다. 명시적인 성분 질문은 Case와 Claim을 생략하고
+Evidence로 바로 갈 수 있다.
+
+```text
+피부 고민형
+  → NIA Case 후보 20건
+  → BGE reranker Top-3
+  → Top-3 case_id에 연결된 Claim
+  → 표준 성분 ID
+  → Evidence
+  → Product
+  → Claim-only / Evidence-supported를 구분한 답변
+
+명시 성분형
+  → Ingredient Resolution
+  → Evidence
+  → Product 또는 근거 답변
+```
+
+확정한 원칙은 다음과 같다.
+
+- Case, Claim, Evidence는 서로 다른 DTO와 LangGraph State로 유지한다.
+- `nia_case_document`를 Claim이나 `rag_chunk`에 섞지 않는다.
+- Case는 탐색 자료이며 Citation이나 공인 근거가 아니다.
+- Evidence가 없거나 아직 검수되지 않아도 유효한 Claim과 연결 상품은
+  `Claim 기반·공인 근거 미확인`으로 유지한다.
+- 명시적 상반 근거, 검색 오류, 지원 불가는 단순 Evidence 부족과 구분한다.
+- 복합 성분 Claim은 조합 전체를 직접 지원하는 Evidence가 있을 때만 `SUPPORTED`로 승격한다.
+- 같은 상품은 `product_id`로 병합하고 Evidence-supported 연결을 우선한다.
+- 경로, 필터, 검증, fallback, Citation 채택은 규칙 기반으로 처리한다.
+- LLM은 의도·조건 추출과 자연어 응답 생성을 담당하며 런타임 Claim 생성에는 사용하지 않는다.
+- Case → Claim은 전체 실행 시마다 LLM을 호출하지 않고 Data의 오프라인 annotation을 사용한다.
+- NIA 전체 3,581건 Claim annotation은 비용이 발생하므로 구조 완성 후 별도 승인한다.
+
+## 2. 라우팅·성분 식별에서 유지할 기존 규칙
+
+다음 정책은 이전 단발성 문서에서 이 문서로 이관했다.
+
+- `피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?`처럼 피부 고민과 사용 대상 탐색이 함께 있는
+  질문은 LLM이 `evidence_qa`로 분류해도 규칙으로 `product_discovery` 및
+  `claim_then_evidence` 경로로 보정한다.
+- 안전하게 확인된 완전 동의어만 alias로 사용한다. 계열명을 단일 성분으로 치환하지 않는다.
+  예를 들어 `AHA → 글라이콜릭애씨드`처럼 여러 후보가 가능한 매핑은 금지한다.
+- 자유 텍스트 Evidence fallback은 명시 성분이 있는 순수 Evidence 질문에서만 한 번 허용한다.
+  상품 추천·루틴과 결합됐거나 성분이 모호하면 사용자 확인을 유지한다.
+- 성분 ID는 반드시 저장소에서 확정하며 LLM이나 alias 사전이 임의 생성하지 않는다.
+
+## 3. NIA 원본과 P1 산출물
+
+원본 위치:
+
+```text
+C:\Users\Admin\Documents\03.스킨케어 성분-효능 추천 데이터
+```
+
+처리 흐름:
+
+```text
+AI Hub Q-CoT-A ZIP/JSONL
+  → NiaOriginalLoader
+  → NiaOriginalAgeFilter(10 <= age <= 39)
+  → NiaCaseDocumentBuilder
+  → NiaCase exporter
+  → JSONL + manifest
+```
+
+`NiaOriginalRecord`는 원본 보존 모델이고 `NiaCaseDocument`는 검색용 파생 문서다.
+`NiaCaseDocument` 한 건은 질문, 답변, 전체 CoT를 하나의 `page_content`와
+`embedding_text`로 보존한다. `text_version`은 `nia_case_text/v1`이다.
+
+실제 검증 결과:
+
+| 항목 | 결과 |
+| --- | ---: |
+| 원본 ZIP | 15개 |
+| 전체 레코드 | 9,000건 |
+| 10~39세 Case | 3,581건 |
+| Training / Validation | 3,177 / 404건 |
+| 중복 `case_id` | 0건 |
+| 빈 검색 본문 | 0건 |
+| JSONL SHA-256 | `189b72b4a71b8becd05edfc3d123d1d2a4e03a8174408c03c1187ea50cfc9173` |
+
+산출물:
+
+- `data/processed/nia_case_documents_10s_30s.jsonl`
+- `data/processed/nia_case_documents_10s_30s.manifest.json`
+
+P1 구현은 `data/scripts/nia_case_rag/`에 있으며 Loader/Filter/Builder를 중복 구현하지 않는다.
+
+## 4. P2 저장·임베딩 구현 결과
+
+확정한 저장 구조:
+
+- 전용 테이블: `nia_case_document`
+- 사례 1건당 벡터 1개
+- 모델: `BAAI/bge-m3`
+- 차원: 1,024
+- 운영 검색 split: `training`
+- `validation` 404건은 검색 품질 평가용으로 보존
+- 자연키: `(case_id, text_version, embedding_model)`
+- 인덱스: cosine HNSW
+
+구현 위치:
+
+- 모델: `models/nia_case_document.py`
+- migration: `migrations/versions/a7d3c91e5f42_add_nia_case_document.py`
+- Repository: `backend/repositories/nia_case_document_repository.py`
+- 적재 Service/CLI: `backend/services/nia_case_ingestion_service.py`
+- 입력·결과 DTO: `backend/services/nia_case_ingestion_schemas.py`
+
+적재기는 JSONL·manifest의 SHA-256, 전체/split/archive별 건수, 중복 ID와 `text_version`을 DB 변경
+전에 검증한다. 같은 `content_hash`는 재임베딩하지 않으며 batch 실패 시 해당 batch를 rollback한다.
+
+실제 `skincare_latest` 적재 결과:
+
+| 항목 | 결과 |
+| --- | ---: |
+| 전체 | 3,581건 |
+| Training | 3,177건 |
+| Validation | 404건 |
+| 고유 `case_id` | 3,581개 |
+| 임베딩 | BGE-M3, 1,024차원 |
+
+Windows에서는 PyPI CPU Torch 대신 CUDA 12.6 wheel을 사용하도록 `pyproject.toml`과 `uv.lock`을
+갱신했다. 실제 RTX 4070 Laptop GPU와 BGE-M3 `cuda:0` 실행을 확인했다.
+
+## 5. 2026-09-20 최종 DB 기준본
+
+프로젝트 로컬 파일:
+
+- `data/skincare_reference_2026-09-20_v2.dump`
+- `data/skincare_reference_2026-09-20_v2.dump.sha256`
+- SHA-256: `5ecd670ee1e85553008abb5d7c43da0700a3149089eeb4c061948361271a5d54`
+
+두 파일은 `.gitignore` 대상이다. 별도 빈 DB 복원과 직접 SQL 검증을 통과했다.
+
+| 항목 | v2 기준본 |
+| --- | ---: |
+| Alembic | `2063ce3feae3` |
+| Product | 2,262건 |
+| ProductIngredient | 84,390건 |
+| confirmed 연결 | 78,280건 / 상품 2,180개 |
+| IngredientMaster | 21,974건 |
+| IngredientKnowledgeFact | 2,411건 |
+| EvidenceDocument | 14건 |
+| EvidenceChunk | 8,291건(MFDS 8,288 + PubMed 3) |
+| EvidenceChunkIngredient | 8,291건 |
+| Evidence embedding | BGE-M3 1,024차원, NULL 0건 |
+| Claim | document 1건 / chunk 5건 smoke |
+| `rag_chunk` | 0건 |
+| NIA Case | 미포함 |
+
+기존 `skincare_latest`는 NIA 3,581건이 있지만 Evidence는 PubMed 3건뿐이다. 새 v2는 Evidence
+8,291건이 있지만 NIA가 없다. 따라서 어느 한쪽을 그대로 최종 DB로 사용할 수 없고, v2를 새 DB에
+복원한 뒤 기존 NIA 행을 옮겨야 한다.
+
+## 6. Migration 통합 상태
+
+현재 계보:
+
+```text
+3165318c750d
+├─ 2063ce3feae3  # main Chat schema
+└─ a7d3c91e5f42  # NIA Case schema
+```
+
+NIA migration의 부모를 main migration으로 사후 변경하지 않는다. 기존 로컬 DB에는 NIA head가
+이미 적용돼 있어 부모를 바꾸면 Chat migration까지 적용된 것으로 잘못 해석할 수 있기 때문이다.
+두 revision을 부모로 갖는 schema 변경 없는 merge revision `9f4c2a7d8e61`을 추가했다.
+
+최신 `origin/main` 병합에서 발생한 다음 두 충돌은 양쪽 의도를 보존해 해결했다.
+
+- `docs/erd/app.md`: main의 Evidence/Chat/Product taxonomy/v2 상태와 NIA Case 설계를 모두 보존
+- `tests/unit/test_claim_storage_schema.py`: 특정 head 고정은 제거하고 NIA·Chat 양쪽이 최종
+  merge head의 조상인지 검사
+
+충돌 해결 후 목표:
+
+```text
+2063ce3feae3 ─┐
+              ├─ 9f4c2a7d8e61  # 최종 단일 head
+a7d3c91e5f42 ─┘
+```
+
+병합 커밋은 `4f85032`이며 `alembic heads` 결과는 `9f4c2a7d8e61 (head)` 한 건이다.
+관련 Claim/NIA/Chat 계보와 MFDS embedding/Product taxonomy 단위 테스트 58개 및 Ruff 검사를
+통과했다.
+
+## 7. 새 통합 DB 구성 절차
+
+기존 `skincare_latest`를 덮어쓰거나 삭제하지 않는다.
+
+1. Git 충돌을 양쪽 내용 보존 방식으로 해결한다.
+2. Alembic merge revision을 추가하고 `alembic heads`가 1개인지 확인한다.
+3. v2 dump를 새 빈 DB에 복원한다.
+4. `alembic upgrade head`로 NIA Case 테이블과 merge revision을 적용한다.
+5. 기존 `skincare_latest.nia_case_document` 3,581건을 벡터 포함 그대로 새 DB에 복사한다.
+6. Product, Evidence, NIA, Chat schema, migration head를 검증한다.
+7. 검증을 통과한 뒤 로컬 `config.yaml`의 DB명만 새 DB로 전환한다.
+
+완료 기준:
+
+| 검증 | 기대값 |
+| --- | ---: |
+| Product | 2,262 |
+| EvidenceChunk | 8,291 |
+| Evidence embedding NULL | 0 |
+| NIA Case | 3,581 |
+| NIA Training / Validation | 3,177 / 404 |
+| Chat 테이블 | 3개 존재 |
+| Alembic head | 1개 |
+
+## 8. Evidence 검수 상태의 남은 문제
+
+새 Evidence 데이터와 임베딩 자체는 정상이다. 그러나 현재 Backend 어댑터는
+`document_status == "verified"`만 `EvidenceReviewStatus.VERIFIED`로 변환한다.
+
+- DB 스키마의 `document_status` 허용값에는 `verified`가 없다.
+- MFDS/PubMed의 `document_status`는 실제로 `NULL`이다.
+- 따라서 새 v2를 연결해도 현재 코드에서는 `검수완료 0건`으로 표시될 수 있다.
+
+이는 dump 문제가 아니라 Backend→Agent 검수 정책 문제다. `evidence_level`을 검수 완료와 동일시하지
+않으며, MFDS/PubMed/CIR별 승격 규칙을 계약으로 합의한 뒤 어댑터와 회귀 테스트를 함께 수정한다.
+합의 전에는 Agent의 검수 게이트를 임의로 완화하지 않는다.
+
+## 9. P3 구현 계획
+
+### Agent
+
+- `CaseSearchRequest`, `CaseSearchHit`, `CaseSearchResult`, `CaseBundle` 추가
+- `CaseRetriever`, `CaseReranker` 포트 추가
+- LangGraph에 `SEARCH_CASES`, `RERANK_CASES` 노드 추가
+- 피부 고민형은 Case 경로, 명시 성분형은 기존 Evidence 직행 경로 유지
+- NIA `metadata.evidence_sources`를 Citation DTO에 넣지 않음
+
+### Backend
+
+- `nia_case_document`에서 `training`, `nia_case_text/v1`, `BAAI/bge-m3`를 정확히 필터링
+- cosine 후보 20건 조회 후 BGE reranker Top-3 반환
+- Claim 검색에 선택적 `source_record_ids` 필터 추가
+- `nia_case_document.case_id = claim_document.source_record_id`로 논리 연결
+
+### Fallback
+
+- Case 오류/결과 없음: 오류 상태를 남기고 기존 제한 없는 Claim 검색
+- Case는 있으나 연결 Claim 없음: 기존 Claim 검색 fallback
+- Claim은 있으나 Evidence 없음/미검수: Claim-only 상품 유지
+- Case 본문만 보고 런타임 LLM이 성분이나 Claim을 새로 만들지 않음
+
+### 필수 테스트
+
+1. 피부 고민 → Case Top-3 → 연결 Claim
+2. 명시 성분 질의의 Case 생략
+3. Validation split 운영 검색 제외
+4. Case 실패·결과 없음·연결 Claim 없음 fallback
+5. Evidence가 없어도 Claim-only 상품 유지
+6. NIA `evidence_sources` Citation 차단
+7. 여러 성분에서 나온 동일 상품 중복 제거
+8. 실제 통합 DB smoke
+
+Claim은 현재 smoke 수준이므로 Case 검색 품질과 Case→Claim coverage를 분리해 보고한다. P3 완료를
+3,581건 전체 상품 추천 완료로 표현하지 않는다.
+
+## 10. 현재 체크포인트와 다음 순서
+
+완료:
+
+- [x] NIA 원본 구조 및 9,000건 확인
+- [x] 10~39세 3,581건 export
+- [x] `nia_case_document` ERD·모델·migration
+- [x] BGE-M3 GPU 임베딩 및 3,581건 적재
+- [x] v2 dump SHA·빈 DB 복원·행 수·무결성 검증
+- [x] v2 dump를 프로젝트 `data/`에 배치하고 Git 제외 확인
+- [x] P1/P2 변경을 기능 단위 로컬 커밋으로 보존
+- [x] 최신 main 병합 시작 및 충돌 파일 확인
+
+다음:
+
+- [x] ERD·migration 테스트 충돌 해결
+- [x] Alembic merge revision 작성
+- [x] migration 관련 테스트 58개 및 Ruff 검사
+- [ ] 전체 단위 테스트
+- [ ] 새 통합 DB 생성 및 v2 복원
+- [ ] NIA 3,581건 데이터 이전
+- [ ] 통합 DB 검증 후 `config.yaml` 전환
+- [ ] Evidence 검수 상태 정책 합의·수정
+- [ ] P3 Case 검색 및 LangGraph 연결
+- [ ] P4 전체 Claim annotation 별도 승인
+
+## 11. 문서 확인 우선순위
+
+1. 이 문서: 현재 작업 상태와 실행 순서
+2. `docs/agent/README.md`: Agent 코드 진입점과 책임
+3. `docs/contracts/backend-to-agent.md`: 실제 Agent 포트 계약
+4. `docs/contracts/data-to-agent.md`: NIA 산출물 계약
+5. `docs/contracts/data-to-backend.md`: NIA 적재 계약
+6. `docs/agent/TWO_LAYER_RAG_FOLLOWUP_PLAN.md`: 완료된 2-Layer 구현 상세 이력
+7. `docs/agent/AGENT_INTEGRATION_REVIEW.md`: 2026-09-11 기준의 역사적 연결 검토
+
+## 12. 문서 정리 기록
+
+다음 문서의 유효한 정책과 결과는 이 합본으로 이관하고 원본을 삭제했다.
+
+- `docs/agent/2026-09-17_1751_INTENT_ROUTING_UPDATE.md`
+- `docs/agent/2026-09-20_0023_NIA_CASE_DOCUMENT_AGENT_HANDOFF.md`
+- `docs/agent/ENTITY_RESOLUTION_AND_RAG_FALLBACK_PLAN.md`
+- `docs/agent/RAG_YK/ARCHITECTURE_REVIEW_AND_OPINION.md`
+
+`TWO_LAYER_RAG_FOLLOWUP_PLAN.md`은 완료된 구현 이력 때문에 남겼고,
+`AGENT_INTEGRATION_REVIEW.md`는 다른 파트 문서가 참조하므로 역사 문서로 보존했다. 초기 기획 문서는
+삭제하지 않고 문서 상단에서 이 합본을 우선하도록 안내한다.
