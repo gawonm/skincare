@@ -531,8 +531,126 @@ class NiaCaseIngestionResult(BaseModel):
 
 ### 운영/평가 분리
 
-- 런타임 Case 검색은 기본적으로 `training` split만 사용한다.
-- `validation` split은 적재하되 검색 품질 평가용으로 분리한다.
+- 런타임 Case 검색은 `training`과 `validation`을 합친 3,581건 전체를 사용한다.
+- `dataset_split`은 provenance와 분석용 metadata로 보존하되 운영 검색 제외 조건으로 쓰지 않는다.
+- 검색 평가는 corpus 문서를 빼두는 방식이 아니라 별도 골든 질의·정답 세트를 만들어 수행한다.
 - `case_id`와 Claim 연결은 FK가 아니라
   `nia_case_document.case_id = claim_document.source_record_id` 동등 조건으로 조회한다.
 - Claim 조회에는 기존과 동일하게 명시적인 `annotation_version`을 추가 조건으로 사용한다.
+
+## NIA Claim production 산출물 적재 계약 — 2026-09-21 01:11 KST 초안
+
+> 상태: **사용자 방향 승인, 구현 진행 중**
+
+이 절은 AI Hub 원본에서 생성한 오프라인 Claim annotation을 Data가 파일 산출물로 내보내고,
+Backend가 BGE-M3로 임베딩하여 기존 `claim_document` / `claim_chunk` /
+`claim_chunk_ingredient`에 적재하는 경계를 정의한다. 런타임 Agent가 Case 본문에서 성분이나
+Claim을 새로 추론하는 경로는 만들지 않는다.
+
+### 선행 corpus 검증
+
+Data는 annotation 전에 다음 세 파일을 생성한다.
+
+- `data/processed/nia_qa_10s_30s.jsonl`: 10~39세 원본 Q-CoT-A 레코드 3,581건
+- `data/processed/nia_qa_10s_30s.provenance.jsonl`: split·archive·원본 위치 정보
+- `data/processed/nia_qa_10s_30s.manifest.json`: 건수와 SHA-256
+
+원본 corpus의 `info.id` 집합은 기존
+`data/processed/nia_case_documents_10s_30s.jsonl`의 `document.case_id` 집합과 정확히 같아야
+한다. 누락·추가·중복 ID가 한 건이라도 있으면 LLM 호출 전에 실패한다. Training 3,177건과
+Validation 404건은 모두 annotation·검색 corpus에 포함하고, 평가용 골든 질의는 문서 split을
+빼는 방식이 아니라 별도 질의 세트로 관리한다.
+
+### 안전한 annotation 실행 규칙
+
+- 기본 실행은 전체 3,581건을 즉시 호출하지 않는다.
+- `--dry-run`은 corpus·provenance·기존 출력의 무결성과 처리 대상만 계산한다.
+- `--limit N` 또는 반복 가능한 `--record-id`로 소량 실행할 수 있다.
+- 제한 없는 전체 실행은 `--approve-full-run`을 명시한 경우에만 허용한다.
+- 완료 판정은 production annotation JSONL에 실제로 저장된 `record_id`만 사용한다.
+- 성공 건은 한 건마다 append·flush·fsync하고, 재실행은 미완료 ID만 이어서 처리한다.
+- annotation version과 provider/model 조합이 기존 canonical 값과 다르면 실행하지 않는다.
+
+### Data Claim export
+
+Data는 annotation JSONL과 statement별 ingestion decision JSONL을 결합하여 다음 논리 구조를
+JSONL과 manifest로 내보낸다. Data 타입 소유 위치는
+`data/scripts/nia_case_rag/claim_export_schemas.py`다.
+
+```python
+from enum import StrEnum
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
+
+
+class ClaimExportDecision(StrEnum):
+    BLOCKED = "blocked"
+    HUMAN_REVIEW = "human_review"
+    INGESTIBLE_STRUCTURED = "ingestible_structured"
+    INGESTIBLE_FREE_TEXT = "ingestible_free_text"
+
+
+class ClaimExportIngredientRef(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    ingredient_id: UUID | None
+    raw_name: str | None
+    matching_status: str
+    role: str
+
+
+class ClaimExportStatement(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    statement_id: str
+    statement_type: str
+    content: str
+    source_spans: list[dict[str, object]]
+    decision: ClaimExportDecision
+    priority: str
+    support_status: str
+    ingredient_refs: list[ClaimExportIngredientRef]
+
+
+class ClaimExportRecord(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_record_id: str
+    annotation_version: str
+    schema_version: str
+    dataset_split: str
+    skin_concerns_raw: list[str]
+    production_ready: bool
+    statements: list[ClaimExportStatement]
+```
+
+모든 statement와 decision은 export에 보존한다. Backend 적재는 운영 검색 정책과 동일하게
+`ingestible_structured`와 `ingestible_free_text`만 저장하며 `blocked`와 `human_review`는
+제외한다. 따라서 전체 Case가 성공적으로 annotation되어도 모든 Case에 검색 가능한 Claim이
+생긴다고 보장하지 않는다. 연결 Claim이 없는 Case는 Agent의 기존 제한 없는 Claim 검색
+fallback 대상이다.
+
+### Backend Claim 적재
+
+```python
+class ClaimIngestionService:
+    async def ingest_jsonl(
+        self,
+        request: ClaimIngestionRequest,
+    ) -> ClaimIngestionResult: ...
+```
+
+- Backend 입력 타입 소유: `backend/services/claim_ingestion_schemas.py`
+- DB 쓰기: `backend/repositories/claim_document_repository.py`,
+  `backend/repositories/claim_chunk_repository.py`
+- 임베딩: Agent의 기존 `TextEmbedder` 포트를 주입받아 사용
+- 임베딩 모델: `BAAI/bge-m3`, 차원 1,024
+- 자연키: `claim_document(source_record_id, annotation_version)` 및
+  `claim_chunk(claim_document_id, statement_id)`
+- 동일 document 재적재는 해당 document의 chunk와 성분 연결을 입력과 정확히 동기화한다.
+- Repository는 commit하지 않고 Service가 batch 단위 commit·rollback을 담당한다.
+- manifest SHA-256·건수·annotation version 불일치, 중복 document/statement ID,
+  잘못된 성분 연결, BGE-M3가 아닌 모델 또는 1,024가 아닌 벡터는 저장 전에 실패한다.
+
+DB 테이블은 이미 존재하므로 이 단계에서 새 모델이나 마이그레이션은 만들지 않는다.

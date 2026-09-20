@@ -207,3 +207,22 @@ Evidence RAG 저장·검수 흐름을 구현하기 전까지는 다음 기준을
 상태일 뿐이라면 `review_status` 같은 별도 컬럼이 필요하며, 이 경우 ERD 문서 확인 후 모델과
 마이그레이션을 작성한다. 어느 경우든 `docs/contracts/backend-to-agent.md`의 현재 `verified` 예시는
 실제 저장 계약에 맞게 먼저 수정하고 통합 테스트를 추가한다.
+
+## NIA Claim 적재 연결 (2026-09-21)
+
+Data가 생성한 `nia_claim_documents_production.jsonl`과 manifest를 검증하고, 검색 가능한
+`ingestible_structured`/`ingestible_free_text` statement만 BGE-M3 1,024차원으로 임베딩해
+기존 Claim 테이블에 동기화한다.
+
+```powershell
+uv run python -m backend.services.claim_ingestion_service
+```
+
+- `claim_document`: annotation record 단위 provenance
+- `claim_chunk`: 검색 가능한 statement만 저장
+- `claim_chunk_ingredient`: matched 및 unresolved 성분 연결 보존
+- batch commit/rollback은 Service, SQL은 Repository가 담당
+- 기존 Claim 모델을 사용하므로 새 migration은 없다.
+
+입력 계약과 실패 규칙은 [data-to-backend.md](../contracts/data-to-backend.md)의
+`NIA Claim production 산출물 적재 계약` 절을 따른다.

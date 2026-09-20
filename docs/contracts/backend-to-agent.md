@@ -567,7 +567,6 @@ class CaseMetadata(RagModel):
 class CaseSearchRequest(RagModel):
     query: str = Field(min_length=1)
     query_embedding: EmbeddingVector
-    dataset_split: CaseDatasetSplit = CaseDatasetSplit.TRAINING
     text_version: str = Field(min_length=1)
     embedding_model: str = Field(min_length=1)
     candidate_limit: int = Field(default=20, ge=3)
@@ -624,12 +623,17 @@ NIA 원문의 `evidence_sources`는 Backend 저장소에는 보존하지만 Agen
 
 Backend는 `BackendNiaCaseRetriever`를 구현해 주입한다.
 
-- `dataset_split`, `text_version`, `embedding_model`은 정확히 일치하는 행만 검색한다.
+- 운영 검색은 `training`과 `validation`을 합친 3,581건 전체를 사용하며 `dataset_split`으로
+  후보를 제외하지 않는다. split 값은 결과 provenance와 분석을 위해 그대로 반환한다.
+- `text_version`, `embedding_model`은 정확히 일치하는 행만 검색한다.
 - 질의 벡터는 BGE-M3 1,024차원인지 조회 전에 검증한다.
 - cosine similarity 내림차순으로 `candidate_limit`개까지 반환한다.
 - ORM과 DB session은 Agent에 노출하지 않는다.
 - BGE reranker는 1차 후보만 읽고 최종 3개를 반환한다.
 - 임의의 similarity cutoff는 평가 전에 적용하지 않는다.
+
+평가용 골든 셋은 Case 문서를 운영 corpus에서 제외해서 만드는 방식이 아니라 별도 사용자 질의와
+기대 Case/Claim 연결을 정의하는 방식으로 관리한다.
 
 ### 10.3 Case → Claim 연결
 

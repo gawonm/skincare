@@ -161,3 +161,26 @@ SHA-256도 일치했다.
 - 채팅 히스토리 테이블 생성 요청(backend 파트가 넘긴 인터페이스): [docs/contracts/backend-to-data.md](../contracts/backend-to-data.md)
 - 올리브영 글로벌 키워드 검색 파이프라인 인수인계: [oliveyoung_global_pipeline_handoff.md](oliveyoung_global_pipeline_handoff.md)
 - 전성분 파싱·매칭·RAG 인수인계: [SKINCARE_DATA_RAG_HANDOFF.md](SKINCARE_DATA_RAG_HANDOFF.md)
+
+## NIA Claim production 준비·변환 (2026-09-21)
+
+NIA Case와 같은 10~39세 3,581건을 Claim annotation 입력으로 만들고 ID를 전수 대조한다. 이
+명령은 LLM을 호출하지 않는다.
+
+```powershell
+uv run python -m data.scripts.nia_case_rag.annotation_corpus_exporter `
+  --input-root "C:\Users\Admin\Documents\03.스킨케어 성분-효능 추천 데이터"
+
+uv run python -m data.scripts.nia_production_annotation_run --dry-run
+```
+
+실제 annotation은 `--limit N` 또는 `--record-id`로 소량 실행한다. 제한 없는 실행은
+`--approve-full-run`이 있어야 시작된다. annotation과 ingestion decision이 생성된 뒤 다음
+명령으로 Backend 적재용 Claim JSONL을 만든다.
+
+```powershell
+uv run python -m data.scripts.nia_case_rag.claim_exporter
+```
+
+상세 계약과 실행 순서는 [data-to-backend.md](../contracts/data-to-backend.md) 및
+[통합 작업일지](../agent/RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md) 13절을 따른다.

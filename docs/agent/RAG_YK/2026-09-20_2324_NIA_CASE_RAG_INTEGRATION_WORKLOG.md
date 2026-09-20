@@ -268,7 +268,8 @@ sample 설정의 기본 DB명은 변경하지 않았다.
 
 ### Backend
 
-- `nia_case_document`에서 `training`, `nia_case_text/v1`, `BAAI/bge-m3`를 정확히 필터링
+- `nia_case_document`의 training/validation 3,581건 전체에서 검색
+- `nia_case_text/v1`, `BAAI/bge-m3`는 정확히 필터링하고 split은 provenance로 반환
 - cosine 후보 20건 조회 후 BGE reranker Top-3 반환
 - Claim 검색에 선택적 `source_record_ids` 필터 추가
 - `nia_case_document.case_id = claim_document.source_record_id`로 논리 연결
@@ -284,7 +285,7 @@ sample 설정의 기본 DB명은 변경하지 않았다.
 
 1. 피부 고민 → Case Top-3 → 연결 Claim
 2. 명시 성분 질의의 Case 생략
-3. Validation split 운영 검색 제외
+3. Training/Validation 전체 검색 및 split provenance 보존
 4. Case 실패·결과 없음·연결 Claim 없음 fallback
 5. Evidence가 없어도 Claim-only 상품 유지
 6. NIA `evidence_sources` Citation 차단
@@ -368,3 +369,126 @@ uv run python -m tests.agent.two_layer_rag_dump_smoke
 `TWO_LAYER_RAG_FOLLOWUP_PLAN.md`은 완료된 구현 이력 때문에 남겼고,
 `AGENT_INTEGRATION_REVIEW.md`는 다른 파트 문서가 참조하므로 역사 문서로 보존했다. 초기 기획 문서는
 삭제하지 않고 문서 상단에서 이 합본을 우선하도록 안내한다.
+
+## 13. Case → Claim production 경로 구현 — 2026-09-21 01:30 KST
+
+### 확인한 사실
+
+- `skincare_reference_2026-09-20_v2.dump`의 Product/Evidence와 NIA Claim annotation은 서로
+  다른 산출물이다.
+- 과거 `1,497건`은 코드 주석에 남은 이전 실행 이력이며 현재 재사용 가능한 annotation JSONL이나
+  DB 데이터가 아니다.
+- 현재 production annotation 산출물 기준 완료 건수는 0건이다.
+- 기존 통합 DB의 Claim document 1건/chunk 5건은 smoke fixture이며 전체 coverage가 아니다.
+
+### 이번에 구현한 흐름
+
+```text
+AI Hub Q-CoT-A 원본
+  → 10~39세 annotation corpus + provenance + manifest
+  → Case Document 3,581건과 record ID 전수 대조
+  → 안전한 offline LLM annotation
+  → statement별 ingestion decision 재생성
+  → Claim export JSONL + manifest
+  → BGE-M3 1,024차원 임베딩
+  → claim_document / claim_chunk / claim_chunk_ingredient 동기화
+```
+
+새 annotation corpus exporter의 실데이터 실행 결과:
+
+| 항목 | 결과 |
+| --- | ---: |
+| 전체 원본 | 9,000건 |
+| 10~39세 corpus | 3,581건 |
+| Training / Validation | 3,177 / 404 |
+| Case Document ID 누락 / 추가 | 0 / 0 |
+| 기존 production annotation 완료 | 0건 |
+
+`uv run python -m data.scripts.nia_production_annotation_run --dry-run`으로 위 상태를 검증했으며
+OpenAI API는 호출하지 않았다.
+
+### 안전장치
+
+- 기본 명령만으로는 3,581건 전체 LLM 호출이 시작되지 않는다.
+- `--dry-run`: 입력·manifest·기존 결과만 검증한다.
+- `--limit N`: 미완료 record 중 앞의 N건만 처리한다.
+- `--record-id <ID>`: 지정 record만 처리한다. 반복 지정 가능하다.
+- `--approve-full-run`: 제한 없는 전체 실행에 반드시 필요하다.
+- 성공한 annotation은 건별 append·flush·fsync하며, 재실행은 JSONL에 없는 ID만 처리한다.
+- corpus/provenance/Case Document SHA-256 또는 ID 집합이 바뀌면 LLM 호출 전에 중단한다.
+
+### Claim export·DB 적재 정책
+
+- 모든 statement와 `blocked`/`human_review`/`ingestible_*` decision은 export JSONL에 보존한다.
+- DB의 검색 대상 `claim_chunk`에는 `ingestible_structured`와
+  `ingestible_free_text`만 동기화한다.
+- `blocked`와 `human_review`는 검색 청크에서 제외하지만 원본 annotation과 export에는 남는다.
+- `claim_document`는 annotation record 단위로 저장하므로 eligible statement가 0개인 Case도
+  annotation provenance를 유지할 수 있다.
+- Claim content는 statement type별 규칙으로 결정적으로 조립하며 런타임 LLM으로 다시 만들지 않는다.
+- 임베딩은 Evidence·Case와 동일한 `BAAI/bge-m3`, 1,024차원을 사용한다.
+- 기존 Claim 테이블을 사용하므로 모델·migration 변경은 없다.
+
+### 실행 순서
+
+1. corpus 재검증이 필요할 때만 다음을 실행한다.
+
+   ```powershell
+   uv run python -m data.scripts.nia_case_rag.annotation_corpus_exporter `
+     --input-root "C:\Users\Admin\Documents\03.스킨케어 성분-효능 추천 데이터" `
+     --overwrite
+   ```
+
+2. 비용 없는 사전 점검:
+
+   ```powershell
+   uv run python -m data.scripts.nia_production_annotation_run --dry-run
+   ```
+
+3. 별도 승인 후 5건 smoke annotation:
+
+   ```powershell
+   uv run python -m data.scripts.nia_production_annotation_run --limit 5
+   ```
+
+4. 성공한 annotation을 Claim export로 변환:
+
+   ```powershell
+   uv run python -m data.scripts.nia_case_rag.claim_exporter
+   ```
+
+5. Claim을 BGE-M3로 임베딩하고 DB에 적재:
+
+   ```powershell
+   uv run python -m backend.services.claim_ingestion_service
+   ```
+
+6. 5건 결과와 비용·품질을 확인한 뒤에만 전체 annotation을 승인한다.
+
+   ```powershell
+   uv run python -m data.scripts.nia_production_annotation_run --approve-full-run
+   ```
+
+### 검증 결과와 다음 체크포인트
+
+```powershell
+uv run pytest tests/unit/test_nia_annotation_corpus_exporter.py `
+  tests/unit/test_nia_production_annotation_run.py `
+  tests/unit/test_nia_claim_exporter.py `
+  tests/unit/test_claim_ingestion_service.py `
+  tests/unit/test_nia_case_ingestion_service.py `
+  tests/unit/test_claim_storage_schema.py -q
+# 39 passed
+```
+
+- [x] 원본 corpus·provenance exporter
+- [x] Case Document 3,581건 ID 전수 대조
+- [x] annotation dry-run·limit·record-id·전체 승인 안전장치
+- [x] annotation → Claim 결정적 변환기
+- [x] Claim BGE-M3 적재 service/repository
+- [x] 관련 단위 테스트 39개와 Ruff 검사
+- [x] 전체 unit 274개 및 Agent 127개 회귀 테스트
+- [ ] OpenAI 5건 smoke annotation — 비용 발생 전 별도 승인 필요
+- [ ] 5건 Claim export·DB 적재·검색 smoke
+- [ ] 전체 3,581건 annotation — 5건 결과 확인 후 별도 승인 필요
+- [ ] P3 Case 검색 및 LangGraph 연결
