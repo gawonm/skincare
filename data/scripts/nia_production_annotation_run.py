@@ -23,26 +23,42 @@ review_queue/claim_ingestion은 Phase 2로 분리한다 - production annotation 
 반영해 통째로 다시 쓴다.
 
 사용법:
-    uv run python -m data.scripts.nia_production_annotation_run
+    uv run python -m data.scripts.nia_production_annotation_run --dry-run
+    uv run python -m data.scripts.nia_production_annotation_run --limit 5
+    uv run python -m data.scripts.nia_production_annotation_run --approve-full-run
 """
 
+import argparse
 import asyncio
+import hashlib
+import io
 import json
 import os
 import sys
+from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from backend.repositories.ingredient_master_repository import IngredientMasterRepository
 from core.config import settings
 from core.database import Database
-from data.scripts.nia_labeling_schemas import NiaLabelingDocument
 from data.scripts.ingredient_name_matcher import IngredientNameMatcher
 from data.scripts.ingredient_name_normalizer import IngredientNameNormalizer
+from data.scripts.nia_case_rag.annotation_corpus_schemas import (
+    NiaAnnotationCorpusManifest,
+    NiaAnnotationCorpusProvenance,
+)
 from data.scripts.nia_claim_ingestion_policy import NiaClaimIngestionPolicy
 from data.scripts.nia_ingredient_matching_stage import NiaIngredientMatchingStage
 from data.scripts.nia_labeling_parser import DocumentReport, NiaLabelingParser
+from data.scripts.nia_labeling_schemas import NiaLabelingDocument
 from data.scripts.nia_llm_labeler import NiaLlmLabeler
+from data.scripts.nia_original_schemas import NiaOriginalRecord
 from data.scripts.nia_pilot_runner import (
     NiaPilotRecordProcessor,
     _is_blocking_reason,
@@ -52,6 +68,9 @@ from data.scripts.nia_record_provenance import NiaRecordProvenanceIndex
 from data.scripts.nia_source_span_builder import NiaSourceSpanBuilder
 
 _QA_CORPUS_PATH = Path("data/processed/nia_qa_10s_30s.jsonl")
+_QA_PROVENANCE_PATH = Path("data/processed/nia_qa_10s_30s.provenance.jsonl")
+_QA_MANIFEST_PATH = Path("data/processed/nia_qa_10s_30s.manifest.json")
+_CASE_DOCUMENTS_PATH = Path("data/processed/nia_case_documents_10s_30s.jsonl")
 
 _OUT_DIR = Path("data/processed")
 _PRODUCTION_ANNOTATIONS_PATH = _OUT_DIR / "nia_10s_30s_annotations_production.jsonl"
@@ -75,6 +94,91 @@ _CANONICAL_PRODUCTION_MODEL = "gpt-4o-mini"
 
 # nia_pilot_runner.py의 review_reasons 문자열과 동일한 markers - 새로 만들지 않고 그대로 맞춘다.
 _BLOCKING_REASON_MARKERS = ("span_semantic_mismatch", "span_semantic_confidence_low", "span fuzzy")
+_SHA256_READ_SIZE_BYTES = 1024 * 1024
+
+
+class NiaProductionRunErrorCode(StrEnum):
+    INVALID_INPUT = "invalid_input"
+    MANIFEST_MISMATCH = "manifest_mismatch"
+    UNKNOWN_RECORD_ID = "unknown_record_id"
+    FULL_RUN_APPROVAL_REQUIRED = "full_run_approval_required"
+
+
+class NiaProductionRunError(RuntimeError):
+    def __init__(self, code: NiaProductionRunErrorCode, message: str) -> None:
+        self.code = code
+        super().__init__(f"NIA production annotation 실행 실패 [{code.value}]: {message}")
+
+
+class NiaProductionAnnotationRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    input_path: Path = _QA_CORPUS_PATH
+    provenance_path: Path = _QA_PROVENANCE_PATH
+    manifest_path: Path = _QA_MANIFEST_PATH
+    case_documents_path: Path = _CASE_DOCUMENTS_PATH
+    annotations_path: Path = _PRODUCTION_ANNOTATIONS_PATH
+    failures_path: Path = _PRODUCTION_FAILURES_PATH
+    review_signals_path: Path = _PRODUCTION_REVIEW_SIGNALS_PATH
+    review_queue_path: Path = _PRODUCTION_REVIEW_QUEUE_PATH
+    claim_ingestion_path: Path = _PRODUCTION_CLAIM_INGESTION_PATH
+    limit: int | None = Field(default=None, ge=1)
+    record_ids: tuple[str, ...] = ()
+    dry_run: bool = False
+    approve_full_run: bool = False
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> Self:
+        if len(self.record_ids) != len(set(self.record_ids)):
+            raise ValueError("--record-id에 중복 값이 있습니다.")
+        if self.limit is not None and self.record_ids:
+            raise ValueError("--limit과 --record-id는 동시에 사용할 수 없습니다.")
+        has_selection = self.limit is not None or bool(self.record_ids)
+        if not self.dry_run and not has_selection and not self.approve_full_run:
+            raise ValueError(
+                "제한 없는 전체 실행은 --approve-full-run이 필요합니다. "
+                "먼저 --dry-run 또는 --limit N을 사용하세요."
+            )
+        if self.approve_full_run and has_selection:
+            raise ValueError("--approve-full-run은 --limit/--record-id와 함께 사용할 수 없습니다.")
+        return self
+
+
+class NiaProductionRunPlan(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    corpus_count: int = Field(ge=0)
+    completed_count: int = Field(ge=0)
+    pending_count: int = Field(ge=0)
+    selected_record_ids: list[str]
+    dry_run: bool
+
+
+class NiaProductionInputBundle(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    records: dict[str, NiaOriginalRecord]
+    provenance: NiaRecordProvenanceIndex
+    manifest: NiaAnnotationCorpusManifest
+
+
+class NiaProductionPreparedRun(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    bundle: NiaProductionInputBundle
+    plan: NiaProductionRunPlan
+
+
+class NiaProductionExecutionResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    corpus_count: int = Field(ge=0)
+    completed_before_count: int = Field(ge=0)
+    selected_count: int = Field(ge=0)
+    newly_completed_count: int = Field(ge=0)
+    failed_count: int = Field(ge=0)
+    completed_after_count: int = Field(ge=0)
+    dry_run: bool
 
 
 class NiaProductionOutputIntegrityError(RuntimeError):
@@ -95,13 +199,157 @@ def _append_jsonl(path: Path, item: dict) -> None:
         os.fsync(f.fileno())
 
 
-def _load_qa_corpus() -> dict[str, dict]:
+def _load_qa_corpus(path: Path = _QA_CORPUS_PATH) -> dict[str, dict]:
+    """과거 내부 호출 호환용이다. 새 CLI는 manifest까지 검증하는 reader를 사용한다."""
     records: dict[str, dict] = {}
-    with _QA_CORPUS_PATH.open("r", encoding="utf-8") as f:
-        for line in f:
-            rec = json.loads(line)
-            records[rec["info"]["id"]] = rec
+    with path.open("r", encoding="utf-8") as input_file:
+        for line_number, line in enumerate(input_file, start=1):
+            try:
+                record = NiaOriginalRecord.model_validate_json(line)
+            except ValidationError as exc:
+                raise NiaProductionRunError(
+                    NiaProductionRunErrorCode.INVALID_INPUT,
+                    f"NIA corpus 스키마 오류: {path}:{line_number}: {exc}",
+                ) from exc
+            record_id = record.info.id
+            if record_id in records:
+                raise NiaProductionRunError(
+                    NiaProductionRunErrorCode.INVALID_INPUT,
+                    f"NIA corpus record_id 중복: {path}:{line_number}: {record_id}",
+                )
+            records[record_id] = record.model_dump(mode="json")
     return records
+
+
+class NiaProductionInputReader:
+    """LLM·DB 연결 전에 corpus, provenance, manifest의 동일성을 검증한다."""
+
+    def read(self, request: NiaProductionAnnotationRequest) -> NiaProductionInputBundle:
+        self._validate_paths(request)
+        manifest = self._read_manifest(request.manifest_path)
+        records = self._read_records(request.input_path)
+        provenance_rows = self._read_provenance(request.provenance_path)
+        self._validate_manifest(request, manifest, records, provenance_rows)
+        provenance = NiaRecordProvenanceIndex(request.provenance_path)
+        return NiaProductionInputBundle(
+            records=records,
+            provenance=provenance,
+            manifest=manifest,
+        )
+
+    def _validate_paths(self, request: NiaProductionAnnotationRequest) -> None:
+        required_paths = (
+            request.input_path,
+            request.provenance_path,
+            request.manifest_path,
+            request.case_documents_path,
+        )
+        missing = [str(path) for path in required_paths if not path.is_file()]
+        if missing:
+            raise NiaProductionRunError(
+                NiaProductionRunErrorCode.INVALID_INPUT,
+                f"필수 입력 파일이 없습니다: {missing}",
+            )
+
+    def _read_manifest(self, path: Path) -> NiaAnnotationCorpusManifest:
+        try:
+            return NiaAnnotationCorpusManifest.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValidationError) as exc:
+            raise NiaProductionRunError(
+                NiaProductionRunErrorCode.INVALID_INPUT,
+                f"annotation corpus manifest를 읽거나 검증하지 못했습니다: {path}: {exc}",
+            ) from exc
+
+    def _read_records(self, path: Path) -> dict[str, NiaOriginalRecord]:
+        records: dict[str, NiaOriginalRecord] = {}
+        with path.open("r", encoding="utf-8") as input_file:
+            for line_number, line in enumerate(input_file, start=1):
+                try:
+                    record = NiaOriginalRecord.model_validate_json(line)
+                except ValidationError as exc:
+                    raise NiaProductionRunError(
+                        NiaProductionRunErrorCode.INVALID_INPUT,
+                        f"NIA corpus 스키마 오류: {path}:{line_number}: {exc}",
+                    ) from exc
+                record_id = record.info.id
+                if record_id in records:
+                    raise NiaProductionRunError(
+                        NiaProductionRunErrorCode.INVALID_INPUT,
+                        f"NIA corpus record_id 중복: {path}:{line_number}: {record_id}",
+                    )
+                records[record_id] = record
+        return records
+
+    def _read_provenance(self, path: Path) -> dict[str, NiaAnnotationCorpusProvenance]:
+        rows: dict[str, NiaAnnotationCorpusProvenance] = {}
+        with path.open("r", encoding="utf-8") as input_file:
+            for line_number, line in enumerate(input_file, start=1):
+                try:
+                    row = NiaAnnotationCorpusProvenance.model_validate_json(line)
+                except ValidationError as exc:
+                    raise NiaProductionRunError(
+                        NiaProductionRunErrorCode.INVALID_INPUT,
+                        f"NIA provenance 스키마 오류: {path}:{line_number}: {exc}",
+                    ) from exc
+                if row.record_id in rows:
+                    raise NiaProductionRunError(
+                        NiaProductionRunErrorCode.INVALID_INPUT,
+                        f"NIA provenance record_id 중복: {path}:{line_number}: {row.record_id}",
+                    )
+                rows[row.record_id] = row
+        return rows
+
+    def _validate_manifest(
+        self,
+        request: NiaProductionAnnotationRequest,
+        manifest: NiaAnnotationCorpusManifest,
+        records: dict[str, NiaOriginalRecord],
+        provenance: dict[str, NiaAnnotationCorpusProvenance],
+    ) -> None:
+        comparisons = (
+            ("corpus", manifest.corpus_sha256, self._sha256(request.input_path)),
+            (
+                "provenance",
+                manifest.provenance_sha256,
+                self._sha256(request.provenance_path),
+            ),
+            (
+                "case_documents",
+                manifest.case_documents_sha256,
+                self._sha256(request.case_documents_path),
+            ),
+        )
+        for label, expected, actual in comparisons:
+            if expected != actual:
+                self._raise_manifest_mismatch(
+                    f"{label} SHA-256 불일치: manifest={expected}, actual={actual}"
+                )
+
+        if len(records) != manifest.output_record_count:
+            self._raise_manifest_mismatch(
+                f"corpus 건수 불일치: manifest={manifest.output_record_count}, actual={len(records)}"
+            )
+        if set(records) != set(provenance):
+            missing = set(records) - set(provenance)
+            extra = set(provenance) - set(records)
+            self._raise_manifest_mismatch(
+                f"corpus와 provenance ID 집합 불일치: missing={len(missing)}, extra={len(extra)}"
+            )
+        split_counts = Counter(row.dataset_split.value for row in provenance.values())
+        if split_counts["training"] != manifest.training_record_count:
+            self._raise_manifest_mismatch("training 건수가 provenance와 다릅니다.")
+        if split_counts["validation"] != manifest.validation_record_count:
+            self._raise_manifest_mismatch("validation 건수가 provenance와 다릅니다.")
+
+    def _sha256(self, path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as input_file:
+            while chunk := input_file.read(_SHA256_READ_SIZE_BYTES):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _raise_manifest_mismatch(self, message: str) -> None:
+        raise NiaProductionRunError(NiaProductionRunErrorCode.MANIFEST_MISMATCH, message)
 
 
 class NiaProductionAnnotationStore:
@@ -325,79 +573,229 @@ def regenerate_downstream(
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-async def _run() -> None:
-    qa_corpus = _load_qa_corpus()
-    store = NiaProductionAnnotationStore(_PRODUCTION_ANNOTATIONS_PATH)
-    already_done = store.load_completed_record_ids(set(qa_corpus.keys()))
-    target_ids = [rid for rid in qa_corpus if rid not in already_done]
+class NiaProductionAnnotationApplication:
+    def __init__(self, reader: NiaProductionInputReader | None = None) -> None:
+        self._reader = reader or NiaProductionInputReader()
 
-    print(
-        f"corpus 전체 {len(qa_corpus)}건, 이미 완료 {len(already_done)}건, 이번에 처리할 {len(target_ids)}건"
-    )
-    if not target_ids:
-        print("처리할 record가 없습니다 - 이미 전부 완료됨.")
+    def prepare(self, request: NiaProductionAnnotationRequest) -> NiaProductionPreparedRun:
+        bundle = self._reader.read(request)
+        valid_record_ids = set(bundle.records)
+        store = NiaProductionAnnotationStore(request.annotations_path)
+        already_done = store.load_completed_record_ids(valid_record_ids)
+        pending_ids = [record_id for record_id in bundle.records if record_id not in already_done]
+        selected_ids = self._select_record_ids(request, valid_record_ids, pending_ids)
+        return NiaProductionPreparedRun(
+            bundle=bundle,
+            plan=NiaProductionRunPlan(
+                corpus_count=len(bundle.records),
+                completed_count=len(already_done),
+                pending_count=len(pending_ids),
+                selected_record_ids=selected_ids,
+                dry_run=request.dry_run,
+            ),
+        )
+
+    async def run(self, request: NiaProductionAnnotationRequest) -> NiaProductionExecutionResult:
+        prepared = self.prepare(request)
+        plan = prepared.plan
+        if request.dry_run:
+            return self._to_result(plan, newly_completed_count=0)
+
+        self._prepare_output_directories(request)
+        if not plan.selected_record_ids:
+            regenerate_downstream(
+                request.annotations_path,
+                request.review_signals_path,
+                request.review_queue_path,
+                request.claim_ingestion_path,
+            )
+            return self._to_result(plan, newly_completed_count=0)
+
+        matching_stage = await self._create_matching_stage()
+        labeler = self._create_labeler()
+        processor = NiaPilotRecordProcessor(
+            labeler,
+            NiaSourceSpanBuilder(),
+            matching_stage,
+            prepared.bundle.provenance,
+        )
+        store = NiaProductionAnnotationStore(request.annotations_path)
+        already_done = store.load_completed_record_ids(set(prepared.bundle.records))
+        raw_records = {
+            record_id: record.model_dump(mode="json")
+            for record_id, record in prepared.bundle.records.items()
+        }
+        runner = NiaProductionAnnotationRunner(
+            processor,
+            NiaLabelingParser(),
+            store,
+            request.failures_path,
+            request.review_signals_path,
+            _CANONICAL_PRODUCTION_ANNOTATION_VERSION,
+        )
+        await runner.run_many(plan.selected_record_ids, raw_records, already_done)
         regenerate_downstream(
-            _PRODUCTION_ANNOTATIONS_PATH,
-            _PRODUCTION_REVIEW_SIGNALS_PATH,
-            _PRODUCTION_REVIEW_QUEUE_PATH,
-            _PRODUCTION_CLAIM_INGESTION_PATH,
+            request.annotations_path,
+            request.review_signals_path,
+            request.review_queue_path,
+            request.claim_ingestion_path,
         )
-        return
-
-    database = Database(settings.database)
-    try:
-        async with database.session_factory() as session:
-            candidates = await IngredientMasterRepository(session).list_all_as_candidates()
-    finally:
-        await database.dispose()
-    matcher = IngredientNameMatcher(candidates, IngredientNameNormalizer())
-    matching_stage = NiaIngredientMatchingStage(matcher)
-
-    if settings.agent.chat.provider.value == "openai" and settings.openai is None:
-        raise RuntimeError(
-            "provider=openai인데 config.yaml에 openai 블록이 없어 실행할 수 없습니다."
+        final_done = store.load_completed_record_ids(set(prepared.bundle.records))
+        newly_completed_count = len(final_done) - plan.completed_count
+        return NiaProductionExecutionResult(
+            corpus_count=plan.corpus_count,
+            completed_before_count=plan.completed_count,
+            selected_count=len(plan.selected_record_ids),
+            newly_completed_count=newly_completed_count,
+            failed_count=len(plan.selected_record_ids) - newly_completed_count,
+            completed_after_count=len(final_done),
+            dry_run=False,
         )
-    labeler = NiaLlmLabeler(settings.agent.chat, settings.openai)
-    if (
-        labeler.provider != _CANONICAL_PRODUCTION_PROVIDER
-        or labeler.model != _CANONICAL_PRODUCTION_MODEL
-    ):
-        raise RuntimeError(
-            f"canonical annotation_version {_CANONICAL_PRODUCTION_ANNOTATION_VERSION!r}은 "
-            f"provider={_CANONICAL_PRODUCTION_PROVIDER}/model={_CANONICAL_PRODUCTION_MODEL} 전용입니다. "
-            f"현재 provider={labeler.provider}, model={labeler.model}로는 사용할 수 없습니다 - "
-            "이 run의 provider/model 설정이 의도한 것인지 먼저 확인하세요."
+
+    def _select_record_ids(
+        self,
+        request: NiaProductionAnnotationRequest,
+        valid_record_ids: set[str],
+        pending_ids: list[str],
+    ) -> list[str]:
+        if request.record_ids:
+            unknown_ids = set(request.record_ids) - valid_record_ids
+            if unknown_ids:
+                raise NiaProductionRunError(
+                    NiaProductionRunErrorCode.UNKNOWN_RECORD_ID,
+                    f"corpus에 없는 --record-id가 있습니다: {sorted(unknown_ids)}",
+                )
+            pending_set = set(pending_ids)
+            return [record_id for record_id in request.record_ids if record_id in pending_set]
+        if request.limit is not None:
+            return pending_ids[: request.limit]
+        return pending_ids
+
+    async def _create_matching_stage(self) -> NiaIngredientMatchingStage:
+        database = Database(settings.database)
+        try:
+            async with database.session_factory() as session:
+                candidates = await IngredientMasterRepository(session).list_all_as_candidates()
+        finally:
+            await database.dispose()
+        matcher = IngredientNameMatcher(candidates, IngredientNameNormalizer())
+        return NiaIngredientMatchingStage(matcher)
+
+    def _create_labeler(self) -> NiaLlmLabeler:
+        if (
+            settings.agent.chat.provider.value == _CANONICAL_PRODUCTION_PROVIDER
+            and settings.openai is None
+        ):
+            raise RuntimeError(
+                "provider=openai인데 config.yaml에 openai 블록이 없어 실행할 수 없습니다."
+            )
+        labeler = NiaLlmLabeler(settings.agent.chat, settings.openai)
+        if (
+            labeler.provider != _CANONICAL_PRODUCTION_PROVIDER
+            or labeler.model != _CANONICAL_PRODUCTION_MODEL
+        ):
+            raise RuntimeError(
+                f"canonical annotation_version {_CANONICAL_PRODUCTION_ANNOTATION_VERSION!r}은 "
+                f"provider={_CANONICAL_PRODUCTION_PROVIDER}/model={_CANONICAL_PRODUCTION_MODEL} 전용입니다. "
+                f"현재 provider={labeler.provider}, model={labeler.model}로는 사용할 수 없습니다."
+            )
+        return labeler
+
+    def _prepare_output_directories(self, request: NiaProductionAnnotationRequest) -> None:
+        for path in (
+            request.annotations_path,
+            request.failures_path,
+            request.review_signals_path,
+            request.review_queue_path,
+            request.claim_ingestion_path,
+        ):
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _to_result(
+        self, plan: NiaProductionRunPlan, newly_completed_count: int
+    ) -> NiaProductionExecutionResult:
+        return NiaProductionExecutionResult(
+            corpus_count=plan.corpus_count,
+            completed_before_count=plan.completed_count,
+            selected_count=len(plan.selected_record_ids),
+            newly_completed_count=newly_completed_count,
+            failed_count=0,
+            completed_after_count=plan.completed_count,
+            dry_run=plan.dry_run,
         )
-    annotation_version = _CANONICAL_PRODUCTION_ANNOTATION_VERSION
-    print(
-        f"production LLM provider={labeler.provider} model={labeler.model} annotation_version={annotation_version}"
-    )
 
-    span_builder = NiaSourceSpanBuilder()
-    provenance = NiaRecordProvenanceIndex()
-    processor = NiaPilotRecordProcessor(labeler, span_builder, matching_stage, provenance)
-    parser = NiaLabelingParser()
 
-    runner = NiaProductionAnnotationRunner(
-        processor,
-        parser,
-        store,
-        _PRODUCTION_FAILURES_PATH,
-        _PRODUCTION_REVIEW_SIGNALS_PATH,
-        annotation_version,
-    )
-    await runner.run_many(target_ids, qa_corpus, already_done)
+async def _run(
+    request: NiaProductionAnnotationRequest | None = None,
+) -> NiaProductionExecutionResult:
+    """기존 내부 진입점 이름은 유지하되 안전한 request 검증을 반드시 거친다."""
+    effective_request = request or NiaProductionAnnotationRequest(dry_run=True)
+    return await NiaProductionAnnotationApplication().run(effective_request)
 
-    regenerate_downstream(
-        _PRODUCTION_ANNOTATIONS_PATH,
-        _PRODUCTION_REVIEW_SIGNALS_PATH,
-        _PRODUCTION_REVIEW_QUEUE_PATH,
-        _PRODUCTION_CLAIM_INGESTION_PATH,
-    )
-    final_done = store.load_completed_record_ids(set(qa_corpus.keys()))
-    print(f"완료: {len(final_done)}/{len(qa_corpus)}건. 저장: {_PRODUCTION_ANNOTATIONS_PATH}")
+
+class NiaProductionAnnotationArgumentParser:
+    def create(self) -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(
+            description="NIA 10~39세 corpus의 Claim annotation을 안전하게 실행합니다.",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        parser.add_argument("--input", type=Path, default=_QA_CORPUS_PATH)
+        parser.add_argument("--provenance", type=Path, default=_QA_PROVENANCE_PATH)
+        parser.add_argument("--manifest", type=Path, default=_QA_MANIFEST_PATH)
+        parser.add_argument("--case-documents", type=Path, default=_CASE_DOCUMENTS_PATH)
+        parser.add_argument("--annotations", type=Path, default=_PRODUCTION_ANNOTATIONS_PATH)
+        parser.add_argument("--failures", type=Path, default=_PRODUCTION_FAILURES_PATH)
+        parser.add_argument("--review-signals", type=Path, default=_PRODUCTION_REVIEW_SIGNALS_PATH)
+        parser.add_argument("--review-queue", type=Path, default=_PRODUCTION_REVIEW_QUEUE_PATH)
+        parser.add_argument(
+            "--claim-ingestion", type=Path, default=_PRODUCTION_CLAIM_INGESTION_PATH
+        )
+        selection = parser.add_mutually_exclusive_group()
+        selection.add_argument("--limit", type=int)
+        selection.add_argument("--record-id", action="append", default=[])
+        parser.add_argument("--dry-run", action="store_true")
+        parser.add_argument("--approve-full-run", action="store_true")
+        return parser
+
+
+class NiaProductionAnnotationEntryPoint:
+    def run(self, argv: Sequence[str] | None = None) -> int:
+        self._configure_stdout()
+        arguments = NiaProductionAnnotationArgumentParser().create().parse_args(argv)
+        request = NiaProductionAnnotationRequest(
+            input_path=arguments.input,
+            provenance_path=arguments.provenance,
+            manifest_path=arguments.manifest,
+            case_documents_path=arguments.case_documents,
+            annotations_path=arguments.annotations,
+            failures_path=arguments.failures,
+            review_signals_path=arguments.review_signals,
+            review_queue_path=arguments.review_queue,
+            claim_ingestion_path=arguments.claim_ingestion,
+            limit=arguments.limit,
+            record_ids=tuple(arguments.record_id),
+            dry_run=arguments.dry_run,
+            approve_full_run=arguments.approve_full_run,
+        )
+        result = asyncio.run(_run(request))
+        self._print_result(result)
+        return 0
+
+    def _configure_stdout(self) -> None:
+        if isinstance(sys.stdout, io.TextIOWrapper):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+    def _print_result(self, result: NiaProductionExecutionResult) -> None:
+        mode = "dry-run" if result.dry_run else "실행"
+        print(f"NIA production annotation {mode} 결과")
+        print(f"- corpus: {result.corpus_count:,}건")
+        print(f"- 기존 완료: {result.completed_before_count:,}건")
+        print(f"- 이번 선택: {result.selected_count:,}건")
+        if not result.dry_run:
+            print(f"- 신규 완료: {result.newly_completed_count:,}건")
+            print(f"- 실패: {result.failed_count:,}건")
+            print(f"- 누적 완료: {result.completed_after_count:,}건")
 
 
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    asyncio.run(_run())
+    raise SystemExit(NiaProductionAnnotationEntryPoint().run())
