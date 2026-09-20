@@ -37,6 +37,8 @@ class LoaderProtocol(Protocol):
         embedding_model: str,
     ) -> None: ...
 
+    async def commit(self) -> None: ...
+
 
 class MfdsEvidenceEmbeddingPipeline:
     def __init__(
@@ -89,6 +91,7 @@ class MfdsEvidenceEmbeddingPipeline:
                 batch_embedded, batch_failures = await self._process_batch(batch, document_ids)
                 embedded_now += batch_embedded
                 failures.extend(batch_failures)
+                await self._loader.commit()
 
         summary = MfdsEvidenceEmbeddingSummary(
             dry_run=dry_run,

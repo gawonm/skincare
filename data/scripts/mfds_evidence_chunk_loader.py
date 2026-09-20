@@ -87,3 +87,8 @@ class MfdsEvidenceChunkLoader:
                 evidence_chunk_id=chunk.id, ingredient_id=record.ingredient_id
             )
         )
+
+    async def commit(self) -> None:
+        """지금까지 삽입한 chunk 를 확정한다. 배치마다 호출해야 중단돼도 그 배치까지는 남고,
+        재실행 시 기존 chunk_id 건너뛰기로 이어서 진행할 수 있다."""
+        await self._session.commit()

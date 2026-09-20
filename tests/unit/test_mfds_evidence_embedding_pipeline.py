@@ -54,9 +54,7 @@ class _FakeEmbedder:
         self.call_count += 1
         if any(text in self.fail_on for text in texts):
             raise RuntimeError("임베딩 실패 시뮬레이션")
-        return _FakeEmbeddingResult(
-            model="BAAI/bge-m3", vectors=[[0.1] * 1024 for _ in texts]
-        )
+        return _FakeEmbeddingResult(model="BAAI/bge-m3", vectors=[[0.1] * 1024 for _ in texts])
 
 
 @dataclass
@@ -65,12 +63,16 @@ class _FakeLoader:
     existing_chunk_ids: set[str] = field(default_factory=set)
     fail_insert_chunk_ids: set[str] = field(default_factory=set)
     inserted: list[dict] = field(default_factory=list)
+    commit_count: int = 0
 
     async def load_document_ids_by_source_id(self):
         return self.document_ids
 
     async def load_existing_chunk_ids(self, chunk_ids):
         return {cid for cid in chunk_ids if cid in self.existing_chunk_ids}
+
+    async def commit(self):
+        self.commit_count += 1
 
     async def insert_chunk(self, record, *, document_id, embedding, embedding_model):
         if record.chunk_id in self.fail_insert_chunk_ids:
@@ -180,6 +182,8 @@ class TestBatching:
         assert summary.embedded_now == 5
         assert failures == []
         assert embedder.call_count == 3  # 2 + 2 + 1
+        # 배치마다 커밋해야 중간에 죽어도 그 배치까지는 DB에 남는다
+        assert loader.commit_count == 3
 
 
 class TestFailureIsolation:

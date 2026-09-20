@@ -3,9 +3,8 @@
 `config.yaml`의 `database.url` 대상 DB(`app`)의 전체 테이블. 모델 정의는 `models/*.py`,
 공통 컬럼(`id`/`created_at`/`updated_at`)은 `core/database.py`의 `EntityBase`.
 
-작성 기준: 2026-09-20, 현재 Alembic head `3165318c750d`. `evidence_document`/
-`evidence_chunk`/`evidence_chunk_ingredient`와 `claim_document`/`claim_chunk`/
-`claim_chunk_ingredient`까지 live 적용된 상태를 포함한다.
+작성 기준: 2026-09-20, 현재 Alembic head `9f4c2a7d8e61`. main의 Chat schema
+`2063ce3feae3`와 NIA Case schema `a7d3c91e5f42`를 merge revision으로 합친 상태다.
 
 **2026-09-15 갱신(1차)** — `evidence_document`/`evidence_chunk` ERD·컬럼 설계 추가(Evidence RAG,
 [EVIDENCE_RAG_DESIGN.md](../data/EVIDENCE_RAG_DESIGN.md)/[EVIDENCE_COVERAGE_AUDIT.md](../data/EVIDENCE_COVERAGE_AUDIT.md)
@@ -25,13 +24,39 @@
 섞지 않고 Case 전용 BGE-M3 1,024차원 벡터를 저장하며, 아래 설계대로 ORM과 migration을
 구현하고 실제 3,581건 적재까지 검증했다.
 
-**2026-09-18 갱신 — 로그인 사용자 채팅 히스토리 (제안, 미승인)**. `agent/ports.py`의
+**2026-09-20 상태 동기화 — Evidence 저장소는 구현·적재까지 완료됐다.** (당시 "models/migration 미작성,
+마이그레이션 전 제안 설계"라고 적었던 문구를 실제 상태로 바꿨다. 설계 결정 자체는 바꾸지 않았다.)
+
+- `models/evidence_document.py`, `models/evidence_chunk.py`(조인 테이블 `evidence_chunk_ingredient` 포함)가
+  존재하고, migration `11cdc111cf27`(`add evidence_document evidence_chunk evidence_chunk_ingredient tables`)이
+  적용돼 있다. 아래 컬럼 표는 실제 스키마와 대조했다.
+- `evidence_chunk.embedding`은 `vector(1024)`, 임베딩 모델은 `BAAI/bge-m3`다.
+- MFDS는 legacy `evidence` 8,288건을 `evidence_document` 11건(관할별)과 `evidence_chunk` 8,288건,
+  `evidence_chunk_ingredient` 8,288건으로 **전량 적재**했다(재수집이 아니라 재투영). PubMed는 smoke 3건만
+  있고(`evidence_document` 3 / `evidence_chunk` 3 / 링크 3), CIR은 적재된 것이 없다.
+  합계는 `evidence_document` 14 / `evidence_chunk` 8,291 / `evidence_chunk_ingredient` 8,291이다.
+- `rag_chunk`에는 MFDS를 재적재하지 않았고(기준 dump `skincare_reference_2026-09-20_v2.dump`에서 0건), 신규 Evidence
+  검색 저장소는 `evidence_chunk`다. `ingredient_knowledge_fact`는 공식 Evidence corpus/citation source가 아니다.
+- **저장·적재 완료와 runtime RAG 완료는 다르다.** 검색 어댑터·Agent 연결·citation 표시가 어디까지 구현됐는지는
+  Backend/Agent 문서(`docs/backend/README.md`, `docs/agent/README.md`,
+  [two-layer-rag-agent-backend-contract.md](../contracts/two-layer-rag-agent-backend-contract.md))를 따른다.
+
+**2026-09-18 갱신 — 로그인 사용자 채팅 히스토리 (2026-09-19 사용자 승인)**. `agent/ports.py`의
 `ChatHistoryRepository`와 `agent/schemas.py`(`AuthorizedRoom`/`ChatMessage`/`SessionSnapshot`
 등)를 저장 계약으로 옮긴 `CHAT_ROOM`/`CHAT_MESSAGE`/`CHAT_TURN_STATE` 3개 테이블을 추가했다.
 범위는 **로그인 사용자만**이다 — 게스트(비로그인) 세션 연속성 문제는 front 쪽 논의에서 별도
 결정 사항으로 분리됐고(단기: 프론트 `sessionStorage`, 장기: Redis 세션 — 둘 다 이 ERD 밖),
-합의되면 후속 갱신으로 다룬다. **`models`/migration은 아직 작성하지 않았다** — 사용자 승인 후
-다음 단계에서 작성한다(규칙 14).
+합의되면 후속 갱신으로 다룬다. 사용자가 2026-09-19에 이 ERD를 승인했다(규칙 14).
+**`models`/migration은 2026-09-20 기준 작성·적용됐다** — `models/chat_room.py`, `chat_message.py`,
+`chat_turn_state.py`와 migration `2063ce3feae3`(PR #46). 기준 dump에는 세 테이블이 행 0건(schema only)으로
+들어 있다. [backend-to-data.md](../contracts/backend-to-data.md) 요청에 따라 data 파트가 작성했다. LangGraph
+체크포인터 저장소는 이 ERD 범위 밖이다(Agent가 이전 대화를 기억하는 근거는 `chat_room`의
+`SessionSnapshot`이며, 체크포인터 전용 테이블은 만들지 않는다).
+
+**2026-09-19 갱신 — 사용자당 채팅방 1개.** Agent 담당자 확인으로 방 식별이 "사용자당 방 1개"로
+확정돼 `chat_room.user_id`를 UNIQUE로 바꾸고 `APP_USER`–`CHAT_ROOM` 관계를 1:0..1로 고쳤다.
+사용자가 화면을 벗어났다 다시 들어오면 화면은 빈 상태지만 Agent는 이전 대화를 기억한다.
+`docs/contracts/backend-to-data.md`의 `ChatRoom` 코드 예시에도 같은 변경을 반영했다.
 
 ## 전체 관계도
 
@@ -363,14 +388,14 @@ erDiagram
     EVIDENCE_DOCUMENT ||--o{ EVIDENCE_CHUNK : "document_id"
     EVIDENCE_CHUNK ||--o{ EVIDENCE_CHUNK_INGREDIENT : "evidence_chunk_id"
     INGREDIENT_MASTER ||--o{ EVIDENCE_CHUNK_INGREDIENT : "ingredient_id"
-    APP_USER ||--o{ CHAT_ROOM : "user_id"
+    APP_USER ||--o| CHAT_ROOM : "user_id (UNIQUE, 사용자당 1개)"
     CHAT_ROOM ||--o{ CHAT_MESSAGE : "chat_room_id"
     CHAT_ROOM ||--o{ CHAT_TURN_STATE : "chat_room_id"
 ```
 
 `PRODUCT`는 다른 테이블과 FK로 연결돼 있지 않다 — `product_ingredient_snapshot`이 상품을
 `(source, source_product_id)` 문자열 쌍으로만 참조하기 때문이다(아래 "왜 이렇게 나눴는지"
-참고). `APP_USER`는 `CHAT_ROOM`에만 연결된다(로그인 계정 1명당 채팅방 여러 개).
+참고). `APP_USER`는 `CHAT_ROOM`에만 연결된다(로그인 계정 1명당 채팅방 1개).
 
 `NIA_CASE_DOCUMENT`와 `CLAIM_DOCUMENT`도 물리 FK로 연결하지 않는다. 논리 연결은
 `nia_case_document.case_id = claim_document.source_record_id`이며, 한 Case에 여러
@@ -467,14 +492,14 @@ erDiagram
 | search_query | text | N | - | 수집 검색어. 카테고리 크롤링이면 `category:<코드>` |
 | target_group | text(enum) | Y | - | 성분 키워드 검색 행만 채움 |
 | raw_title | text | N | - | 원본 상품명(불변) |
-| display_title | text | N | - | 화면 노출용 한글명 |
+| display_title | text | N | - | 화면 노출용 한국어 친화형 표시명(완전한 번역명은 아님). `title_source=untranslated`는 `raw_title` 그대로. 2026-09-20 기준 dump: translated 2,236 / oliveyoung_kr 23 / untranslated 3 |
 | title_source | text(enum) | N | - | display_title 신뢰도 |
 | brand | text | N | - | 브랜드 |
 | maker | text | Y | - | 제조사 |
 | category1 | text | N | - | 대분류 |
 | category2 / category3 | text | Y | - | 중/소분류 |
-| product_type_normalized | varchar(40), enum | Y | NULL | 제품 세부 유형. 아래 확장 초안, 미적용 |
-| service_category | varchar(20), enum | Y | NULL | 화면용 제품 그룹. 아래 확장 초안, 미적용 |
+| product_type_normalized | varchar(40), enum | Y | NULL | 제품 세부 유형. 컬럼은 적용됨(migration `2d1f4b6a8c90`). 2026-09-20 기준 dump(`_v2`): 2,108건 분류, 154건 NULL(자동 분류 근거 부족으로 의도적 유지) |
+| service_category | varchar(20), enum | Y | NULL | 화면용 제품 그룹. 컬럼은 적용됨(migration `2d1f4b6a8c90`). 2026-09-20 기준 dump(`_v2`): 2,108건 분류, 154건 NULL(`product_type_normalized`와 항상 함께 NULL) |
 | lowest_price / highest_price | int | N | - | 올리브영: 할인가/정가 |
 | price_band | text(enum) | N | - | lowest_price 기준 가격대 |
 | volume_value | numeric | Y | - | 단일 용량. 미확정이면 NULL(0 아님) |
@@ -483,7 +508,7 @@ erDiagram
 | local_image_path | text | N | - | 수집 시점 로컬 저장 경로(포터블 아님) |
 | shopping_url | text | N | - | 상세 페이지 URL |
 | mall_name | text | N | - | 판매처명 |
-| product_type | text | N | - | source merchandise type. 로컬 1,838건 모두 `GENERAL_PRODUCT` |
+| product_type | text | N | - | source merchandise type. 2026-09-20 기준 dump 2,262건 모두 `GENERAL_PRODUCT` |
 | observed_at | timestamptz | N | - | 크롤러 관측 시각 |
 | match_status | text(enum) | N | - | 수집 직후 항상 `manual_review_required` |
 | review_reasons | text[] | N | `{}` | 검토 사유 목록 |
@@ -492,10 +517,17 @@ erDiagram
 키: PK `id`, UK `(source, source_product_id)`. FK 없음(아래 참고).
 
 
-#### 상품 분류 확장안 — 2026-09-11, 사용자 확인 완료·DB 미적용
+#### 상품 분류 확장안 — 2026-09-11, 사용자 확인 완료·컬럼 적용 및 값 백필 완료
 
-위 PRODUCT 관계도와 컬럼 표의 `product_type_normalized`, `service_category`는 제안 스키마다.
-나머지 기존 스키마 설명과 구분하며, 모델·마이그레이션은 아직 변경하지 않았다.
+**2026-09-20 상태 동기화**: 이 확장안의 스키마는 이미 구현·적용돼 있다 — `models/product.py`에 두 컬럼과
+Enum(`ProductTypeNormalized` 27개 값, `ProductServiceCategory` 8개 값)이 있고, migration `2d1f4b6a8c90`
+(`add product taxonomy`)이 두 컬럼만 추가했으며 기준 dump(Alembic `2063ce3feae3`)에도 존재한다(둘 다
+`varchar`, nullable). 새 테이블·FK·유니크·인덱스는 추가되지 않았고 `product`의 제약은 PK와
+`uq_product_source_product_id`뿐이다. **분류 값 백필도 완료됐다** — 기준 dump(`skincare_reference_2026-09-20_v2.dump`)의
+`product` 2,262건 중 2,108건이 두 컬럼 모두 채워졌고 154건은 NULL이다(한쪽만 NULL인 행 0건, 유형↔서비스 그룹 매핑
+불일치 0건). 154건은 상품명과 원본 `category3`로 형태를 자동 확정할 근거가 부족해 **의도적으로 NULL로 유지**한 것이며
+오류가 아니다. 서비스 그룹 분포는 클렌저 549 / 크림·로션 461 / 에센스·세럼 355 / 기타 203 / 토너·패드 194 / 앰플 180 /
+마스크·패치 159 / 선케어 7 / NULL 154다. 아래 본문은 설계 당시 서술이며 설계 결정은 바뀌지 않았다.
 
 - 기존 `product_type`(쇼핑몰 상품 구분)과 `category1/2/3`(원본 분류)는 보존한다.
 - 두 필드는 기존 모델의 `native_enum=False` 관례를 따라 VARCHAR에 Enum 값을 저장한다.
@@ -525,6 +557,7 @@ erDiagram
 
 새 마이그레이션은 구현 시 head를 다시 확인하고 두 컬럼만 추가한다.
 기존 데이터 분류·갱신은 별도 실행으로 분리하며, 기존 RAG 인덱스와 테이블은 변경하지 않는다.
+(migration은 위 설계대로 적용됐고, 별도 실행인 분류 백필도 2026-09-20에 수행됐다.)
 
 ### product_ingredient_snapshot
 
@@ -790,10 +823,12 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 키: PK `id`, UK `chunk_id`, FK `document_id`(CASCADE). `ingredient_id` FK 없음 — 성분 연결은
 아래 `evidence_chunk_ingredient`가 전담.
 
-인덱스(제안, `rag_chunk`와 동일한 하이브리드 검색 구성을 evidence_chunk 전용으로 재구성):
-- `ix_evidence_chunk_embedding_hnsw` — HNSW, cosine, `rag_chunk`와 동일 파라미터(m=16, ef_construction=64)
-- `ix_evidence_chunk_document_id`
-- `ix_evidence_chunk_content_bm25` — ParadeDB pg_search BM25(raw SQL, autogenerate 밖)
+인덱스(2026-09-20 실제 DB 기준 — 설계 당시에는 `rag_chunk`와 동일한 하이브리드 검색 구성을 목표로 했다):
+- `ix_evidence_chunk_embedding_hnsw` — HNSW, cosine, `rag_chunk`와 동일 파라미터(m=16, ef_construction=64) **(존재)**
+- `ix_evidence_chunk_document_id` **(존재)**
+- `uq_evidence_chunk_chunk_id` — `chunk_id` UNIQUE **(존재)**
+- `ix_evidence_chunk_content_bm25` — ParadeDB pg_search BM25. **설계에만 있고 실제 DB에는 만들어지지 않았다**
+  (migration `11cdc111cf27`에도 없음). 필요해지면 raw SQL migration으로 별도 추가해야 한다.
 
 ### evidence_chunk_ingredient — 2026-09-15(2차) 제안, 2026-09-17 승인·live 적용 완료
 
@@ -834,7 +869,9 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 `RagChunkInsert`(`backend/repositories/rag_chunk_repository.py`)가 import 방향 문제로
 `models`만 참조하는 별도 DTO를 두는 것과 같은 이유로, `evidence_document`/`evidence_chunk`도
 저장 시 `EvidenceDocumentInsert`/`EvidenceChunkInsert` DTO를 `backend/repositories/`에 별도로
-둘 것을 제안한다(다음 단계, 이번엔 파일 미작성).
+둘 것을 제안했다. **2026-09-20 현재 이 DTO는 만들어지지 않았다.** MFDS 적재는 data 파트
+스크립트(`data/scripts/mfds_evidence_backfill.py`, `mfds_evidence_embedding_run.py`, `mfds_evidence_chunk_loader.py`)가
+`models`를 직접 사용해 수행했고, `backend/repositories/`에서 `evidence_chunk`를 다루는 것은 읽기 전용 `EvidenceSearchRepository`뿐이다.
 
 #### Citation provenance 보존 방식
 
@@ -874,7 +911,7 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
    (`evidence_document`/`evidence_chunk`)을 이중 경로로 만들지 않는다 — Evidence RAG는
    MFDS/CIR/PubMed 전부 `evidence_chunk` 하나로 통일해서 검색한다. 기존 `evidence` 테이블
    (8,288행)은 원본 데이터로 그대로 두고, `evidence_document`/`evidence_chunk`는 그로부터
-   변환·재투영해서 채운다(재수집 아님). `rag_chunk`의 `evidence_id` 참조 청크들은 이번 결정과
+   변환·재투영해서 채운다(재수집 아님). **→ 2026-09-20 전량 완료**(document 11 / chunk 8,288 / 링크 8,288). `rag_chunk`의 `evidence_id` 참조 청크들은 이번 결정과
    무관하게 유지되지만(과거 산출물), **신규 Evidence RAG 쿼리 경로는 `evidence_chunk`만
    본다.**
 4. **Knowledgedata(`IngredientKnowledgeFact`)는 Evidence corpus에서 제외, 공식 citation
@@ -891,7 +928,7 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 - `evidence_document.ingredient_ids` 파생 조회 쿼리의 실제 구현(위 Pydantic 매핑 표의
   `SELECT DISTINCT` 방식)은 `EvidenceDocumentRepository` 작성 시점에 확정.
 
-### chat_room — 2026-09-18 제안, 미승인
+### chat_room — 2026-09-18 제안, 2026-09-19 승인
 
 로그인 사용자의 채팅방 하나. `agent/schemas.py`의 `AuthorizedRoom`/`SessionSnapshot`을
 저장 계약으로 옮긴다.
@@ -899,7 +936,7 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 | 컬럼 | 타입 | NULL | 기본값 | 설명 |
 | --- | --- | --- | --- | --- |
 | id | uuid | N | `gen_random_uuid()` | PK. 문자열로 캐스팅해 Agent `AuthorizedRoom.chat_room_id`로 그대로 쓴다 |
-| user_id | uuid | N | - | FK → app_user.id, `ON DELETE CASCADE`. 로그인 사용자 전용이라 NULL 없음 |
+| user_id | uuid | N | - | FK → app_user.id, `ON DELETE CASCADE`. UK — 사용자당 방 1개. 로그인 사용자 전용이라 NULL 없음 |
 | thread_id | uuid | N | `gen_random_uuid()` | UK. LangGraph 체크포인터 네임스페이스(`AuthorizedRoom.thread_id`) |
 | schema_version | int | N | `1` | `SessionSnapshot.schema_version` 그대로 저장 |
 | source_revision | int | N | `0` | 낙관적 잠금 카운터. 턴이 커밋될 때마다 +1. `SaveSummaryRequest.expected_revision`이 이 값과 비교된다 |
@@ -913,27 +950,28 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 | summary | jsonb | Y | - | `ConversationSummary` 직렬화 |
 | created_at / updated_at | timestamptz | N | `now()` | 공통 |
 
-키: PK `id`, FK `user_id`(CASCADE — 계정 삭제 시 대화도 함께 삭제), UK `thread_id`.
+키: PK `id`, FK `user_id`(CASCADE — 계정 삭제 시 대화도 함께 삭제), UK `user_id`, UK `thread_id`.
+`user_id` UNIQUE 덕분에 서버는 로그인 사용자의 방을 `user_id`로 조회하거나(없으면 생성) 할 수 있다.
 
-### chat_message — 2026-09-18 제안, 미승인
+### chat_message — 2026-09-18 제안, 2026-09-19 승인
 
 방 안의 메시지 한 건. `agent/schemas.py`의 `ChatMessage`를 그대로 옮긴다.
 
 | 컬럼 | 타입 | NULL | 기본값 | 설명 |
 | --- | --- | --- | --- | --- |
-| id | uuid | N | - | PK. Agent가 발급하는 `ChatMessage.message_id`를 그대로 uuid로 저장 |
+| id | uuid | N | `gen_random_uuid()` | PK. Agent가 발급하는 `ChatMessage.message_id`를 지정해 넣으면 그 값을 그대로 uuid로 저장 |
 | chat_room_id | uuid | N | - | FK → chat_room.id, `ON DELETE CASCADE` |
 | request_id | text | N | - | 이 메시지를 만든 턴의 `request_id` |
 | role | text(enum) | N | - | `user`/`assistant` |
 | content | text | N | - | 본문 |
 | sequence | int | N | - | 방 내 순번, 1부터 증가. UK `(chat_room_id, sequence)` |
-| created_at | timestamptz | N | `now()` | |
+| created_at / updated_at | timestamptz | N | `now()` | 공통(`EntityBase`). 메시지는 수정하지 않아 `updated_at`은 쓰이지 않지만, 다른 테이블과 같은 기본 틀을 유지하려고 둔다 |
 
 키: PK `id`, FK `chat_room_id`(CASCADE), UK `(chat_room_id, sequence)`(페이징 겸용
 인덱스), UK `(chat_room_id, request_id, role)` — 같은 턴이 같은 role 메시지를 두 번
 만들지 못하게 막아 멱등성을 보조한다.
 
-### chat_turn_state — 2026-09-18 제안, 미승인
+### chat_turn_state — 2026-09-18 제안, 2026-09-19 승인
 
 턴의 시작(`begin_turn`)~확정(`complete_turn`)/실패(`mark_turn_failed`) 생애주기와
 `request_id` 재요청 충돌 감지 전용 테이블. `chat_message`와 분리한 이유는 아래
@@ -1017,10 +1055,16 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
   알아야 `REQUEST_CONFLICT`/`REQUEST_IN_PROGRESS` 판정(`agent/ports.py` 실패 계약)이
   가능하다. `chat_message`에 상태 컬럼을 얹으면 "메시지는 아직 없는데 턴 상태만 있는" 경우를
   표현할 수 없다.
+- **`user_id`를 UNIQUE로 둔 이유(사용자당 방 1개)**: Agent 담당자 확인 결과, 사용자가 채팅
+  화면을 벗어났다 다시 들어오면 화면은 초기화된 것처럼 보이지만 Agent는 이전 대화를 기억한다.
+  방이 여러 개면 "어느 방에 이어 붙이는지"를 프론트가 들고 다녀야 하는데, 방 1개로 정해지면
+  서버가 `user_id`로 방을 찾을 수 있다. UNIQUE가 없으면 동시 요청이나 버그로 한 사용자에게
+  방이 둘 생겨도 DB가 막지 못하고, 어느 방의 기억을 쓸지 모호해진다.
 - **`thread_id`를 `chat_room.id`와 별도 컬럼으로 둔 이유**: Agent 계약(`AuthorizedRoom`)이
-  `chat_room_id`와 `thread_id`를 별도 필드로 요구한다. 지금은 1:1이지만, 나중에 방은
-  유지한 채 LangGraph 스레드만 새로 시작하는 시나리오(예: "대화 초기화" 버튼)가 생기면
-  `thread_id`만 재발급할 수 있게 미리 분리해 둔다.
+  `chat_room_id`와 `thread_id`를 별도 필드로 요구한다. 지금은 1:1이지만, 사용자당 방이 1개라
+  방을 새로 만들어 대화를 리셋할 수 없으므로, 나중에 "대화 초기화" 기능이 생기면 방(메시지
+  기록·프로필)은 유지한 채 `thread_id`만 재발급해 LangGraph 기억만 새로 시작할 수 있게
+  미리 분리해 둔다. 현재 요구된 기능은 아니다.
 - **게스트(비로그인) 세션이 이 ERD에 없는 이유**: 사용자 확인 완료 — 이번 범위는 로그인
   사용자만이다. 게스트 연속성은 front 쪽에서 별도로 논의 중이며(단기: 프론트
   `sessionStorage`, 장기: Redis 세션 이관) 합의되면 후속 갱신으로 다룬다.
@@ -1035,5 +1079,5 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 - [docs/contracts/two-layer-rag-agent-backend-contract.md](../contracts/two-layer-rag-agent-backend-contract.md) — Claim/Evidence 레이어 분리 계약
 - [docs/contracts/backend-to-agent.md](../contracts/backend-to-agent.md) — `ChatHistoryRepository` 포트 계약
 - [docs/contracts/data-to-agent.md](../contracts/data-to-agent.md) — NIA Case export 논리 계약
-- [docs/agent/2026-09-20_0023_NIA_CASE_DOCUMENT_AGENT_HANDOFF.md](../agent/2026-09-20_0023_NIA_CASE_DOCUMENT_AGENT_HANDOFF.md) — NIA Case RAG 통합 구현 계획과 원본 점검 결과
+- [NIA Case 기반 2-Layer RAG 통합 작업 합본](../agent/RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md) — NIA Case RAG 구현·DB 통합 상태와 다음 작업
 - `agent/schemas.py`, `agent/ports.py` — `chat_room`/`chat_message`/`chat_turn_state`가 옮기는 원 계약
