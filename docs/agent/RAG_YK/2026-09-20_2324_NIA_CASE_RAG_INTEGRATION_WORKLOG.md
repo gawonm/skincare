@@ -1,9 +1,10 @@
 # NIA Case 기반 2-Layer RAG 통합 작업 합본
 
 - 작성 일시: 2026-09-20 23:24 KST
+- 최종 갱신: 2026-09-20 23:48 KST
 - 작업 브랜치: `integration/nia-case-rag`
 - 문서 역할: 2026-09-20까지의 결정, 구현, DB 상태와 다음 작업을 한곳에서 확인하는 운영 기준
-- 현재 상태: P1·P2 완료, 최신 `origin/main` 병합 및 Alembic merge revision 검증 완료
+- 현재 상태: P1·P2, 최신 `origin/main` 병합, 통합 DB 구성 및 실제 BGE-M3 smoke 완료
 
 이 문서를 먼저 읽는다. 이전 설계·작업일지는 배경 확인이 필요할 때만 참고한다. 코드와 계약이
 이 문서와 다르면 실제 코드, `docs/contracts/`, 최신 DB 검증 결과 순으로 확인한다.
@@ -124,7 +125,7 @@ P1 구현은 `data/scripts/nia_case_rag/`에 있으며 Loader/Filter/Builder를 
 적재기는 JSONL·manifest의 SHA-256, 전체/split/archive별 건수, 중복 ID와 `text_version`을 DB 변경
 전에 검증한다. 같은 `content_hash`는 재임베딩하지 않으며 batch 실패 시 해당 batch를 rollback한다.
 
-실제 `skincare_latest` 적재 결과:
+기존 `skincare_latest`에서 생성한 뒤 최종 통합 DB로 이전한 결과:
 
 | 항목 | 결과 |
 | --- | ---: |
@@ -163,9 +164,9 @@ Windows에서는 PyPI CPU Torch 대신 CUDA 12.6 wheel을 사용하도록 `pypro
 | `rag_chunk` | 0건 |
 | NIA Case | 미포함 |
 
-기존 `skincare_latest`는 NIA 3,581건이 있지만 Evidence는 PubMed 3건뿐이다. 새 v2는 Evidence
-8,291건이 있지만 NIA가 없다. 따라서 어느 한쪽을 그대로 최종 DB로 사용할 수 없고, v2를 새 DB에
-복원한 뒤 기존 NIA 행을 옮겨야 한다.
+기존 `skincare_latest`는 NIA 3,581건이 있지만 Evidence는 PubMed 3건뿐이고, 새 v2는 Evidence
+8,291건이 있지만 NIA가 없다. 두 기준을 합치기 위해 v2를 새 DB에 복원하고 기존 NIA 행을 벡터와
+함께 이전했다. 기존 DB는 삭제하거나 덮어쓰지 않았다.
 
 ## 6. Migration 통합 상태
 
@@ -199,9 +200,10 @@ a7d3c91e5f42 ─┘
 관련 Claim/NIA/Chat 계보와 MFDS embedding/Product taxonomy 단위 테스트 58개 및 Ruff 검사를
 통과했다.
 
-## 7. 새 통합 DB 구성 절차
+## 7. 새 통합 DB 구성 결과
 
-기존 `skincare_latest`를 덮어쓰거나 삭제하지 않는다.
+통합 DB 이름은 `skincare_integrated_20260920`이다. 기존 `skincare_latest`는 덮어쓰거나 삭제하지
+않았다.
 
 1. Git 충돌을 양쪽 내용 보존 방식으로 해결한다.
 2. Alembic merge revision을 추가하고 `alembic heads`가 1개인지 확인한다.
@@ -211,19 +213,37 @@ a7d3c91e5f42 ─┘
 6. Product, Evidence, NIA, Chat schema, migration head를 검증한다.
 7. 검증을 통과한 뒤 로컬 `config.yaml`의 DB명만 새 DB로 전환한다.
 
-완료 기준:
+실제 검증 결과:
 
-| 검증 | 기대값 |
+| 검증 | 결과 |
 | --- | ---: |
 | Product | 2,262 |
 | EvidenceChunk | 8,291 |
 | Evidence embedding NULL | 0 |
 | NIA Case | 3,581 |
 | NIA Training / Validation | 3,177 / 404 |
+| NIA embedding NULL / 중복 자연키 | 0 / 0 |
+| Claim | document 1 / chunk 5 |
 | Chat 테이블 | 3개 존재 |
-| Alembic head | 1개 |
+| Alembic revision | `9f4c2a7d8e61` |
 
-## 8. Evidence 검수 상태의 남은 문제
+로컬 `config.yaml`도 이 DB를 가리키도록 전환했다. 설정 파일은 Git 추적 대상이 아니며, 공유
+sample 설정의 기본 DB명은 변경하지 않았다.
+
+## 8. Evidence 검색 수정과 검수 상태의 남은 문제
+
+통합 DB smoke에서 성분 연결 3건이 존재하는데도 벡터 검색이 0건을 반환하는 문제가 발견됐다.
+원인은 HNSW 근사 검색이 전체 8,291건에서 소수 후보를 먼저 고른 뒤 성분 필터를 적용해, 희소한
+성분 Evidence가 후보에서 탈락하는 실행 계획이었다.
+
+`EvidenceSearchRepository`는 다음처럼 수정했다.
+
+- 성분 미지정 검색은 기존 HNSW 검색을 유지한다.
+- 성분 지정 검색은 연결된 청크를 materialized 후보 집합으로 먼저 제한한다.
+- 제한된 후보 안에서 cosine 거리를 정확히 정렬한다.
+- vector와 text 검색 모두 성분 지정/미지정 SQL을 명시적으로 분리한다.
+
+수정 후 나이아신아마이드 Evidence 3건이 정상 조회된다.
 
 새 Evidence 데이터와 임베딩 자체는 정상이다. 그러나 현재 Backend 어댑터는
 `document_status == "verified"`만 `EvidenceReviewStatus.VERIFIED`로 변환한다.
@@ -286,19 +306,45 @@ Claim은 현재 smoke 수준이므로 Case 검색 품질과 Case→Claim coverag
 - [x] v2 dump를 프로젝트 `data/`에 배치하고 Git 제외 확인
 - [x] P1/P2 변경을 기능 단위 로컬 커밋으로 보존
 - [x] 최신 main 병합 시작 및 충돌 파일 확인
-
-다음:
-
 - [x] ERD·migration 테스트 충돌 해결
 - [x] Alembic merge revision 작성
 - [x] migration 관련 테스트 58개 및 Ruff 검사
-- [ ] 전체 단위 테스트
-- [ ] 새 통합 DB 생성 및 v2 복원
-- [ ] NIA 3,581건 데이터 이전
-- [ ] 통합 DB 검증 후 `config.yaml` 전환
+- [x] 새 통합 DB 생성 및 v2 복원
+- [x] NIA 3,581건 데이터 이전
+- [x] 통합 DB 검증 후 로컬 `config.yaml` 전환
+- [x] 성분 지정 Evidence HNSW 후필터 누락 수정
+- [x] 실제 BGE-M3 2-Layer RAG smoke
+- [x] Agent·단위 테스트 387개
+
+다음:
+
 - [ ] Evidence 검수 상태 정책 합의·수정
 - [ ] P3 Case 검색 및 LangGraph 연결
 - [ ] P4 전체 Claim annotation 별도 승인
+
+최종 smoke 결과:
+
+| 항목 | 결과 |
+| --- | ---: |
+| Claim | 5건 |
+| 나이아신아마이드 Evidence | 3건 |
+| `UNREVIEWED` Evidence | 3건 |
+| Claim-only 성분 | 5개 |
+| 상품 연결 Claim-only 성분 | 3개 |
+| 중복 제거 상품 sample | 10개 |
+
+검증 명령과 결과:
+
+```powershell
+uv run pytest tests/db/test_two_layer_rag_dump.py -m integration -q
+# 2 passed
+
+uv run pytest tests/unit tests/agent -q
+# 387 passed
+
+uv run python -m tests.agent.two_layer_rag_dump_smoke
+# 실제 BAAI/bge-m3 및 skincare_integrated_20260920 사용, 정상 종료
+```
 
 ## 11. 문서 확인 우선순위
 
