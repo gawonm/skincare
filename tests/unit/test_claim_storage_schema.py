@@ -131,6 +131,9 @@ def test_claim_chunk_has_no_matched_ingredient_unique_constraint_yet() -> None:
     assert unique_like == []
 
 
+_CLAIM_MIGRATION_REVISION = "3165318c750d"
+
+
 def test_alembic_single_head_after_claim_migration() -> None:
     config = Config(str(_REPO_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(_REPO_ROOT / "migrations"))
@@ -138,6 +141,8 @@ def test_alembic_single_head_after_claim_migration() -> None:
     heads = script.get_heads()
     assert len(heads) == 1, f"단일 head가 아니다: {heads}"
 
-    head_revision = script.get_revision(heads[0])
-    assert head_revision is not None
-    assert head_revision.down_revision == "11cdc111cf27"
+    # head 를 특정 리비전에 고정하면 이후 migration 이 하나만 추가돼도 실패한다.
+    # 그래서 claim migration 이 여전히 기대한 부모 위에 있는지만 확인한다
+    claim_revision = script.get_revision(_CLAIM_MIGRATION_REVISION)
+    assert claim_revision is not None
+    assert claim_revision.down_revision == "11cdc111cf27"
