@@ -417,14 +417,14 @@ erDiagram
 | search_query | text | N | - | 수집 검색어. 카테고리 크롤링이면 `category:<코드>` |
 | target_group | text(enum) | Y | - | 성분 키워드 검색 행만 채움 |
 | raw_title | text | N | - | 원본 상품명(불변) |
-| display_title | text | N | - | 화면 노출용 한글명 |
+| display_title | text | N | - | 화면 노출용 한국어 친화형 표시명(완전한 번역명은 아님). `title_source=untranslated`는 `raw_title` 그대로. 2026-09-20 기준 dump: translated 2,236 / oliveyoung_kr 23 / untranslated 3 |
 | title_source | text(enum) | N | - | display_title 신뢰도 |
 | brand | text | N | - | 브랜드 |
 | maker | text | Y | - | 제조사 |
 | category1 | text | N | - | 대분류 |
 | category2 / category3 | text | Y | - | 중/소분류 |
-| product_type_normalized | varchar(40), enum | Y | NULL | 제품 세부 유형. 아래 확장 초안, 미적용 |
-| service_category | varchar(20), enum | Y | NULL | 화면용 제품 그룹. 아래 확장 초안, 미적용 |
+| product_type_normalized | varchar(40), enum | Y | NULL | 제품 세부 유형. 컬럼은 적용됨(migration `2d1f4b6a8c90`). 2026-09-20 기준 dump에서 값은 2,262건 전부 NULL(분류 백필 미실행) |
+| service_category | varchar(20), enum | Y | NULL | 화면용 제품 그룹. 컬럼은 적용됨(migration `2d1f4b6a8c90`). 2026-09-20 기준 dump에서 값은 2,262건 전부 NULL(분류 백필 미실행) |
 | lowest_price / highest_price | int | N | - | 올리브영: 할인가/정가 |
 | price_band | text(enum) | N | - | lowest_price 기준 가격대 |
 | volume_value | numeric | Y | - | 단일 용량. 미확정이면 NULL(0 아님) |
@@ -433,7 +433,7 @@ erDiagram
 | local_image_path | text | N | - | 수집 시점 로컬 저장 경로(포터블 아님) |
 | shopping_url | text | N | - | 상세 페이지 URL |
 | mall_name | text | N | - | 판매처명 |
-| product_type | text | N | - | source merchandise type. 로컬 1,838건 모두 `GENERAL_PRODUCT` |
+| product_type | text | N | - | source merchandise type. 2026-09-20 기준 dump 2,262건 모두 `GENERAL_PRODUCT` |
 | observed_at | timestamptz | N | - | 크롤러 관측 시각 |
 | match_status | text(enum) | N | - | 수집 직후 항상 `manual_review_required` |
 | review_reasons | text[] | N | `{}` | 검토 사유 목록 |
@@ -442,10 +442,14 @@ erDiagram
 키: PK `id`, UK `(source, source_product_id)`. FK 없음(아래 참고).
 
 
-#### 상품 분류 확장안 — 2026-09-11, 사용자 확인 완료·DB 미적용
+#### 상품 분류 확장안 — 2026-09-11, 사용자 확인 완료·컬럼 적용 완료(값 백필 미실행)
 
-위 PRODUCT 관계도와 컬럼 표의 `product_type_normalized`, `service_category`는 제안 스키마다.
-나머지 기존 스키마 설명과 구분하며, 모델·마이그레이션은 아직 변경하지 않았다.
+**2026-09-20 상태 동기화**: 이 확장안의 스키마는 이미 구현·적용돼 있다 — `models/product.py`에 두 컬럼과
+Enum(`ProductTypeNormalized` 27개 값, `ProductServiceCategory` 8개 값)이 있고, migration `2d1f4b6a8c90`
+(`add product taxonomy`)이 두 컬럼만 추가했으며 기준 dump(Alembic `2063ce3feae3`)에도 존재한다(둘 다
+`varchar`, nullable). 새 테이블·FK·유니크·인덱스는 추가되지 않았고 `product`의 제약은 PK와
+`uq_product_source_product_id`뿐이다. **다만 실제 분류 값은 채워지지 않았다** — 기준 dump의 `product` 2,262건은
+두 컬럼이 전부 NULL이다. 아래 본문은 설계 당시 서술이며 설계 결정은 바뀌지 않았다.
 
 - 기존 `product_type`(쇼핑몰 상품 구분)과 `category1/2/3`(원본 분류)는 보존한다.
 - 두 필드는 기존 모델의 `native_enum=False` 관례를 따라 VARCHAR에 Enum 값을 저장한다.
@@ -475,6 +479,7 @@ erDiagram
 
 새 마이그레이션은 구현 시 head를 다시 확인하고 두 컬럼만 추가한다.
 기존 데이터 분류·갱신은 별도 실행으로 분리하며, 기존 RAG 인덱스와 테이블은 변경하지 않는다.
+(migration은 위 설계대로 적용됐고, 별도 실행인 분류 백필은 아직 수행되지 않았다.)
 
 ### product_ingredient_snapshot
 
