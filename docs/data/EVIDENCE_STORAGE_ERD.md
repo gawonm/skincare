@@ -12,6 +12,12 @@
 > 존재하고, 니아신아마이드 PubMed 실 데이터 3건으로 BGE-M3 smoke도 PASS했다. embedding은
 > 최초 승인 당시(`text-embedding-3-small`/`vector(1536)`)에서 `BAAI/bge-m3`(local)/
 > `vector(1024)`로 변경 확정됐다 — 아래 설계는 이 최신 상태와 일치한다.
+>
+> **2026-09-20 갱신**: MFDS 전량 적재를 완료했다 — legacy `evidence` 8,288건 → `evidence_document` 11 /
+> `evidence_chunk` 8,288 / `evidence_chunk_ingredient` 8,288(PubMed smoke 3건 포함 합계 14 / 8,291 / 8,291,
+> 기준 dump `skincare_reference_2026-09-20.dump`). `rag_chunk`는 0건이며 MFDS를 재적재하지 않았다. 설계에
+> 있던 `ix_evidence_chunk_content_bm25`는 실제 DB에 만들어지지 않았다(`docs/erd/app.md` 참고). 저장·적재 완료와
+> runtime RAG(검색·Agent 연결·citation 표시) 완료는 별개이며, 후자는 Backend/Agent 문서를 따른다.
 
 ---
 
@@ -146,11 +152,12 @@ document-level 성분 목록이 항상 chunk-level 목록의 합집합이라 중
 ### `evidence`(기존 테이블, MFDS 8,288건)
 
 - **원본 데이터는 그대로 둔다.** `evidence` 테이블을 삭제하거나 구조를 바꾸지 않는다.
-- MFDS는 향후 `evidence_document`/`evidence_chunk`로 **신규 적재**한다(재수집이 아니라
-  기존 `evidence` 행을 문서/청크로 재투영하는 변환) — `EvidenceDocument.source_id`에
+- MFDS는 `evidence_document`/`evidence_chunk`로 **신규 적재**한다(재수집이 아니라
+  기존 `evidence` 행을 문서/청크로 재투영하는 변환. **2026-09-20 전량 완료**) — `EvidenceDocument.source_id`에
   MFDS 자연키, `EvidenceChunk`는 MFDS의 "청킹 없음(1 API 응답 = 1 청크)" 원칙을 그대로
   따른다(`EVIDENCE_RAG_DESIGN.md` C절).
-- 이 변환은 이번 문서화 단계 범위 밖이다(코드 미작성).
+- 이 변환은 `data/scripts/mfds_evidence_backfill.py`와 `mfds_evidence_embedding_run.py`로 구현·실행됐다
+  (이 문서를 쓸 당시에는 코드가 없었다).
 
 ### `rag_chunk`(기존 통합 임베딩 인덱스)
 

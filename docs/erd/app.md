@@ -17,10 +17,22 @@
 `support_level`을 분리 명시, `chunk_id` 자연키와 citation locator(`document_id`/`page`/
 `section`/`chunk_index`/`content_hash`/`parser_version`)를 독립 컬럼으로 분리.
 
-**두 테이블(`evidence_document`/`evidence_chunk`) 모두 `models`/migration은 아직 작성하지
-않았다** — 사용자 승인 후 다음 단계에서 작성(규칙 14,
-[CLAUDE_SESSION_BOARD.md](../coordination/CLAUDE_SESSION_BOARD.md) Shared Decisions #4).
-위 mermaid/컬럼 표는 마이그레이션 전 제안 설계다.
+**2026-09-20 상태 동기화 — Evidence 저장소는 구현·적재까지 완료됐다.** (당시 "models/migration 미작성,
+마이그레이션 전 제안 설계"라고 적었던 문구를 실제 상태로 바꿨다. 설계 결정 자체는 바꾸지 않았다.)
+
+- `models/evidence_document.py`, `models/evidence_chunk.py`(조인 테이블 `evidence_chunk_ingredient` 포함)가
+  존재하고, migration `11cdc111cf27`(`add evidence_document evidence_chunk evidence_chunk_ingredient tables`)이
+  적용돼 있다. 아래 컬럼 표는 실제 스키마와 대조했다.
+- `evidence_chunk.embedding`은 `vector(1024)`, 임베딩 모델은 `BAAI/bge-m3`다.
+- MFDS는 legacy `evidence` 8,288건을 `evidence_document` 11건(관할별)과 `evidence_chunk` 8,288건,
+  `evidence_chunk_ingredient` 8,288건으로 **전량 적재**했다(재수집이 아니라 재투영). PubMed는 smoke 3건만
+  있고(`evidence_document` 3 / `evidence_chunk` 3 / 링크 3), CIR은 적재된 것이 없다.
+  합계는 `evidence_document` 14 / `evidence_chunk` 8,291 / `evidence_chunk_ingredient` 8,291이다.
+- `rag_chunk`에는 MFDS를 재적재하지 않았고(기준 dump `skincare_reference_2026-09-20.dump`에서 0건), 신규 Evidence
+  검색 저장소는 `evidence_chunk`다. `ingredient_knowledge_fact`는 공식 Evidence corpus/citation source가 아니다.
+- **저장·적재 완료와 runtime RAG 완료는 다르다.** 검색 어댑터·Agent 연결·citation 표시가 어디까지 구현됐는지는
+  Backend/Agent 문서(`docs/backend/README.md`, `docs/agent/README.md`,
+  [two-layer-rag-agent-backend-contract.md](../contracts/two-layer-rag-agent-backend-contract.md))를 따른다.
 
 **2026-09-18 갱신 — 로그인 사용자 채팅 히스토리 (2026-09-19 사용자 승인)**. `agent/ports.py`의
 `ChatHistoryRepository`와 `agent/schemas.py`(`AuthorizedRoom`/`ChatMessage`/`SessionSnapshot`
@@ -28,8 +40,9 @@
 범위는 **로그인 사용자만**이다 — 게스트(비로그인) 세션 연속성 문제는 front 쪽 논의에서 별도
 결정 사항으로 분리됐고(단기: 프론트 `sessionStorage`, 장기: Redis 세션 — 둘 다 이 ERD 밖),
 합의되면 후속 갱신으로 다룬다. 사용자가 2026-09-19에 이 ERD를 승인했다(규칙 14).
-**`models`/migration은 아직 작성하지 않았다** — data 파트가
-[backend-to-data.md](../contracts/backend-to-data.md) 요청에 따라 작성한다. LangGraph
+**`models`/migration은 2026-09-20 기준 작성·적용됐다** — `models/chat_room.py`, `chat_message.py`,
+`chat_turn_state.py`와 migration `2063ce3feae3`(PR #46). 기준 dump에는 세 테이블이 행 0건(schema only)으로
+들어 있다. [backend-to-data.md](../contracts/backend-to-data.md) 요청에 따라 data 파트가 작성했다. LangGraph
 체크포인터 저장소는 이 ERD 범위 밖이다(Agent가 이전 대화를 기억하는 근거는 `chat_room`의
 `SessionSnapshot`이며, 체크포인터 전용 테이블은 만들지 않는다).
 
@@ -236,7 +249,7 @@ erDiagram
         text content
         text content_hash
         text parser_version
-        vector1536 embedding
+        vector1024 embedding
         text embedding_model
         text url
         text doi
@@ -627,10 +640,12 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 키: PK `id`, UK `chunk_id`, FK `document_id`(CASCADE). `ingredient_id` FK 없음 — 성분 연결은
 아래 `evidence_chunk_ingredient`가 전담.
 
-인덱스(제안, `rag_chunk`와 동일한 하이브리드 검색 구성을 evidence_chunk 전용으로 재구성):
-- `ix_evidence_chunk_embedding_hnsw` — HNSW, cosine, `rag_chunk`와 동일 파라미터(m=16, ef_construction=64)
-- `ix_evidence_chunk_document_id`
-- `ix_evidence_chunk_content_bm25` — ParadeDB pg_search BM25(raw SQL, autogenerate 밖)
+인덱스(2026-09-20 실제 DB 기준 — 설계 당시에는 `rag_chunk`와 동일한 하이브리드 검색 구성을 목표로 했다):
+- `ix_evidence_chunk_embedding_hnsw` — HNSW, cosine, `rag_chunk`와 동일 파라미터(m=16, ef_construction=64) **(존재)**
+- `ix_evidence_chunk_document_id` **(존재)**
+- `uq_evidence_chunk_chunk_id` — `chunk_id` UNIQUE **(존재)**
+- `ix_evidence_chunk_content_bm25` — ParadeDB pg_search BM25. **설계에만 있고 실제 DB에는 만들어지지 않았다**
+  (migration `11cdc111cf27`에도 없음). 필요해지면 raw SQL migration으로 별도 추가해야 한다.
 
 ### evidence_chunk_ingredient — 2026-09-15(2차) 제안, 2026-09-17 승인·live 적용 완료
 
@@ -671,7 +686,9 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 `RagChunkInsert`(`backend/repositories/rag_chunk_repository.py`)가 import 방향 문제로
 `models`만 참조하는 별도 DTO를 두는 것과 같은 이유로, `evidence_document`/`evidence_chunk`도
 저장 시 `EvidenceDocumentInsert`/`EvidenceChunkInsert` DTO를 `backend/repositories/`에 별도로
-둘 것을 제안한다(다음 단계, 이번엔 파일 미작성).
+둘 것을 제안했다. **2026-09-20 현재 이 DTO는 만들어지지 않았다.** MFDS 적재는 data 파트
+스크립트(`data/scripts/mfds_evidence_backfill.py`, `mfds_evidence_embedding_run.py`, `mfds_evidence_chunk_loader.py`)가
+`models`를 직접 사용해 수행했고, `backend/repositories/`에서 `evidence_chunk`를 다루는 것은 읽기 전용 `EvidenceSearchRepository`뿐이다.
 
 #### Citation provenance 보존 방식
 
@@ -711,7 +728,7 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
    (`evidence_document`/`evidence_chunk`)을 이중 경로로 만들지 않는다 — Evidence RAG는
    MFDS/CIR/PubMed 전부 `evidence_chunk` 하나로 통일해서 검색한다. 기존 `evidence` 테이블
    (8,288행)은 원본 데이터로 그대로 두고, `evidence_document`/`evidence_chunk`는 그로부터
-   변환·재투영해서 채운다(재수집 아님). `rag_chunk`의 `evidence_id` 참조 청크들은 이번 결정과
+   변환·재투영해서 채운다(재수집 아님). **→ 2026-09-20 전량 완료**(document 11 / chunk 8,288 / 링크 8,288). `rag_chunk`의 `evidence_id` 참조 청크들은 이번 결정과
    무관하게 유지되지만(과거 산출물), **신규 Evidence RAG 쿼리 경로는 `evidence_chunk`만
    본다.**
 4. **Knowledgedata(`IngredientKnowledgeFact`)는 Evidence corpus에서 제외, 공식 citation
