@@ -3,9 +3,9 @@
 `config.yaml`의 `database.url` 대상 DB(`app`)의 전체 테이블. 모델 정의는 `models/*.py`,
 공통 컬럼(`id`/`created_at`/`updated_at`)은 `core/database.py`의 `EntityBase`.
 
-작성 기준: 2026-09-11, `migrations/versions/` 기준 8개 테이블 적용 완료
-(`0001_extensions` ~ `b518f9fd7cf7_add_gender_age_group_terms_agreed_`, `993200358dfb`로
-브랜치 병합). `app_user`에 회원가입 확장 필드(`gender`/`age_group`/`terms_agreed*`) 추가.
+작성 기준: 2026-09-20, 현재 Alembic head `3165318c750d`. `evidence_document`/
+`evidence_chunk`/`evidence_chunk_ingredient`와 `claim_document`/`claim_chunk`/
+`claim_chunk_ingredient`까지 live 적용된 상태를 포함한다.
 
 **2026-09-15 갱신(1차)** — `evidence_document`/`evidence_chunk` ERD·컬럼 설계 추가(Evidence RAG,
 [EVIDENCE_RAG_DESIGN.md](../data/EVIDENCE_RAG_DESIGN.md)/[EVIDENCE_COVERAGE_AUDIT.md](../data/EVIDENCE_COVERAGE_AUDIT.md)
@@ -17,10 +17,13 @@
 `support_level`을 분리 명시, `chunk_id` 자연키와 citation locator(`document_id`/`page`/
 `section`/`chunk_index`/`content_hash`/`parser_version`)를 독립 컬럼으로 분리.
 
-**두 테이블(`evidence_document`/`evidence_chunk`) 모두 `models`/migration은 아직 작성하지
-않았다** — 사용자 승인 후 다음 단계에서 작성(규칙 14,
-[CLAUDE_SESSION_BOARD.md](../coordination/CLAUDE_SESSION_BOARD.md) Shared Decisions #4).
-위 mermaid/컬럼 표는 마이그레이션 전 제안 설계다.
+**2026-09-17 반영** — `evidence_document`/`evidence_chunk`/`evidence_chunk_ingredient`와
+`claim_document`/`claim_chunk`/`claim_chunk_ingredient`의 ORM·migration이 적용됐다.
+
+**2026-09-20 갱신 — NIA Case 검색 저장소 사용자 승인 및 구현 완료.** AI Hub Q-CoT-A 10~39세
+3,581건을 사례 검색에 사용하기 위한 `nia_case_document`를 추가했다. 기존 Claim/Evidence와
+섞지 않고 Case 전용 BGE-M3 1,024차원 벡터를 저장하며, 아래 설계대로 ORM과 migration을
+구현하고 실제 3,581건 적재까지 검증했다.
 
 **2026-09-18 갱신 — 로그인 사용자 채팅 히스토리 (제안, 미승인)**. `agent/ports.py`의
 `ChatHistoryRepository`와 `agent/schemas.py`(`AuthorizedRoom`/`ChatMessage`/`SessionSnapshot`
@@ -193,6 +196,66 @@ erDiagram
         timestamptz updated_at
     }
 
+    NIA_CASE_DOCUMENT {
+        uuid id PK
+        text case_id
+        text dataset_split
+        text source_archive_name
+        text source_member_name
+        int source_line_number
+        text page_content
+        text embedding_text
+        text text_version
+        text target_concern
+        text gender
+        int age
+        text skin_type
+        array skin_concerns
+        jsonb metadata
+        text content_hash
+        vector1024 embedding
+        text embedding_model
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    CLAIM_DOCUMENT {
+        uuid id PK
+        text source_record_id
+        text annotation_version
+        text schema_version
+        text dataset_split
+        array skin_concerns_raw
+        boolean production_ready
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    CLAIM_CHUNK {
+        uuid id PK
+        uuid claim_document_id FK
+        text statement_id
+        text statement_type
+        text content
+        jsonb source_spans
+        text decision
+        text priority
+        text support_status
+        vector1024 embedding
+        text embedding_model
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    CLAIM_CHUNK_INGREDIENT {
+        uuid id PK
+        uuid claim_chunk_id FK
+        uuid ingredient_id FK
+        text raw_name
+        text matching_status
+        text role
+    }
+
     EVIDENCE_DOCUMENT {
         uuid id PK
         text source_id UK
@@ -228,7 +291,7 @@ erDiagram
         text content
         text content_hash
         text parser_version
-        vector1536 embedding
+        vector1024 embedding
         text embedding_model
         text url
         text doi
@@ -294,6 +357,9 @@ erDiagram
     PRODUCT_INGREDIENT_SNAPSHOT ||--o{ PRODUCT_INGREDIENT : "snapshot_id"
     EVIDENCE |o--o{ RAG_CHUNK : "evidence_id"
     INGREDIENT_KNOWLEDGE_FACT |o--o{ RAG_CHUNK : "ingredient_knowledge_fact_id"
+    CLAIM_DOCUMENT ||--o{ CLAIM_CHUNK : "claim_document_id"
+    CLAIM_CHUNK ||--o{ CLAIM_CHUNK_INGREDIENT : "claim_chunk_id"
+    INGREDIENT_MASTER |o--o{ CLAIM_CHUNK_INGREDIENT : "ingredient_id (nullable)"
     EVIDENCE_DOCUMENT ||--o{ EVIDENCE_CHUNK : "document_id"
     EVIDENCE_CHUNK ||--o{ EVIDENCE_CHUNK_INGREDIENT : "evidence_chunk_id"
     INGREDIENT_MASTER ||--o{ EVIDENCE_CHUNK_INGREDIENT : "ingredient_id"
@@ -305,6 +371,11 @@ erDiagram
 `PRODUCT`는 다른 테이블과 FK로 연결돼 있지 않다 — `product_ingredient_snapshot`이 상품을
 `(source, source_product_id)` 문자열 쌍으로만 참조하기 때문이다(아래 "왜 이렇게 나눴는지"
 참고). `APP_USER`는 `CHAT_ROOM`에만 연결된다(로그인 계정 1명당 채팅방 여러 개).
+
+`NIA_CASE_DOCUMENT`와 `CLAIM_DOCUMENT`도 물리 FK로 연결하지 않는다. 논리 연결은
+`nia_case_document.case_id = claim_document.source_record_id`이며, 한 Case에 여러
+`annotation_version`의 Claim 문서가 공존할 수 있으므로 런타임 조회가 명시적인
+`annotation_version`을 함께 적용한다.
 
 ## 테이블별 컬럼
 
@@ -529,6 +600,106 @@ CHECK 제약으로 `source_table`별 참조 컬럼 정확히 1개만 채워지�
 - `rag_chunk.embedding`은 기존 `vector(1536)`을 유지한다.
 - 운영 임베딩 모델은 기존 `text-embedding-3-small`을 유지한다.
 - BGE-M3 1024차원 전환, 벡터 컬럼 변경, 전체 재임베딩과 재색인은 진행하지 않는다.
+
+### nia_case_document — 2026-09-20 사용자 승인 및 구현 완료
+
+AI Hub Q-CoT-A의 한 사례 전체를 검색 단위 한 건으로 저장한다. `NiaCaseDocumentBuilder`가 만든
+`page_content`/`embedding_text`/`metadata`를 보존하고 BGE-M3 벡터로 유사 사례를 찾는다.
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| id | uuid | N | `gen_random_uuid()` | PK |
+| case_id | text | N | - | AI Hub `info.id`, Claim의 `source_record_id`와 논리 연결 |
+| dataset_split | text(enum) | N | - | `training`/`validation`. 운영 검색은 기본적으로 training만 사용 |
+| source_archive_name | text | N | - | 입력 ZIP 또는 JSONL 파일명. 절대 경로는 저장하지 않음 |
+| source_member_name | text | Y | - | ZIP 내부 JSONL member. 직접 JSONL 입력이면 NULL |
+| source_line_number | int | N | - | 원본 물리 줄 번호, 1 이상 |
+| page_content | text | N | - | 질문+답변+CoT 전체 표시 문맥 |
+| embedding_text | text | N | - | 임베딩 입력. `nia_case_text/v1`에서는 page_content와 동일 |
+| text_version | text | N | - | Case 문서 조립 형식 버전 |
+| target_concern | text | N | - | 원본 `info.target_concern`, 검색 필터용 비정규화 |
+| gender | text | N | - | 원본 값 그대로 |
+| age | int | N | - | 원본 나이. 적재 대상은 10~39세 |
+| skin_type | text | N | - | 원본 값 그대로 |
+| skin_concerns | text[] | N | `{}` | 원본 다중 피부 고민 |
+| metadata | jsonb | N | - | `NiaCaseMetadata` 전체. `evidence_sources` 포함하되 Citation으로 사용 금지 |
+| content_hash | text | N | - | `embedding_text`의 SHA-256. 재임베딩 판정 |
+| embedding | vector(1024) | N | - | `BAAI/bge-m3` 벡터 |
+| embedding_model | text | N | - | 벡터를 만든 모델명 |
+| created_at / updated_at | timestamptz | N | `now()` | 공통 |
+
+키와 제약:
+
+- PK `id`
+- UK `(case_id, text_version, embedding_model)` — 같은 Case의 문서 형식/임베딩 모델 버전을 함께 보존
+- CHECK `dataset_split IN ('training', 'validation')`
+- CHECK `age BETWEEN 10 AND 39`
+- CHECK `source_line_number >= 1`
+
+인덱스:
+
+- `ix_nia_case_document_embedding_hnsw` — HNSW, cosine, m=16, ef_construction=64
+- `ix_nia_case_document_retrieval_scope` — `(dataset_split, text_version, embedding_model)`
+- `ix_nia_case_document_case_id` — Case → Claim 논리 연결 조회
+
+### claim_document — 2026-09-17 live 적용 완료
+
+NIA annotation run의 레코드 단위 provenance다. 같은 원본 Case가 pilot/validation/production
+버전으로 반복 라벨링될 수 있어 `source_record_id` 단독 UNIQUE를 사용하지 않는다.
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| id | uuid | N | `gen_random_uuid()` | PK |
+| source_record_id | text | N | - | NIA `case_id`와 같은 원본 레코드 ID |
+| annotation_version | text | N | - | 라벨링 실행 식별자 |
+| schema_version | text | N | - | Claim 문서 스키마 버전 |
+| dataset_split | text(enum) | N | - | `training`/`validation` |
+| skin_concerns_raw | text[] | N | `{}` | annotation 입력의 피부 고민 원문 |
+| production_ready | boolean | N | - | 사람 최종 검수 완료 여부. 런타임 필수 필터는 아님 |
+| created_at / updated_at | timestamptz | N | `now()` | 공통 |
+
+키: PK `id`, UK `(source_record_id, annotation_version)`.
+
+### claim_chunk — 2026-09-17 live 적용 완료
+
+Claim statement 한 건을 검색·임베딩 단위로 저장한다.
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| id | uuid | N | `gen_random_uuid()` | PK |
+| claim_document_id | uuid | N | - | FK → claim_document.id, `ON DELETE CASCADE` |
+| statement_id | text | N | - | 한 annotation document 안에서 유일 |
+| statement_type | text(enum) | N | - | Claim statement 유형 |
+| content | text | N | - | Claim 검색·임베딩 원문 |
+| source_spans | jsonb | N | - | 원문 위치와 인용 구간 |
+| decision | text(enum) | N | - | `ingestible_*`만 기본 검색 후보 |
+| priority | text(enum) | N | - | `primary`/`secondary` |
+| support_status | text(enum) | N | - | `unverified`/`supported`/`contradicted`/`insufficient` |
+| embedding | vector(1024) | N | - | `BAAI/bge-m3` 벡터 |
+| embedding_model | text | N | - | 벡터를 만든 모델명 |
+| created_at / updated_at | timestamptz | N | `now()` | 공통 |
+
+키: PK `id`, UK `(claim_document_id, statement_id)`, FK `claim_document_id`(CASCADE).
+인덱스: `ix_claim_chunk_embedding_hnsw`, `ix_claim_chunk_document_id`,
+`ix_claim_chunk_decision`.
+
+### claim_chunk_ingredient — 2026-09-17 live 적용 완료
+
+Claim statement의 성분 언급을 보존한다. unresolved 언급은 `raw_name`만 있고 `ingredient_id`가
+NULL일 수 있어 순수 복합 PK 대신 서러게이트 ID를 사용한다.
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| id | uuid | N | `gen_random_uuid()` | PK |
+| claim_chunk_id | uuid | N | - | FK → claim_chunk.id, `ON DELETE CASCADE` |
+| ingredient_id | uuid | Y | - | FK → ingredient_master.id, `ON DELETE CASCADE`. matched일 때만 값 있음 |
+| raw_name | text | Y | - | 원문 성분명 |
+| matching_status | text(enum) | N | - | `unresolved`/`unresolved_ambiguous_family`/`matched`/`rejected` |
+| role | text(enum) | N | - | `primary`/`secondary`/`unspecified` |
+
+CHECK `ingredient_id IS NOT NULL OR raw_name IS NOT NULL`. 인덱스:
+`ix_claim_chunk_ingredient_claim_chunk_id`,
+`ix_claim_chunk_ingredient_ingredient_id(ingredient_id, claim_chunk_id)`.
 
 ### evidence_document — 2026-09-15(1차)/2026-09-15(2차 수정) 제안, 2026-09-17 승인·live 적용 완료
 
@@ -817,6 +988,18 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
   문서 개념이 필요 없지만, CIR(PDF)/PubMed(초록)는 문서 하나가 여러 페이지/섹션으로 쪼개질 수
   있어 문서 메타데이터(document)와 검색 단위(chunk)를 분리해야 페이지별 인용이 가능하다
   (`EVIDENCE_RAG_DESIGN.md` B절).
+- **`nia_case_document`를 `claim_chunk`나 `rag_chunk`에 합치지 않은 이유**: Case는 사용자 고민과
+  유사한 상담 사례를 찾는 검색 단위이고, Claim은 그 사례에서 추출한 성분·효능 주장, Evidence는
+  공인 검증 근거다. 세 데이터를 한 벡터 풀에 넣으면 유사 사례가 공식 근거처럼 섞이고 각 레이어의
+  실패 상태도 구분할 수 없다. 따라서 Case 검색 결과의 `case_id`로 같은
+  `claim_document.source_record_id`를 제한 조회하고, 그 뒤에 기존 Claim → Evidence → Product
+  흐름을 실행한다.
+- **Case와 Claim을 FK로 묶지 않은 이유**: 하나의 Case에 여러 `annotation_version`의 Claim이
+  공존하며, Case는 Claim annotation이 없어도 독립적으로 검색·평가할 수 있어야 한다. FK로 특정
+  run을 고정하지 않고 ID 동등 조건과 운영 설정의 `annotation_version`으로 연결한다.
+- **Case filter 필드와 `metadata` JSONB를 함께 저장하는 이유**: split·피부 고민·연령처럼
+  검색 조건이 되는 값은 타입과 인덱스를 명확히 하기 위해 컬럼으로 두고, `external`/
+  `initial_skin_condition`/`evidence_sources`처럼 원문 보존용 문맥은 JSONB에 유지한다.
 - **`chat_room`의 `profile`/`task_context`/`pending_question`/`candidate_set`/`routine`/
   `evidence`/`summary`를 정규화하지 않고 JSONB로 저장하는 이유**: 이 값들은 Agent가 소유한
   Pydantic DTO(`UserProfile`, `ProductCandidateSet`, `RoutinePlan` 등, `agent/schemas.py`/
@@ -851,4 +1034,6 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 - [docs/data/EVIDENCE_COVERAGE_AUDIT.md](../data/EVIDENCE_COVERAGE_AUDIT.md) — `rag_chunk` vs 별도 테이블(Option B) 의사결정 근거
 - [docs/contracts/two-layer-rag-agent-backend-contract.md](../contracts/two-layer-rag-agent-backend-contract.md) — Claim/Evidence 레이어 분리 계약
 - [docs/contracts/backend-to-agent.md](../contracts/backend-to-agent.md) — `ChatHistoryRepository` 포트 계약
+- [docs/contracts/data-to-agent.md](../contracts/data-to-agent.md) — NIA Case export 논리 계약
+- [docs/agent/2026-09-20_0023_NIA_CASE_DOCUMENT_AGENT_HANDOFF.md](../agent/2026-09-20_0023_NIA_CASE_DOCUMENT_AGENT_HANDOFF.md) — NIA Case RAG 통합 구현 계획과 원본 점검 결과
 - `agent/schemas.py`, `agent/ports.py` — `chat_room`/`chat_message`/`chat_turn_state`가 옮기는 원 계약

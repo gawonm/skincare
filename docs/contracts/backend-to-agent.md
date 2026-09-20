@@ -524,3 +524,164 @@ Citation과 `SUPPORTED` 판정에는 사용하지 않는다. 해당 Claim은 `IN
 
 BGE-M3 자유 질의 임계값은 현재 데이터 5건만으로 확정하지 않는다. 첫 통합 구현에서는
 성분 ID 필터 검색을 우선하고, 자유 질의 임계값 튜닝은 평가 데이터가 늘어난 뒤 별도 진행한다.
+
+## 10. NIA Case 검색 포트 계약 초안 — 2026-09-20 01:48 KST
+
+> 상태: **ERD·계약 검토 중, 구현 전**
+
+피부 고민형 질의는 기존 Claim 검색 앞에서 유사 NIA Case를 먼저 찾는다. 명시적인 성분 질의는
+이 단계를 건너뛰고 기존 Evidence 경로를 유지한다. Case는 탐색 문맥이며 공인 Evidence가 아니다.
+
+### 10.1 Agent 소유 타입과 포트
+
+타입은 `agent/rag/case_schemas.py`, 포트는 `agent/rag/ports.py`가 소유한다.
+
+```python
+from abc import ABC, abstractmethod
+from enum import StrEnum
+
+from pydantic import Field, FiniteFloat, model_validator
+
+from agent.rag.schemas import EmbeddingVector, LookupStatus, RagModel
+
+
+class CaseDatasetSplit(StrEnum):
+    TRAINING = "training"
+    VALIDATION = "validation"
+
+
+class CaseProvenance(RagModel):
+    archive_name: str = Field(min_length=1)
+    member_name: str | None = Field(default=None, min_length=1)
+    line_number: int = Field(ge=1)
+
+
+class CaseMetadata(RagModel):
+    target_concern: str = Field(min_length=1)
+    gender: str = Field(min_length=1)
+    age: int = Field(ge=0)
+    skin_type: str = Field(min_length=1)
+    skin_concerns: list[str] = Field(default_factory=list)
+
+
+class CaseSearchRequest(RagModel):
+    query: str = Field(min_length=1)
+    query_embedding: EmbeddingVector
+    dataset_split: CaseDatasetSplit = CaseDatasetSplit.TRAINING
+    text_version: str = Field(min_length=1)
+    embedding_model: str = Field(min_length=1)
+    candidate_limit: int = Field(default=20, ge=3)
+
+
+class CaseSearchHit(RagModel):
+    case_id: str = Field(min_length=1)
+    page_content: str = Field(min_length=1)
+    text_version: str = Field(min_length=1)
+    dataset_split: CaseDatasetSplit
+    metadata: CaseMetadata
+    provenance: CaseProvenance
+    vector_similarity: FiniteFloat
+    rerank_score: FiniteFloat | None = None
+
+
+class CaseSearchResult(RagModel):
+    status: LookupStatus
+    hits: list[CaseSearchHit] = Field(default_factory=list)
+    error_message: str | None = None
+
+    @model_validator(mode="after")
+    def validate_status_payload(self) -> "CaseSearchResult": ...
+
+
+class CaseRerankRequest(RagModel):
+    query: str = Field(min_length=1)
+    candidates: list[CaseSearchHit] = Field(min_length=1)
+    limit: int = Field(default=3, ge=1)
+
+
+class CaseRerankResult(RagModel):
+    model: str = Field(min_length=1)
+    hits: list[CaseSearchHit] = Field(min_length=1)
+
+
+class CaseRetriever(ABC):
+    @abstractmethod
+    async def search(self, request: CaseSearchRequest) -> CaseSearchResult: ...
+
+
+class CaseReranker(ABC):
+    @abstractmethod
+    async def rerank(self, request: CaseRerankRequest) -> CaseRerankResult: ...
+```
+
+`CaseSearchResult`의 검증 규칙은 기존 `ClaimSearchResult`와 같다. `SUCCESS`에는 hit이 있어야 하고,
+성공이 아닌 상태에는 hit을 넣지 않으며, `ERROR`에는 원인 메시지가 필요하다.
+
+NIA 원문의 `evidence_sources`는 Backend 저장소에는 보존하지만 Agent 검색 DTO에는 넣지 않는다.
+이 값을 공식 Citation으로 오인해 답변에 노출하는 경로를 처음부터 차단하기 위해서다.
+
+### 10.2 Backend 구현 책임
+
+Backend는 `BackendNiaCaseRetriever`를 구현해 주입한다.
+
+- `dataset_split`, `text_version`, `embedding_model`은 정확히 일치하는 행만 검색한다.
+- 질의 벡터는 BGE-M3 1,024차원인지 조회 전에 검증한다.
+- cosine similarity 내림차순으로 `candidate_limit`개까지 반환한다.
+- ORM과 DB session은 Agent에 노출하지 않는다.
+- BGE reranker는 1차 후보만 읽고 최종 3개를 반환한다.
+- 임의의 similarity cutoff는 평가 전에 적용하지 않는다.
+
+### 10.3 Case → Claim 연결
+
+`ClaimSearchRequest`에 다음 선택 필드를 추가한다.
+
+```python
+class ClaimSearchRequest(RagModel):
+    query: str = Field(min_length=1)
+    query_embedding: EmbeddingVector | None = None
+    annotation_version: str = Field(min_length=1)
+    top_k: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
+    ingredient_ids: list[str] = Field(default_factory=list)
+    skin_concerns: list[str] = Field(default_factory=list)
+    source_record_ids: list[str] = Field(default_factory=list)
+```
+
+- Case 경로에서는 rerank Top-3의 `case_id`를 `source_record_ids`로 전달한다.
+- Backend는 `claim_document.source_record_id = ANY(source_record_ids)`를 추가 필터로 적용한다.
+- `source_record_ids=[]`이면 기존 Claim 검색과 완전히 같은 동작을 유지한다.
+- `annotation_version` 필터는 그대로 필수이며 Case ID가 annotation run을 대신하지 않는다.
+- 연결된 Claim이 없으면 `NO_RESULTS`로 반환하며, 다른 Case의 Claim을 임의로 대신 붙이지 않는다.
+
+### 10.4 LangGraph 상태와 라우팅
+
+- Case 결과는 `ClaimBundle`이나 `EvidenceBundle`에 넣지 않고 별도 `CaseBundle`로 유지한다.
+- 피부 고민형: `embed_case_query → search_cases → rerank_cases → search_claims → evidence → product`
+- 명시 성분형: 기존 `ingredient resolution → evidence → product` 경로 유지
+- Case `NO_RESULTS`: 기존 피부 고민형 Claim 검색 fallback 허용
+- Case `ERROR`: 오류를 상태에 보존하고 정책에 따라 partial 응답 또는 기존 Claim fallback
+- Claim `NO_RESULTS`: Case 본문만으로 성분·상품을 LLM이 새로 만들어 내지 않는다.
+- Evidence `NO_RESULTS`/`UNREVIEWED`: 기존 정책대로 Claim-only 상품 후보를 유지한다.
+
+### 10.5 실패 계약
+
+- 다른 임베딩 모델·차원: `UNSUPPORTED`
+- 지원하지 않는 split/text version: `UNSUPPORTED`
+- DB/DTO 변환 오류: `ERROR`와 원인 메시지
+- 정상 검색 결과 없음: `NO_RESULTS`
+- reranker 실패: 원인을 기록하고 vector 순위 Top-3로 fallback하되, fallback 여부를 State에 남긴다.
+
+Case 검색 실패를 Evidence 부족이나 Claim 부정으로 바꾸지 않는다. 세 레이어의 상태는 각각
+독립적으로 유지한다.
+
+### 10.6 현재 데이터 제약
+
+AI Hub Case 3,581건은 생성 가능하지만 현재 기준 DB의 Claim은 smoke 수준이라 대부분의 Case가
+Claim으로 이어지지 않는다. 따라서 다음 지표를 분리한다.
+
+1. Case retrieval 성공률과 Top-3 적합도
+2. Top-3 Case 중 `claim_document.source_record_id`가 존재하는 비율
+3. 연결 Claim 중 matched ingredient가 있는 비율
+4. Evidence 및 confirmed Product까지 도달하는 비율
+
+전체 Claim annotation 산출물이 없다는 이유로 Case 검색 구현 자체를 막지는 않되, end-to-end
+상품 추천이 3,581건 전체에서 동작한다고 보고하지 않는다.

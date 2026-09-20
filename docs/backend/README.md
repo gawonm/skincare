@@ -145,9 +145,32 @@ uv run python -m tests.agent.two_layer_rag_dump_smoke
 - Agent는 DB와 Backend를 직접 import하지 않는다.
 - 읽기 전용 DB 통합 smoke와 기존 Agent 회귀 테스트가 모두 통과한다.
 
+## NIA Case Document DB 적재 (2026-09-20)
+
+Data exporter가 만든 JSONL과 manifest를 먼저 전체 검증한 뒤, 변경된 사례만
+`BAAI/bge-m3` 1,024차원 벡터로 만들어 `nia_case_document`에 batch upsert한다.
+Repository는 commit하지 않고 Service가 batch별 transaction을 확정하므로 중간 실패 후 재실행할 수 있다.
+
+사용자가 실행할 순서:
+
+```powershell
+uv run alembic upgrade head
+uv run python -m backend.services.nia_case_ingestion_service
+```
+
+기본 입력은 다음 두 파일이다.
+
+- `data/processed/nia_case_documents_10s_30s.jsonl`
+- `data/processed/nia_case_documents_10s_30s.manifest.json`
+
+실행 전 `config.yaml`의 `agent.embedding.provider`는 `local`, `model`은 `BAAI/bge-m3`여야 한다.
+같은 `(case_id, text_version, embedding_model)`의 `content_hash`가 같으면 재임베딩하지 않는다.
+이 단계는 Case 검색 저장소만 만들며 Claim annotation이나 LangGraph 연결은 실행하지 않는다.
+
 ## 관련 문서
 
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
+- [Data → Backend NIA Case 적재 계약](../contracts/data-to-backend.md)
 - [Backend → Data 채팅 히스토리 테이블 생성 요청](../contracts/backend-to-data.md)
 - [Agent 통합 검토](../agent/AGENT_INTEGRATION_REVIEW.md)
 - [2-Layer RAG Agent 통합 작업계획 및 작업 일지](../agent/TWO_LAYER_RAG_FOLLOWUP_PLAN.md)

@@ -141,6 +141,7 @@ DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump
 
 - [2026-09-17 17:51 피부 고민형 Intent 라우팅 보정](2026-09-17_1751_INTENT_ROUTING_UPDATE.md)
 - [2-Layer RAG Agent 통합 작업계획 및 작업 일지](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
+- [NIA Case Document 이후 통합 RAG 구현 계획](2026-09-20_0023_NIA_CASE_DOCUMENT_AGENT_HANDOFF.md)
 - [Claim → Evidence RAG 인터페이스 계약](../contracts/claim-evidence-rag-interface.md)
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
 - [현재 구조·연결 계약 검토](AGENT_INTEGRATION_REVIEW.md)
