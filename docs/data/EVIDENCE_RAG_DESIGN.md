@@ -981,6 +981,30 @@ in vitro·comparator-only 누출은 없다. 다만 **명백한 FP 약 10편(6.4%
 - human QA 표본 50편(`pubmed_full_qa_sample.csv`): 의심 15 · QA_PRIORITY 10 · 복합 8 · 리뷰 8 · category 층화 9.
 - 검색 결과 0건 성분 129개는 그대로 0 selected(강제 채움 없음). botanical 13개 제외 및 query normalization 미착수는 결정대로다.
 
+### PubMed full collection 사후 수정: animal/human 우선순위 (2026-09-21, 새 PubMed 호출 없음)
+**결함**: 설계 분류가 임상 단서를 먼저 봐서 animal 단서가 있어도 human_clinical로 통과했다. **수정**: animal 단서(본문의 mice/rats/dogs 등)가
+사람 대상 본문 단서 없이 있으면 `animal`, 함께 있으면 `mixed`(→ 기존 정책대로 candidate `mixed_design_review`). publication type·MeSH는 초록과
+어긋나는 레코드가 실제로 있어(쥐 논문에 Randomized Controlled Trial·Humans, 사람 시험에 Animals) animal·human 모두 **본문 단서로만** 판단한다.
+저장된 4,240 record를 `pubmed_reevaluate.py`로 재평가(수정 전 코드로 돌리면 156편이 그대로 재현됨을 먼저 확인).
+
+| | selected |
+|---|---:|
+| 수정 전 | 156 |
+| 수정 후 | **149** (제거 7, 신규 0) |
+
+제거 7편(전부 정당): Cysteine 30802208(쥐 창상 모델, 메타데이터 오부착) → animal, Raspberry Ketone 18321745(mice+humans) → mixed,
+Glycyrrhetinic Acid 28736984(개 아토피, `dogs` 어휘 추가로 확정) → animal, Ceramide NS·NG 25543822(같은 논문, hairless mice) → animal,
+Lipase 33128473(효소 처리 오일, murine 세포) → mixed, Lactic Acid 38051121(Poly-L-Lactic Acid, mouse) → mixed.
+1차 시도에서 MeSH `Animals`를 animal 단서로 썼을 때 사람 시험(Zinc Oxide 37418701)이 잘못 빠져 본문 단서 전용으로 좁혔다.
+**남은 알려진 FP 유형(이번엔 수정하지 않음)**: 수식된 성분명·공정 도구(ornithine decarboxylase, polyethylene glycol, taurine bromamine,
+quaternium-18 bentonite, protease-treated), 비국소 경로(immunoadsorption), 창상·화상 의료 논문.
+
+**QA 방침 변경**: 50편 표본 대신 **최종 selected 149편 전수 QA**로 진행한다(Evidence DB·citation에 직접 쓰이는 초기 canonical set이므로).
+시트 `pubmed_final_selected_qa.csv`(gitignore, 149행·79개 성분·PMID 142개): ingredient, PMID, title, selection_grade, route, study_type,
+claim_topics, reviewer_verdict(KEEP/EXCLUDE/UNCERTAIN), reviewer_reason + 초록 등 참고 컬럼. 검수 기준: 성분 직접 근거, 국소 맥락, 분류 적절성,
+claim topic이 초록과 일치, derivative·compound-name 충돌, 다른 성분/공정 도구 귀속 여부, DB 적재 가능 여부. QA 후 집계(KEEP/EXCLUDE/UNCERTAIN,
+제외 사유 분포, 성분별 유지 수, 근거 0건이 된 성분, 남은 체계적 오류)로 CIR 보강 범위를 정한다. embedding·DB write는 QA 승인 전까지 하지 않는다.
+
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
 ④ candidate 필터·대표 선택 ⑤ document/chunk 생성 ⑥ BGE-M3 embedding ⑦ DB ingest ⑧ audit 재실행 ⑨ Tier A QA ⑩ retrieval 평가.
