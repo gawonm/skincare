@@ -218,7 +218,7 @@ class TestTwoLayerRagLatestDump:
             # 살리실산(BHA)은 MFDS 규제 근거(section=NULL)를 보유하고 있다
             evidence = await evidence_retriever.search(
                 EvidenceSearchRequest(
-                    query="살리실산 BHA 피지 각질 제거",
+                    query="살리실산 BHA 사용제한 규제 배합 한도",
                     target_ids=["5c3fa47f-b797-452c-bc86-04a872aa3f71"],
                     limit=5,
                 )

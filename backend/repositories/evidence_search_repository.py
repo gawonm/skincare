@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
-from sqlalchemy import ARRAY, Uuid, bindparam, text
+from sqlalchemy import ARRAY, String, Uuid, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import TextClause
 
@@ -52,6 +52,7 @@ class EvidenceVectorSearchRequest(BaseModel):
     query_vector: list[float] = Field(min_length=1)
     embedding_model: str = Field(min_length=1)
     target_ids: list[UUID] = Field(default_factory=list)
+    source_types: list[str] | None = None
     limit: int = Field(ge=1)
 
 
@@ -63,6 +64,7 @@ class EvidenceTextSearchRequest(BaseModel):
     query_text: str = Field(min_length=1)
     embedding_model: str = Field(min_length=1)
     target_ids: list[UUID] = Field(default_factory=list)
+    source_types: list[str] | None = None
     limit: int = Field(ge=1)
 
 
@@ -109,6 +111,9 @@ class EvidenceSearchRepository:
               AND target_link.ingredient_id = ANY(:target_ids)
         )
     """
+    _SOURCE_FILTER: ClassVar[str] = """
+        (:source_types IS NULL OR evidence_document.source_type = ANY(:source_types))
+    """
     _VECTOR_SQL: ClassVar[str] = f"""
         SELECT
             {_BASE_COLUMNS},
@@ -116,6 +121,7 @@ class EvidenceSearchRepository:
         FROM evidence_chunk
         JOIN evidence_document ON evidence_document.id = evidence_chunk.document_id
         WHERE evidence_chunk.embedding_model = :embedding_model
+          AND {_SOURCE_FILTER}
         ORDER BY evidence_chunk.embedding <=> :query_vector, evidence_chunk.chunk_id
         LIMIT :limit
     """
@@ -131,6 +137,7 @@ class EvidenceSearchRepository:
             1 - (evidence_chunk.embedding <=> :query_vector) AS score
         FROM target_evidence_chunk AS evidence_chunk
         JOIN evidence_document ON evidence_document.id = evidence_chunk.document_id
+        WHERE {_SOURCE_FILTER}
         ORDER BY evidence_chunk.embedding <=> :query_vector, evidence_chunk.chunk_id
         LIMIT :limit
     """
@@ -144,6 +151,7 @@ class EvidenceSearchRepository:
         FROM evidence_chunk
         JOIN evidence_document ON evidence_document.id = evidence_chunk.document_id
         WHERE evidence_chunk.embedding_model = :embedding_model
+          AND {_SOURCE_FILTER}
           AND to_tsvector('simple', evidence_chunk.content)
               @@ plainto_tsquery('simple', :query_text)
         ORDER BY score DESC, evidence_chunk.chunk_id
@@ -160,6 +168,7 @@ class EvidenceSearchRepository:
         JOIN evidence_document ON evidence_document.id = evidence_chunk.document_id
         WHERE evidence_chunk.embedding_model = :embedding_model
           AND {_TARGET_FILTER}
+          AND {_SOURCE_FILTER}
           AND to_tsvector('simple', evidence_chunk.content)
               @@ plainto_tsquery('simple', :query_text)
         ORDER BY score DESC, evidence_chunk.chunk_id
@@ -187,6 +196,7 @@ class EvidenceSearchRepository:
                 "query_vector": request.query_vector,
                 "embedding_model": request.embedding_model,
                 "target_ids": request.target_ids,
+                "source_types": request.source_types,
                 "limit": request.limit,
             },
         )
@@ -201,12 +211,15 @@ class EvidenceSearchRepository:
                 "query_text": request.query_text,
                 "embedding_model": request.embedding_model,
                 "target_ids": request.target_ids,
+                "source_types": request.source_types,
                 "limit": request.limit,
             },
         )
 
     def _statement(self, sql: str, *, binds_target_ids: bool) -> TextClause:
-        statement = text(sql)
+        statement = text(sql).bindparams(
+            bindparam("source_types", type_=ARRAY(String()))
+        )
         if not binds_target_ids:
             return statement
         # HNSW가 전체 후보를 먼저 제한하면 희소한 성분 Evidence가 탈락하므로,

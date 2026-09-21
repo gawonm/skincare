@@ -290,8 +290,17 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
         "mfds": EvidenceSourceType.MFDS,
         "cir": EvidenceSourceType.CIR,
     }
+    _DATABASE_SOURCE_TYPES: ClassVar[dict[EvidenceSourceType, str]] = {
+        EvidenceSourceType.PAPER: "pubmed_abstract",
+        EvidenceSourceType.MFDS: "mfds",
+        EvidenceSourceType.CIR: "cir",
+    }
+    _CONFIDENCE_TIERS: ClassVar[dict[str, RagConfidenceTier]] = {
+        "official_regulatory": RagConfidenceTier.OFFICIAL_REGULATORY,
+        "expert_reviewed": RagConfidenceTier.STRUCTURED_KNOWLEDGE,
+        "peer_reviewed_study": RagConfidenceTier.STRUCTURED_KNOWLEDGE,
+    }
     _VERIFIED_STATUS: ClassVar[str] = "verified"
-    _PEER_REVIEWED_LEVEL: ClassVar[str] = "peer_reviewed_study"
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -306,6 +315,7 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
             )
         try:
             target_ids = [UUID(target_id) for target_id in request.request.target_ids]
+            source_types = self._database_source_types(request)
             async with self._session_factory() as session:
                 repository = EvidenceSearchRepository(session)
                 vector_rows = await repository.search_by_vector(
@@ -313,6 +323,7 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
                         query_vector=request.vector.values,
                         embedding_model=request.embedding_model,
                         target_ids=target_ids,
+                        source_types=source_types,
                         limit=request.request.limit,
                     )
                 )
@@ -321,6 +332,7 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
                         query_text=request.request.query,
                         embedding_model=request.embedding_model,
                         target_ids=target_ids,
+                        source_types=source_types,
                         limit=request.request.limit,
                     )
                 )
@@ -355,14 +367,33 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
                 UUID(target_id)
         except ValueError:
             return "Evidence 대상 ID는 UUID여야 합니다."
+        source_plan = request.request.source_plan
+        if source_plan is not None:
+            unsupported = [
+                source_type.value
+                for source_type in source_plan.primary_source_types
+                if source_type not in self._DATABASE_SOURCE_TYPES
+            ]
+            if unsupported:
+                return "현재 DB가 지원하지 않는 Evidence 출처 유형입니다: " + ", ".join(
+                    unsupported
+                )
         return None
+
+    def _database_source_types(self, request: HybridSearchRequest) -> list[str] | None:
+        source_plan = request.request.source_plan
+        if source_plan is None:
+            return None
+        return [
+            self._DATABASE_SOURCE_TYPES[source_type]
+            for source_type in source_plan.primary_source_types
+        ]
 
     def _to_retrieved(self, row: EvidenceSearchRow, vector: bool) -> RetrievedChunk:
         record = self._to_record(row)
-        confidence = (
-            RagConfidenceTier.STRUCTURED_KNOWLEDGE
-            if row.evidence_level == self._PEER_REVIEWED_LEVEL
-            else RagConfidenceTier.UNKNOWN
+        confidence = self._CONFIDENCE_TIERS.get(
+            row.evidence_level.casefold(),
+            RagConfidenceTier.UNKNOWN,
         )
         draft = RagChunkDraft(
             chunk_id=row.chunk_id,
