@@ -11,7 +11,6 @@ from agent.rag.schemas import (
     EmbeddingRequest,
     EvidenceBundle,
     EvidenceConditions,
-    EvidenceReviewStatus,
     EvidenceSearchRequest,
     LookupStatus,
     RagDocument,
@@ -22,7 +21,7 @@ NORMALIZED_ROUTES = frozenset(("topical", "oral", "intravenous"))
 
 
 class EvidenceApplicabilityEvaluator:
-    """명확한 조건 불일치만 배제하고 미검수·자유문 조건은 검토 대상으로 남긴다."""
+    """명확한 조건 불일치만 배제하고 출처 메타데이터는 적용 판정과 분리한다."""
 
     def assess(self, request: ApplicabilityRequest) -> ApplicabilityAssessment:
         record = request.evidence
@@ -49,8 +48,8 @@ class EvidenceApplicabilityEvaluator:
             reasons.append(f"원문 조건의 별도 검토 필요: {record.raw_conditions}")
             if status is ApplicabilityStatus.APPLICABLE:
                 status = ApplicabilityStatus.LIMITED
-        if record.review_status is not EvidenceReviewStatus.VERIFIED or record.is_demo:
-            reasons.append("미검수 자료 또는 개발 fixture이므로 실제 적용을 확정할 수 없음")
+        if record.is_demo:
+            reasons.append("개발 fixture이므로 실제 적용을 확정할 수 없음")
             if status is ApplicabilityStatus.APPLICABLE:
                 status = ApplicabilityStatus.UNKNOWN
         if record.document_version is None:

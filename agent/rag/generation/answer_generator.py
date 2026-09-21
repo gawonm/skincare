@@ -6,7 +6,6 @@ from agent.rag.retrieval.question_intent_classifier import QuestionIntentClassif
 from agent.rag.schemas import (
     EvidenceBackedStatement,
     EvidenceRecord,
-    EvidenceReviewStatus,
     EvidenceScope,
     EvidenceSearchRequest,
     EvidenceSearchResult,
@@ -96,17 +95,16 @@ class AnswerGenerator:
     ) -> IngredientVerificationResult:
         if not chunks:
             return self._missing(UnverifiableReason.NO_EVIDENCE_FOUND)
-        verified = [
+        eligible = [
             hit
             for hit in chunks
             if hit.chunk.confidence_tier in self._VERIFIABLE_TIERS
-            and hit.chunk.evidence.review_status is EvidenceReviewStatus.VERIFIED
             and not hit.chunk.evidence.is_demo
         ]
-        if not verified:
+        if not eligible:
             return self._missing(UnverifiableReason.UNREVIEWED_EVIDENCE)
         axes = set(intents) - {QuestionIntent.COMBINATION}
-        relevant = [hit for hit in verified if not axes or axes.intersection(hit.chunk.intents)]
+        relevant = [hit for hit in eligible if not axes or axes.intersection(hit.chunk.intents)]
         # 복합 질문에서 지원하지 않는 축을 다른 축 근거로 덮어쓰지 않는다.
         supported = {intent for hit in relevant for intent in hit.chunk.intents}
         if not relevant or not axes.issubset(supported):
