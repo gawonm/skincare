@@ -801,3 +801,119 @@ offline `ClaimRetriever`는 명시적으로 주입한 비교·개발 모드에�
 - 외부 OpenAI 포함 실제 E2E는 Top-3 NIA 원문 전송 승인 후 실행
 - reranker fallback, Claim 추출 오류, unresolved 성분 차단 회귀 테스트 통과
 - 골든 셋, ambiguous 분기, 다중 Case provenance 세부 회귀는 후속 평가 범위
+
+## 11. DB 기반 Product Taxonomy 조회 계약 — 2026-09-21 15:45 KST
+
+### 11.1 부르는 대상
+
+통합 CLI가 Agent를 조립하기 전에 Backend의 다음 비동기 메서드를 호출한다.
+
+```python
+class TwoLayerProductTaxonomyProvider:
+    async def load(self) -> ProductTaxonomy: ...
+```
+
+- 입력 파라미터는 없다.
+- 반환 타입 `ProductTaxonomy`의 소유 위치는 `agent/rag/schemas.py`다.
+- DB 세션과 조회 SQL은 Backend가 소유하며 Agent는 DB를 직접 import하지 않는다.
+
+### 11.2 출력과 저장값 매핑
+
+```python
+class ProductClassification(RagModel):
+    code: str
+    name: str
+    aliases: list[str]
+
+
+class ProductCategory(ProductClassification):
+    pass
+
+
+class ProductTaxonomy(RagModel):
+    version: str
+    categories: list[ProductCategory]
+    textures: list[ProductTexture]
+    skin_feels: list[ProductSkinFeel]
+```
+
+`product` 테이블의 NULL이 아닌 `(service_category, product_type_normalized)` 조합과 상품 수를
+집계하고 다음과 같이 변환한다.
+
+- `service_category` → `ProductCategory.code`, `ProductCategory.name`
+- 같은 `service_category`의 `product_type_normalized` 집합 → 해당 카테고리의 `aliases`
+- `textures`, `skin_feels` → 빈 목록
+- `version` → 정렬된 DB 분류값으로 계산한 결정적 digest 버전
+
+`product_type_normalized`는 세부 제품 유형이지 제형 또는 사용감이 아니므로 `textures`나
+`skin_feels`로 승격하지 않는다. 상품 DTO의 category 코드도 `service_category`를 사용해 Taxonomy
+코드와 실제 필터 대상이 일치하게 한다. 두 분류가 NULL인 상품은 현재 지원 Taxonomy에 넣지 않는다.
+
+### 11.3 실패 계약
+
+- 조회 SQL·DB 연결·DTO 변환 실패: 원인을 포함한 `RuntimeError`
+- 유효한 `service_category`가 0건: 빈 개발용 fixture로 대체하지 않고 `RuntimeError`
+- 일부 미분류 상품: 전체 로딩 실패로 처리하지 않고 Taxonomy 집계에서 제외
+
+통합 CLI는 이 실패를 숨기지 않고 시작 단계에서 종료한다. 운영 분류를 읽지 못한 상태에서
+fixture 분류로 실행하면 Agent가 지원한다고 판단한 필터와 실제 상품 코드가 달라질 수 있기 때문이다.
+
+## 12. Case 관련 성분 선별 및 사용법 전달 계약 — 2026-09-21 16:12 KST
+
+이 절은 10.3~10.5의 런타임 Case Claim 생성 방식 중 LLM 책임을 축소한다. Backend가 반환하는
+`CaseSearchHit` 계약은 바꾸지 않으며 변경 범위는 Agent 내부의 Top-3 분석과 루틴 입력 조립이다.
+
+### 12.1 LLM 관련 성분 선별
+
+LLM은 효능 Claim, 조합 관계 또는 표준 ID를 만들지 않는다. 사용자 질문과 관련 있고 Top-3 Case
+원문에 실제로 적힌 성분만 다음 후보 형태로 반환한다.
+
+```python
+class SelectedCaseIngredient(RagModel):
+    case_id: str
+    raw_name: str
+
+
+class CaseIngredientSelectionModelOutput(RagModel):
+    ingredients: list[SelectedCaseIngredient]
+```
+
+- 피부 고민과 무관한 성분은 반환하지 않는다.
+- `claim_type`, `combination_relation_quote`, `ingredient_id`, Evidence 상태는 LLM 출력에 없다.
+- Agent 규칙 계층이 Top-3 `case_id`, 원문 안의 `raw_name` 존재 여부와 중복을 검증한다.
+- 내부 호환 DTO의 `source_quote`는 검증 대상인 `raw_name` 자체로 결정적으로 만든다. LLM이 긴
+  인용문을 복사하지 않으므로 말줄임표나 개행 변형 때문에 유효 성분 전체가 탈락하지 않는다.
+- 검증된 후보는 기존 단일 성분 Evidence/Product 경로와 연결하기 위한 내부 호환 DTO로 변환한다.
+- Evidence 검색문은 LLM이 만든 효능 문장이 아니라 `표준 성분명 + 사용자 질문`으로 결정적으로 만든다.
+
+### 12.2 NIA Case 사용법 구간
+
+`NiaCaseDocument.page_content`에 보존된 번호·제목 구조에서 `사용법 및 관리방안` 구간은 규칙으로
+추출한다. 별도 LLM으로 구간 경계를 추측하지 않는다.
+
+```python
+class CaseUsageGuidance(RagModel):
+    source_id: str
+    case_id: str
+    text: str
+    ingredient_ids: list[str]
+```
+
+- Top-3 Case에서 선별·표준화된 성분명이 사용법 구간에도 명시된 경우만 만든다.
+- 최종 선택 상품의 `ingredient_ids`와 교차되는 안내만 루틴 입력에 사용한다.
+- Case 사용법은 공식 제품 사용법이나 검수 Evidence가 아니므로 항상 warning으로 처리한다.
+- 제품 공식 directions와 검수 Evidence의 required 규칙을 덮어쓰지 않는다.
+- 적용 상품이 없거나 성분 연결이 불명확한 일반 조언은 스케줄 규칙으로 만들지 않는다.
+
+루틴 연결 순서는 다음과 같다.
+
+```text
+Case Step 3 규칙 추출
+→ 선택 성분·최종 상품 연결
+→ RoutineRuleSource(CASE_USAGE_GUIDANCE)
+→ LLM Rule 후보 추출
+→ exact quote·상품 범위 결정적 검증
+→ WARNING Rule
+→ RoutineDraftGenerator
+→ 최종 일정 결정적 검증
+```
