@@ -1,8 +1,12 @@
 """최신 dump와 실제 모델을 연결한 2-Layer LangGraph 대화형 CLI.
 
-단일 질의:
+단일 질의 (간략 모드):
     uv run python -m tests.agent.interactive_two_layer_rag_cli \
         "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?"
+
+단일 질의 (2-Layer RAG 상세 모드):
+    uv run python -m tests.agent.interactive_two_layer_rag_cli \
+        "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?" --verbose
 
 대화형 실행:
     uv run python -m tests.agent.interactive_two_layer_rag_cli
@@ -11,9 +15,9 @@
 import asyncio
 import sys
 from enum import StrEnum
-from typing import ClassVar
+from typing import ClassVar, Final
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.engine import make_url
 
 from agent.factory import DevelopmentAgentApplication, DevelopmentAgentFactory
@@ -21,6 +25,16 @@ from agent.llm import LlmClientFactory
 from agent.nodes import CLAIM_ONLY_PRODUCT_LIMITATION
 from agent.ports import IngredientRepository, ProductRepository
 from agent.rag.case_claim_extractor import CaseClaimExtractorFactory
+from agent.rag.case_claim_schemas import (
+    CaseClaimExtractionRequest,
+    CaseClaimExtractionResult,
+)
+from agent.rag.case_schemas import (
+    CaseRerankRequest,
+    CaseRerankResult,
+    CaseSearchRequest,
+    CaseSearchResult,
+)
 from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.generation.evidence_statement_generator import EvidenceStatementGeneratorFactory
@@ -28,23 +42,40 @@ from agent.rag.ports import CaseClaimExtractor, CaseReranker, CaseRetriever, Evi
 from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
 from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
+from agent.rag.retrieval.ingredient_alias_mapper import CommonIngredientAliasMapper
 from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
 from agent.rag.routine_planner import RoutinePlannerFactory
 from agent.rag.schemas import (
     ChatModelConfig,
     EmbeddingProvider,
     EvidenceReviewStatus,
+    EvidenceSearchRequest,
+    EvidenceSearchResult,
+    IngredientResolveRequest,
+    IngredientResolveResult,
     LocalEmbeddingConfig,
     LocalEmbeddingModel,
     LocalModelDevice,
     LocalRerankerConfig,
     LocalRerankerModel,
+    LookupStatus,
     ProductCandidateSet,
+    ProductGetRequest,
+    ProductGetResult,
+    ProductSearchRequest,
+    ProductSearchResult,
     ProductTaxonomy,
     RagRetrievalPolicy,
     TextEmbeddingConfig,
 )
-from agent.schemas import ExecutionLimits, RegisterRoomRequest, UnresolvedKind
+from agent.schemas import (
+    AuthenticatedChatContext,
+    ChatServiceRequest,
+    ChatTurnInput,
+    ExecutionLimits,
+    RegisterRoomRequest,
+    UnresolvedKind,
+)
 from backend.services.agent_configuration import AgentConfigurationAssembler
 from backend.services.two_layer_rag_adapters import (
     BackendNiaCaseRetriever,
@@ -62,6 +93,215 @@ from tests.agent.interactive_rag_cli import (
     InteractiveAgentCli,
     RecordingEvidenceRetriever,
 )
+
+
+class CliDisplayMode(StrEnum):
+    """CLI 출력 모드."""
+
+    COMPACT = "compact"
+    VERBOSE = "verbose"
+
+
+class ClaimEvidenceDisplay(BaseModel):
+    """Claim 대비 Evidence 검색 집계 현황."""
+
+    model_config = ConfigDict(frozen=True)
+
+    subject: str
+    claim_text: str | None = None
+    retrieved_count: int
+    verified_count: int
+    unreviewed_count: int
+
+
+class FlowTraceModel(BaseModel):
+    """흐름 추적용 Pydantic 베이스 모델."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+
+class CaseSearchTrace(FlowTraceModel):
+    request: CaseSearchRequest
+    result: CaseSearchResult | None = None
+
+
+class CaseRerankTrace(FlowTraceModel):
+    request: CaseRerankRequest
+    result: CaseRerankResult | None = None
+
+
+class CaseClaimExtractionTrace(FlowTraceModel):
+    request: CaseClaimExtractionRequest
+    result: CaseClaimExtractionResult | None = None
+
+
+class IngredientResolutionTrace(FlowTraceModel):
+    request: IngredientResolveRequest
+    result: IngredientResolveResult | None = None
+
+
+class EvidenceSearchTrace(FlowTraceModel):
+    request: EvidenceSearchRequest
+    result: EvidenceSearchResult | None = None
+
+
+class ProductSearchTrace(FlowTraceModel):
+    request: ProductSearchRequest
+    result: ProductSearchResult | None = None
+
+
+class TwoLayerFlowSnapshot(FlowTraceModel):
+    """2-Layer RAG 파이프라인의 1턴 전체 추적 스냅샷."""
+
+    case_searches: list[CaseSearchTrace] = Field(default_factory=list)
+    case_reranks: list[CaseRerankTrace] = Field(default_factory=list)
+    claim_extractions: list[CaseClaimExtractionTrace] = Field(default_factory=list)
+    ingredient_resolutions: list[IngredientResolutionTrace] = Field(default_factory=list)
+    evidence_searches: list[EvidenceSearchTrace] = Field(default_factory=list)
+    product_searches: list[ProductSearchTrace] = Field(default_factory=list)
+
+
+class TwoLayerFlowTraceCollector:
+    """실제 포트 호출을 재실행하지 않고 한 턴의 단계별 입출력을 보존한다."""
+
+    def __init__(self) -> None:
+        self._snapshot = TwoLayerFlowSnapshot()
+
+    def reset(self) -> None:
+        self._snapshot = TwoLayerFlowSnapshot()
+
+    def snapshot(self) -> TwoLayerFlowSnapshot:
+        return self._snapshot.model_copy(deep=True)
+
+    def case_search(self, request: CaseSearchRequest) -> CaseSearchTrace:
+        trace = CaseSearchTrace(request=request.model_copy(deep=True))
+        self._snapshot.case_searches.append(trace)
+        return trace
+
+    def case_rerank(self, request: CaseRerankRequest) -> CaseRerankTrace:
+        trace = CaseRerankTrace(request=request.model_copy(deep=True))
+        self._snapshot.case_reranks.append(trace)
+        return trace
+
+    def claim_extraction(
+        self,
+        request: CaseClaimExtractionRequest,
+    ) -> CaseClaimExtractionTrace:
+        trace = CaseClaimExtractionTrace(request=request.model_copy(deep=True))
+        self._snapshot.claim_extractions.append(trace)
+        return trace
+
+    def ingredient_resolution(
+        self,
+        request: IngredientResolveRequest,
+    ) -> IngredientResolutionTrace:
+        trace = IngredientResolutionTrace(request=request.model_copy(deep=True))
+        self._snapshot.ingredient_resolutions.append(trace)
+        return trace
+
+    def evidence_search(self, request: EvidenceSearchRequest) -> EvidenceSearchTrace:
+        trace = EvidenceSearchTrace(request=request.model_copy(deep=True))
+        self._snapshot.evidence_searches.append(trace)
+        return trace
+
+    def product_search(self, request: ProductSearchRequest) -> ProductSearchTrace:
+        trace = ProductSearchTrace(request=request.model_copy(deep=True))
+        self._snapshot.product_searches.append(trace)
+        return trace
+
+
+class RecordingCaseRetriever(CaseRetriever):
+    def __init__(self, delegate: CaseRetriever, collector: TwoLayerFlowTraceCollector) -> None:
+        self._delegate = delegate
+        self._collector = collector
+
+    async def search(self, request: CaseSearchRequest) -> CaseSearchResult:
+        trace = self._collector.case_search(request)
+        result = await self._delegate.search(request)
+        trace.result = result.model_copy(deep=True)
+        return result
+
+
+class RecordingCaseReranker(CaseReranker):
+    def __init__(self, delegate: CaseReranker, collector: TwoLayerFlowTraceCollector) -> None:
+        self._delegate = delegate
+        self._collector = collector
+
+    async def rerank(self, request: CaseRerankRequest) -> CaseRerankResult:
+        trace = self._collector.case_rerank(request)
+        result = await self._delegate.rerank(request)
+        trace.result = result.model_copy(deep=True)
+        return result
+
+
+class RecordingCaseClaimExtractor(CaseClaimExtractor):
+    def __init__(
+        self,
+        delegate: CaseClaimExtractor,
+        collector: TwoLayerFlowTraceCollector,
+    ) -> None:
+        self._delegate = delegate
+        self._collector = collector
+
+    async def extract(
+        self,
+        request: CaseClaimExtractionRequest,
+    ) -> CaseClaimExtractionResult:
+        trace = self._collector.claim_extraction(request)
+        result = await self._delegate.extract(request)
+        trace.result = result.model_copy(deep=True)
+        return result
+
+
+class RecordingIngredientRepository(IngredientRepository):
+    def __init__(
+        self,
+        delegate: IngredientRepository,
+        collector: TwoLayerFlowTraceCollector,
+    ) -> None:
+        self._delegate = delegate
+        self._collector = collector
+
+    async def resolve(self, request: IngredientResolveRequest) -> IngredientResolveResult:
+        trace = self._collector.ingredient_resolution(request)
+        result = await self._delegate.resolve(request)
+        trace.result = result.model_copy(deep=True)
+        return result
+
+
+class RecordingFlowEvidenceRetriever(EvidenceRetriever):
+    def __init__(
+        self,
+        delegate: EvidenceRetriever,
+        collector: TwoLayerFlowTraceCollector,
+    ) -> None:
+        self._delegate = delegate
+        self._collector = collector
+
+    async def search(self, request: EvidenceSearchRequest) -> EvidenceSearchResult:
+        trace = self._collector.evidence_search(request)
+        result = await self._delegate.search(request)
+        trace.result = result.model_copy(deep=True)
+        return result
+
+
+class RecordingProductRepository(ProductRepository):
+    def __init__(
+        self,
+        delegate: ProductRepository,
+        collector: TwoLayerFlowTraceCollector,
+    ) -> None:
+        self._delegate = delegate
+        self._collector = collector
+
+    async def search(self, request: ProductSearchRequest) -> ProductSearchResult:
+        trace = self._collector.product_search(request)
+        result = await self._delegate.search(request)
+        trace.result = result.model_copy(deep=True)
+        return result
+
+    async def get(self, request: ProductGetRequest) -> ProductGetResult:
+        return await self._delegate.get(request)
 
 
 class ConfiguredDatabaseFactory:
@@ -92,29 +332,14 @@ class Utf8ConsoleConfigurator:
         for stream in (sys.stdout, sys.stderr):
             reconfigure = getattr(stream, "reconfigure", None)
             if callable(reconfigure):
-                # 기존 CLI가 이모지를 출력하므로 cp949 콘솔에서는 결과 렌더링 전에 실패한다.
+                # 이모지 및 특수 기호 출력 시 cp949 콘솔 인코딩 오류를 방지한다.
                 reconfigure(encoding=self.ENCODING, errors=self.ERROR_POLICY)
 
 
-class CliDisplayMode(StrEnum):
-    COMPACT = "compact"
-    VERBOSE = "verbose"
-
-
-class ClaimEvidenceDisplay(BaseModel):
-    """한 Claim의 Evidence 검색 결과를 사람이 빠르게 읽을 수 있는 형태로 제한한다."""
-
-    subject: str = Field(min_length=1)
-    claim_text: str | None = Field(default=None, min_length=1)
-    retrieved_count: int = Field(ge=0)
-    verified_count: int = Field(ge=0)
-    unreviewed_count: int = Field(ge=0)
-
-
 class CompactTwoLayerTurnPresenter:
-    """디버그 세부정보 대신 2-Layer 판정 흐름을 먼저 보여준다."""
+    """간결한 최종 결과와 성분/근거 요약을 출력한다."""
 
-    CLAIM_SEPARATOR: ClassVar[str] = ":"
+    CLAIM_SEPARATOR: ClassVar[str] = "::"
 
     def print_turn(self, result: AgentTurnResult, user_message: str) -> None:
         output = result.turn_output
@@ -127,7 +352,7 @@ class CompactTwoLayerTurnPresenter:
 
         claim_rows = self._claim_rows(result)
         if claim_rows:
-            print("[Claim → Evidence]")
+            print("[Claim → Evidence 요약]")
             for index, row in enumerate(claim_rows, start=1):
                 print(f"{index}. {row.subject}")
                 if row.claim_text:
@@ -167,10 +392,8 @@ class CompactTwoLayerTurnPresenter:
             for citation in output.citations:
                 print(f"- {citation.source_title} ({citation.locator})")
 
-        # 상품 목록이 없는 효능·안전성 질의는 생성된 답변 문장 자체가 핵심 결과다.
-        if not candidates:
-            print("\n[Agent 최종 응답]")
-            print(output.message)
+        print("\n[Agent 최종 응답]")
+        print(output.message)
 
         if output.unresolved:
             print("\n[보류 요약]")
@@ -184,7 +407,7 @@ class CompactTwoLayerTurnPresenter:
         if output.follow_up_question:
             print(f"\n추가 질문: {output.follow_up_question}")
 
-        print("\n상세 검색 로그가 필요하면 명령 끝에 --verbose를 붙이세요.")
+        print("\n상세 2-Layer RAG 로그가 필요하면 명령 끝에 --verbose를 붙이세요.")
         print(DIVIDER_LINE)
 
     def _claim_rows(self, result: AgentTurnResult) -> list[ClaimEvidenceDisplay]:
@@ -219,6 +442,232 @@ class CompactTwoLayerTurnPresenter:
         if kind is UnresolvedKind.TOOL_FAILURE:
             return "도구 실행 실패"
         return "근거 충돌"
+
+
+class VerboseTwoLayerTurnPresenter:
+    """2-Layer RAG 파이프라인의 모든 단계를 상세하게 출력한다."""
+
+    QUOTE_PREVIEW_LENGTH: ClassVar[int] = 220
+    CHUNK_CONTENT_PREVIEW_LENGTH: ClassVar[int] = 200
+    PRODUCT_PREVIEW_LIMIT: ClassVar[int] = 10
+
+    def __init__(self) -> None:
+        self._aliases = CommonIngredientAliasMapper()
+
+    def print_turn(
+        self,
+        snapshot: TwoLayerFlowSnapshot,
+        result: AgentTurnResult,
+        user_message: str,
+    ) -> None:
+        output = result.turn_output
+        intents = ", ".join(intent.value for intent in output.intents)
+
+        print(f"\n{DIVIDER_LINE}")
+        print(f"질문: {user_message}")
+        print(f"실행 결과: {output.status.value} | 의도: {intents}")
+        print(DIVIDER_LINE)
+
+        self._print_case_search(snapshot)
+        self._print_case_rerank(snapshot)
+        self._print_claim_extraction(snapshot)
+        self._print_ingredient_resolution(snapshot)
+        self._print_evidence_search(snapshot)
+        self._print_product_search(snapshot)
+
+        candidate_sets = [
+            artifact
+            for artifact in output.artifacts
+            if isinstance(artifact, ProductCandidateSet)
+        ]
+        candidates = [
+            candidate
+            for candidate_set in candidate_sets
+            for candidate in candidate_set.candidates
+        ]
+        if candidates:
+            print("\n[상품 후보]")
+            for candidate in candidates:
+                basis = (
+                    "Claim 기반·근거 미확인"
+                    if CLAIM_ONLY_PRODUCT_LIMITATION in candidate.unresolved
+                    else "Evidence 기반"
+                )
+                print(f"{candidate.rank}. {candidate.product.name} [{basis}]")
+
+        if output.citations:
+            print("\n[채택된 공인 근거]")
+            for citation in output.citations:
+                print(f"- {citation.source_title} ({citation.locator})")
+
+        print("\n[7. Agent 최종 응답]")
+        print(output.message)
+
+        if output.unresolved:
+            print("\n[보류 요약]")
+            for item in output.unresolved:
+                print(f"- {item.kind.value}: {item.detail}")
+
+        if output.error_code is not None:
+            print(f"\n오류: {output.error_code.value} | 재시도 가능: {output.retryable}")
+        if output.follow_up_question:
+            print(f"\n추가 질문: {output.follow_up_question}")
+
+        print(DIVIDER_LINE)
+
+    def _print_case_search(self, snapshot: TwoLayerFlowSnapshot) -> None:
+        print("\n[1. NIA Case Document 임베딩 검색]")
+        if not snapshot.case_searches:
+            print("- 실행되지 않음")
+            return
+        for trace in snapshot.case_searches:
+            print(f"- 검색 질의: {trace.request.query}")
+            print(f"- 후보 요청 수: {trace.request.candidate_limit}")
+            if trace.result is None:
+                print("- 결과 미수신")
+                continue
+            print(f"- 상태: {trace.result.status.value}, 반환: {len(trace.result.hits)}건")
+            for index, hit in enumerate(trace.result.hits, start=1):
+                print(
+                    f"  {index}. case_id={hit.case_id} "
+                    f"vector_similarity={hit.vector_similarity:.4f}"
+                )
+
+    def _print_case_rerank(self, snapshot: TwoLayerFlowSnapshot) -> None:
+        print("\n[2. BGE 리랭커 Top-3 Case]")
+        if not snapshot.case_reranks:
+            print("- 실행되지 않음")
+            return
+        for trace in snapshot.case_reranks:
+            print(f"- 리랭크 질의: {trace.request.query}")
+            print(f"- 입력 후보: {len(trace.request.candidates)}건, 선택 상한: {trace.request.limit}건")
+            if trace.result is None:
+                print("- 결과 미수신")
+                continue
+            print(f"- 모델: {trace.result.model}")
+            for index, hit in enumerate(trace.result.hits, start=1):
+                print(
+                    f"  {index}. case_id={hit.case_id} "
+                    f"rerank_score={hit.rerank_score:.4f}"
+                )
+
+    def _print_claim_extraction(self, snapshot: TwoLayerFlowSnapshot) -> None:
+        print("\n[3. Top-3 원문 LLM 관련 성분 선별]")
+        if not snapshot.claim_extractions:
+            print("- 실행되지 않음")
+            return
+        for trace in snapshot.claim_extractions:
+            print(f"- LLM 입력 case_id: {[case.case_id for case in trace.request.cases]}")
+            if trace.result is None:
+                print("- 결과 미수신")
+                continue
+            print(
+                f"- 상태: {trace.result.status.value}, model={trace.result.model}, "
+                f"prompt={trace.result.prompt_version}"
+            )
+            for index, claim in enumerate(trace.result.claims, start=1):
+                ingredients = [item.raw_name for item in claim.ingredients]
+                quote = claim.source_quote[: self.QUOTE_PREVIEW_LENGTH]
+                print(
+                    f"  {index}. case_id={claim.case_id} ingredients={ingredients}"
+                )
+                print(f"     quote={quote}")
+
+    def _print_ingredient_resolution(self, snapshot: TwoLayerFlowSnapshot) -> None:
+        print("\n[4. Agent 별칭 처리 및 표준 ingredient_id 확정]")
+        claims = [
+            claim
+            for extraction in snapshot.claim_extractions
+            if extraction.result is not None
+            for claim in extraction.result.claims
+        ]
+        if not claims:
+            print("- 선별된 관련 성분 없음")
+            return
+        for claim in claims:
+            for ingredient in claim.ingredients:
+                request = IngredientResolveRequest(name=ingredient.raw_name)
+                mapped = self._aliases.map_request(request)
+                ambiguous = self._aliases.is_ambiguous_family(request)
+                resolution = self._find_resolution(snapshot, request.name, mapped.name)
+                if resolution is None or resolution.result is None:
+                    resolved = "ingredient_id 미확정"
+                elif resolution.result.ingredient is not None:
+                    record = resolution.result.ingredient
+                    resolved = f"{record.canonical_name} / {record.ingredient_id}"
+                else:
+                    resolved = resolution.result.status.value
+                policy = "모호한 성분군" if ambiguous else mapped.name
+                print(f"- {ingredient.raw_name} → {policy} → {resolved}")
+
+    def _find_resolution(
+        self,
+        snapshot: TwoLayerFlowSnapshot,
+        raw_name: str,
+        mapped_name: str,
+    ) -> IngredientResolutionTrace | None:
+        matches = [
+            trace
+            for trace in snapshot.ingredient_resolutions
+            if trace.request.name in {raw_name, mapped_name}
+        ]
+        successful = [
+            trace
+            for trace in matches
+            if trace.result is not None and trace.result.status is LookupStatus.SUCCESS
+        ]
+        return successful[-1] if successful else (matches[-1] if matches else None)
+
+    def _print_evidence_search(self, snapshot: TwoLayerFlowSnapshot) -> None:
+        print("\n[5. 성분별 Evidence 검색 및 청크 상세]")
+        if not snapshot.evidence_searches:
+            print("- 실행되지 않음")
+            return
+        for index, trace in enumerate(snapshot.evidence_searches, start=1):
+            print(f"{index}. Evidence 질의: {trace.request.query}")
+            print(f"   ingredient_id: {trace.request.target_ids}")
+            print(f"   Claim당 Evidence 반환 상한: {trace.request.limit}건")
+            if trace.result is None:
+                print("   결과 미수신")
+                continue
+            chunks = trace.result.chunks
+            print(
+                f"   상태: {trace.result.status.value}, "
+                f"반환 Evidence: {len(chunks)}건"
+            )
+            for chunk_idx, hit in enumerate(chunks, start=1):
+                chunk = hit.chunk
+                evidence = chunk.evidence
+                snippet = (
+                    chunk.content[: self.CHUNK_CONTENT_PREVIEW_LENGTH].replace("\n", " ")
+                    + ("..." if len(chunk.content) > self.CHUNK_CONTENT_PREVIEW_LENGTH else "")
+                )
+                print(
+                    f"   [{chunk_idx}] {evidence.source_title} ({evidence.locator}) "
+                    f"| 검수: {evidence.review_status.value} "
+                    f"| RRF: {hit.fused_score:.4f}"
+                    + (f", Vec: {hit.vector_similarity:.4f}" if hit.vector_similarity is not None else "")
+                    + (f", Rerank: {hit.reranker_score:.4f}" if hit.reranker_score is not None else "")
+                )
+                print(f"       본문: {snippet}")
+
+    def _print_product_search(self, snapshot: TwoLayerFlowSnapshot) -> None:
+        print("\n[6. 상품 검색]")
+        if not snapshot.product_searches:
+            print("- 실행되지 않음")
+            return
+        for index, trace in enumerate(snapshot.product_searches, start=1):
+            filters = trace.request.filters
+            print(
+                f"{index}. ingredient_ids={filters.ingredient_ids}, "
+                f"category={filters.category.code if filters.category else None}"
+            )
+            if trace.result is None:
+                print("   결과 미수신")
+                continue
+            print(f"   상태: {trace.result.status.value}, 반환 상품: {len(trace.result.products)}건")
+            for product in trace.result.products[: self.PRODUCT_PREVIEW_LIMIT]:
+                print(f"   - {product.name} ({product.category.name})")
 
 
 class TwoLayerAgentModelConfigFactory:
@@ -291,7 +740,9 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
     ) -> None:
         Utf8ConsoleConfigurator().configure()
         self._display_mode = display_mode
+        self._flow_trace = TwoLayerFlowTraceCollector()
         self._compact_presenter = CompactTwoLayerTurnPresenter()
+        self._verbose_presenter = VerboseTwoLayerTurnPresenter()
         self._actor_id = "two-layer-cli-user"
         self._chat_room_id = "two-layer-cli-room"
         self._thread_id = "two-layer-cli-thread"
@@ -367,38 +818,47 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
         )
 
     def _configure_case_retriever(self, delegate: CaseRetriever) -> CaseRetriever:
-        return delegate
+        return RecordingCaseRetriever(delegate, self._flow_trace)
 
     def _configure_case_reranker(self, delegate: CaseReranker) -> CaseReranker:
-        return delegate
+        return RecordingCaseReranker(delegate, self._flow_trace)
 
     def _configure_case_claim_extractor(
         self,
         delegate: CaseClaimExtractor,
     ) -> CaseClaimExtractor:
-        return delegate
+        return RecordingCaseClaimExtractor(delegate, self._flow_trace)
 
     def _configure_ingredient_repository(
         self,
         delegate: IngredientRepository,
     ) -> IngredientRepository:
-        return delegate
+        return RecordingIngredientRepository(delegate, self._flow_trace)
 
     def _configure_evidence_retriever(
         self,
         delegate: EvidenceRetriever,
     ) -> EvidenceRetriever:
-        return delegate
+        return RecordingFlowEvidenceRetriever(delegate, self._flow_trace)
 
     def _configure_product_repository(
         self,
         delegate: ProductRepository,
     ) -> ProductRepository:
-        return delegate
+        return RecordingProductRepository(delegate, self._flow_trace)
+
+    async def handle_message(self, user_message: str) -> AgentTurnResult:
+        """한 번의 메시지 처리 시 2-Layer 흐름 스냅샷도 초기화한다."""
+        self._flow_trace.reset()
+        return await super().handle_message(user_message)
 
     def print_turn(self, result: AgentTurnResult, user_message: str) -> None:
         if self._display_mode is CliDisplayMode.VERBOSE:
-            super().print_turn(result, user_message)
+            self._verbose_presenter.print_turn(
+                self._flow_trace.snapshot(),
+                result,
+                user_message,
+            )
             return
         self._compact_presenter.print_turn(result, user_message)
 
