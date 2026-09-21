@@ -97,3 +97,48 @@ GAP_TOPICS: tuple[EvidenceClaimTopic, ...] = (
     EvidenceClaimTopic.EFFICACY,
     EvidenceClaimTopic.PRECAUTION,
 )
+
+
+class UniverseCategory(StrEnum):
+    """audit universe 성분의 성격. 이름 규칙 + 기존 NIA/제품 수만으로 정한 제안이며 확정 분류가 아니다."""
+
+    ACTIVE_OR_FUNCTIONAL = "active_or_functional"
+    BOTANICAL_OR_FERMENT = "botanical_or_ferment"
+    PEPTIDE_OR_PROTEIN = "peptide_or_protein"
+    BASE_SOLVENT_HUMECTANT = "base_solvent_humectant"
+    PRESERVATIVE_STABILIZER = "preservative_stabilizer"
+    POLYMER_THICKENER = "polymer_thickener"
+    SURFACTANT_EMULSIFIER_EMOLLIENT = "surfactant_emulsifier_emollient"
+    PH_ADJUSTER_SALT = "ph_adjuster_salt"
+    FRAGRANCE_ALLERGEN = "fragrance_allergen"
+    FAMILY_OR_MECHANISM_TERM = "family_or_mechanism_term"
+
+
+class CollectionDecision(StrEnum):
+    COLLECT_BASELINE = "COLLECT_BASELINE"
+    QA_PRIORITY = "QA_PRIORITY"  # 수집 대상이며 사람이 먼저 검수한다(수집 제외가 아님)
+    DEFER = "DEFER"
+    EXCLUDE_FROM_SCIENTIFIC_COLLECTION = "EXCLUDE_FROM_SCIENTIFIC_COLLECTION"
+
+
+class UniverseRow(BaseModel):
+    ingredient_id: UUID
+    ingredient_name: str
+    category: UniverseCategory
+    decision: CollectionDecision
+    decision_reason: str
+    nia_case_count: int
+    confirmed_product_count: int
+    scientific_document_count: int
+    current_priority_tier: PriorityTier
+    families: str
+    in_smoke_set: bool
+
+
+class FamilyMemberRow(BaseModel):
+    family: str
+    ingredient_id: UUID
+    ingredient_name: str
+    nia_case_count: int
+    confirmed_product_count: int
+    scientific_document_count: int

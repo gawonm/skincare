@@ -17,7 +17,7 @@ from collections import defaultdict
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -292,8 +292,23 @@ class CoverageCsvWriter:
                 writer.writerow(row.model_dump(mode="json"))
 
 
+class CoverageSnapshot(BaseModel):
+    """audit 한 번의 조회·집계 결과. universe 분석 같은 후속 단계가 같은 값을 재사용한다."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    rows: list[CoverageRow]
+    topic_rows: list[TopicSourceRow]
+    links: list[ScientificDocumentLink]
+    names: list[IngredientName]
+    nia: dict[UUID, NiaRelevance]
+    products: list[ProductBackedIngredientCount]
+    orphans: int
+    builder: CoverageBuilder
+
+
 class CoverageAuditRunner:
-    async def run(self, database_url: str, nia_summary: Path, output_dir: Path) -> None:
+    async def load(self, database_url: str, nia_summary: Path) -> "CoverageSnapshot":
         nia = NiaSummaryReader().read(nia_summary)
         engine = create_async_engine(database_url)
         try:
@@ -316,13 +331,28 @@ class CoverageAuditRunner:
         builder = CoverageBuilder(CoverageClassifier())
         rows, topic_rows = builder.build(links, names, nia, products)
         rows.sort(key=lambda r: (-r.nia_case_count, -r.confirmed_product_count, r.ingredient_name))
-        writer = CoverageCsvWriter()
-        writer.write(output_dir / _MATRIX_FILENAME, rows, CoverageRow)
-        writer.write(output_dir / _TOPIC_SOURCE_FILENAME, topic_rows, TopicSourceRow)
-        writer.write(
-            output_dir / _PRIORITY_FILENAME, builder.priority_candidates(rows), CoverageRow
+        return CoverageSnapshot(
+            rows=rows,
+            topic_rows=topic_rows,
+            links=links,
+            names=names,
+            nia=nia,
+            products=products,
+            orphans=orphans,
+            builder=builder,
         )
-        self._print_checks(rows, links, names, nia, products, orphans)
+
+    async def run(self, database_url: str, nia_summary: Path, output_dir: Path) -> None:
+        snap = await self.load(database_url, nia_summary)
+        writer = CoverageCsvWriter()
+        writer.write(output_dir / _MATRIX_FILENAME, snap.rows, CoverageRow)
+        writer.write(output_dir / _TOPIC_SOURCE_FILENAME, snap.topic_rows, TopicSourceRow)
+        writer.write(
+            output_dir / _PRIORITY_FILENAME,
+            snap.builder.priority_candidates(snap.rows),
+            CoverageRow,
+        )
+        self._print_checks(snap.rows, snap.links, snap.names, snap.nia, snap.products, snap.orphans)
 
     def _print_checks(
         self,
