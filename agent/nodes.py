@@ -607,7 +607,11 @@ class AgentNodes:
                 UnresolvedItem(kind=UnresolvedKind.UNSUPPORTED_CONDITION, detail=condition)
                 for condition in parsed.unsupported_product_conditions
             )
-            state.response_parts.append("요청한 상품 조건을 현재 지원 목록으로 처리할 수 없습니다.")
+            conditions = ", ".join(dict.fromkeys(parsed.unsupported_product_conditions))
+            state.response_parts.append(
+                "다음 조건은 현재 상품 데이터에서 확인할 수 없어 제품 후보를 제시하지 않았습니다: "
+                + conditions
+            )
             return
         rejected_product_ids = {
             candidate.product.product_id

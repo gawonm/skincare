@@ -72,9 +72,62 @@ class RagResponseAssembler:
             self._append_missing_evidence_path(state)
             self._append_unresolved_claim_anchors(state)
             return
+        insufficient = [
+            result
+            for result in verification.results
+            if result.status is ClaimVerificationStatus.INSUFFICIENT
+        ]
         for result in verification.results:
+            if result.status is ClaimVerificationStatus.INSUFFICIENT:
+                continue
             self._append_claim_verification_result(state, result)
+        if insufficient:
+            self._append_insufficient_claims(state, insufficient)
         self._append_unresolved_claim_anchors(state)
+
+    def _append_insufficient_claims(
+        self,
+        state: AgentState,
+        results: list[ClaimVerificationResult],
+    ) -> None:
+        state.status = ChatStatus.PARTIAL
+        names = self._claim_ingredient_names(state, results)
+        subject = ", ".join(names) if names else "일부 후보 성분"
+        detail = f"현재 연결된 공인 근거로 충분히 확인하지 못한 후보 성분: {subject}"
+        state.unresolved.append(UnresolvedItem(kind=UnresolvedKind.NO_EVIDENCE, detail=detail))
+        state.response_parts.append(detail)
+
+    def _claim_ingredient_names(
+        self,
+        state: AgentState,
+        results: list[ClaimVerificationResult],
+    ) -> list[str]:
+        ingredient_ids = {
+            ingredient_id for result in results for ingredient_id in result.ingredient_ids
+        }
+        case_claim = state.case_claim_bundle
+        if case_claim is not None:
+            return list(
+                dict.fromkeys(
+                    ingredient.canonical_name or ingredient.raw_name
+                    for claim in case_claim.resolved_claims
+                    for ingredient in claim.ingredients
+                    if ingredient.ingredient_id in ingredient_ids
+                )
+            )
+        claim = state.claim_bundle
+        if claim is None:
+            return []
+        statement_ids = {result.statement_id for result in results}
+        return list(
+            dict.fromkeys(
+                ingredient.raw_name
+                for hit in claim.search.hits
+                if hit.statement_id in statement_ids
+                for ingredient in hit.ingredient_refs
+                if ingredient.ingredient_id in ingredient_ids and ingredient.raw_name is not None
+            )
+        )
 
     def _append_unresolved_claim_anchors(self, state: AgentState) -> None:
         case_claim = state.case_claim_bundle
@@ -125,16 +178,6 @@ class RagResponseAssembler:
                 )
             )
             state.response_parts.append("공인 근거 확인: " + summary)
-            return
-        if result.status is ClaimVerificationStatus.INSUFFICIENT:
-            state.status = ChatStatus.PARTIAL
-            detail = (
-                f"Claim {result.statement_id}: 현재 연결된 공인 근거로 충분히 확인하지 못했습니다."
-            )
-            state.unresolved.append(
-                UnresolvedItem(kind=UnresolvedKind.NO_EVIDENCE, detail=detail)
-            )
-            state.response_parts.append(detail)
             return
         if result.status is ClaimVerificationStatus.UNSUPPORTED:
             state.status = ChatStatus.PARTIAL
@@ -382,6 +425,8 @@ class RagResponseAssembler:
             UnverifiableReason.UNREVIEWED_EVIDENCE: "검수된 근거가 없어 답변을 보류합니다.",
             UnverifiableReason.NOT_RELEVANT_TO_QUESTION: "질문 항목을 뒷받침할 근거가 부족합니다.",
             UnverifiableReason.MISSING_COMBINATION_EVIDENCE: "대상을 함께 다루는 병용 근거가 없습니다.",
-            UnverifiableReason.CITATION_VALIDATION_FAILED: "출처·조건 검증을 통과한 답변이 없습니다.",
+            UnverifiableReason.CITATION_VALIDATION_FAILED: (
+                "검색 자료의 인용문과 적용 조건을 확인하지 못해 답변에서 제외했습니다."
+            ),
         }
         return messages[reason]

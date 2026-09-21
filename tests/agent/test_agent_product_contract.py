@@ -21,7 +21,15 @@ from agent.rag.schemas import (
     ProductTaxonomy,
     ProductTexture,
 )
-from agent.schemas import ChatStatus, ParsedRequest, RegisterRoomRequest, UnderstandingRequest
+from agent.rag_route_policy import RagRoutePolicy
+from agent.schemas import (
+    ChatStatus,
+    Intent,
+    ParsedRequest,
+    RagRoute,
+    RegisterRoomRequest,
+    UnderstandingRequest,
+)
 from tests.agent.test_agent_chat import AgentTestFactory
 
 
@@ -102,6 +110,18 @@ class RenamedCodeLlm(FakeLlmClient):
 
 
 class TestDynamicProductContract:
+    def test_skin_concern_in_query_keeps_rag_path_despite_unsupported_filter(self) -> None:
+        decision = RagRoutePolicy().decide(
+            ParsedRequest(
+                intents=[Intent.PRODUCT_DISCOVERY],
+                query="27살 지성 피부인데 피지와 모공 관리에 뭘 써야 해?",
+                unsupported_product_conditions=["27살 남성 환절기"],
+            )
+        )
+
+        assert decision.route is RagRoute.CLAIM_THEN_EVIDENCE
+        assert decision.normalized_skin_concerns == ["피지", "모공"]
+
     async def test_new_category_without_agent_enum_and_unknown_product_fields(self) -> None:
         catalog = ProviderCatalog()
         repo = ProviderProducts([catalog.product()])
@@ -196,6 +216,7 @@ class TestDynamicProductContract:
         assert result.status is ChatStatus.PARTIAL
         assert not repo.requests
         assert any("사용감" in item.detail for item in result.unresolved)
+        assert "제품 후보를 제시하지 않았습니다" in result.message
 
     async def test_valid_code_uses_provider_name(self) -> None:
         catalog = ProviderCatalog()

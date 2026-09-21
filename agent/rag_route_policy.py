@@ -28,6 +28,17 @@ class ProductDiscoveryCue(StrEnum):
     RECOMMEND = "추천"
 
 
+class SkinConcernCue(StrEnum):
+    ACNE = "여드름"
+    BLEMISH = "트러블"
+    COMEDONE = "좁쌀"
+    DRYNESS = "건조"
+    OILINESS = "피지"
+    PORES = "모공"
+    REDNESS = "홍조"
+    SENSITIVITY = "민감"
+
+
 class RagRouteDecision(AgentModel):
     route: RagRoute | None = None
     reason: RagRouteReason
@@ -39,7 +50,9 @@ class RagRoutePolicy:
     """LLM 누락이 사용자 사례만으로 상품을 추천하는 우회 경로가 되지 않게 한다."""
 
     def decide(self, request: ParsedRequest) -> RagRouteDecision:
-        concerns = list(dict.fromkeys(request.skin_concerns))
+        concerns = list(
+            dict.fromkeys(request.skin_concerns + self._skin_concerns_in(request.query))
+        )
         intents = list(dict.fromkeys(request.intents))
         has_ingredients = bool(request.ingredient_mentions)
         has_product_filters = bool(
@@ -110,3 +123,8 @@ class RagRoutePolicy:
     def _has_product_discovery_cue(self, query: str) -> bool:
         normalized_query = " ".join(query.casefold().split())
         return any(cue.value in normalized_query for cue in ProductDiscoveryCue)
+
+    def _skin_concerns_in(self, query: str) -> list[str]:
+        normalized_query = " ".join(query.casefold().split())
+        # 자주 쓰는 고민 표현은 LLM 누락과 무관하게 동일한 RAG 경로를 타야 한다.
+        return [cue.value for cue in SkinConcernCue if cue.value in normalized_query]
