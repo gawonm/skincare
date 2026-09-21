@@ -2,6 +2,16 @@
 
 from abc import ABC, abstractmethod
 
+from agent.rag.case_claim_schemas import (
+    CaseClaimExtractionRequest,
+    CaseClaimExtractionResult,
+)
+from agent.rag.case_schemas import (
+    CaseRerankRequest,
+    CaseRerankResult,
+    CaseSearchRequest,
+    CaseSearchResult,
+)
 from agent.rag.claim_schemas import ClaimSearchRequest, ClaimSearchResult
 from agent.rag.schemas import (
     EmbeddingRequest,
@@ -16,6 +26,27 @@ from agent.rag.schemas import (
     RerankRequest,
     RerankResult,
 )
+
+
+class CaseRetriever(ABC):
+    @abstractmethod
+    async def search(self, request: CaseSearchRequest) -> CaseSearchResult:
+        raise NotImplementedError
+
+
+class CaseReranker(ABC):
+    @abstractmethod
+    async def rerank(self, request: CaseRerankRequest) -> CaseRerankResult:
+        raise NotImplementedError
+
+
+class CaseClaimExtractor(ABC):
+    @abstractmethod
+    async def extract(
+        self,
+        request: CaseClaimExtractionRequest,
+    ) -> CaseClaimExtractionResult:
+        raise NotImplementedError
 
 
 class ClaimRetriever(ABC):
