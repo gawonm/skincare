@@ -39,7 +39,13 @@ TOP_N = 30
 # 사용자가 후보에 남는지 별도로 확인하길 요청한 성분(standard_name_en, 소문자 비교)
 WATCHLIST_INGREDIENTS = ("melanin", "tyrosinase", "mineral salts", "aloesin", "sulfur", "bha")
 
+TIER_A_REVIEW_TOP_N = 20
+THIN_PRODUCT_MAX = 3  # 이하면 제품 근거가 얇다고 표시(제외 기준 아님)
+HIGH_NIA_CASE_MIN = 1000  # 이상이면 템플릿성 문구일 수 있어 검토 표시(제외 기준 아님)
+
 _DEFAULT_OUTPUT_DIR = Path("data/processed")
+_REVIEW_FILENAME = "nia_tier_a_review_table.csv"
+_REVIEW_REPORT_FILENAME = "nia_tier_a_review_table.md"
 _PRODUCT_BACKED_FILENAME = "nia_product_backed_ingredient_relevance.csv"
 _PRODUCT_BACKED_REPORT_FILENAME = "nia_product_backed_ingredient_relevance_report.md"
 
@@ -210,6 +216,94 @@ class NiaProductBackedRelevanceBuilder:
         return "\n".join(lines) + "\n"
 
 
+class NiaTierAReviewRow(BaseModel):
+    """사람이 검토하기 위한 한 줄. 점수가 아니라 원 지표와 주의 표시만 담는다."""
+
+    rank: int
+    ingredient_id: UUID
+    standard_name_en: str | None
+    standard_name_ko: str
+    product_count: int
+    nia_answer_case_count: int
+    target_concern_unique_count: int
+    nia_case_count: int
+    cautions: list[str]
+
+
+class NiaTierAReviewTable:
+    """product-backed 후보를 nia_answer_case_count 순으로 나열한다(점수식 없음, 제외도 없음)."""
+
+    def build(self, rows: list[NiaProductBackedRelevance]) -> list[NiaTierAReviewRow]:
+        ordered = sorted(
+            (r for r in rows if r.nia_answer_case_count > 0),
+            key=lambda r: (-r.nia_answer_case_count, -r.product_count, r.standard_name_en or ""),
+        )
+        return [
+            NiaTierAReviewRow(
+                rank=i,
+                ingredient_id=r.ingredient_id,
+                standard_name_en=r.standard_name_en,
+                standard_name_ko=r.standard_name_ko,
+                product_count=r.product_count,
+                nia_answer_case_count=r.nia_answer_case_count,
+                target_concern_unique_count=len(r.target_concern_distribution),
+                nia_case_count=r.nia_case_count,
+                cautions=self._cautions(r),
+            )
+            for i, r in enumerate(ordered, 1)
+        ]
+
+    def _cautions(self, r: NiaProductBackedRelevance) -> list[str]:
+        cautions = []
+        if r.product_count <= THIN_PRODUCT_MAX:
+            cautions.append(f"제품 근거 얇음(product {r.product_count})")
+        if r.nia_case_count >= HIGH_NIA_CASE_MIN:
+            cautions.append("NIA 언급 과다-템플릿 가능성")
+        return cautions
+
+    def write_csv(self, table: list[NiaTierAReviewRow], path: Path) -> None:
+        with path.open("w", encoding="utf-8-sig", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(
+                ["rank", "ingredient_id", "standard_name_en", "standard_name_ko", "product_count",
+                 "nia_answer_case_count", "target_concern_unique_count", "nia_case_count",
+                 "cautions"]
+            )  # fmt: skip
+            for r in table:
+                writer.writerow(
+                    [r.rank, r.ingredient_id, r.standard_name_en or "", r.standard_name_ko,
+                     r.product_count, r.nia_answer_case_count, r.target_concern_unique_count,
+                     r.nia_case_count, "; ".join(r.cautions)]
+                )  # fmt: skip
+
+    def build_markdown(self, table: list[NiaTierAReviewRow]) -> str:
+        def row(r: NiaTierAReviewRow) -> str:
+            name = f"{r.standard_name_en or '-'} / {r.standard_name_ko}"
+            return (
+                f"| {r.rank} | {name} | {r.product_count} | {r.nia_answer_case_count} | "
+                f"{r.target_concern_unique_count} | {'; '.join(r.cautions) or '-'} |"
+            )
+
+        header = [
+            "| # | 성분 | product_count | nia_answer_case_count | concern 수 | 주의 |",
+            "|---|---|---|---|---|---|",
+        ]
+        return "\n".join(
+            [
+                "# Tier A 후보 검토표 (점수 없음, nia_answer_case_count 순)",
+                "",
+                f"## 상위 {TIER_A_REVIEW_TOP_N}",
+                *header,
+                *[row(r) for r in table[:TIER_A_REVIEW_TOP_N]],
+                "",
+                f"## 나머지 ({len(table) - TIER_A_REVIEW_TOP_N}개, answer>0 인 product-backed 후보)",
+                *header,
+                *[row(r) for r in table[TIER_A_REVIEW_TOP_N:]],
+                "",
+            ]
+        )
+
+
 async def _run(input_root: Path, output_dir: Path) -> None:
     candidates = await _load_candidates()
     database = Database(settings.database)
@@ -228,7 +322,12 @@ async def _run(input_root: Path, output_dir: Path) -> None:
     builder.write_csv(rows, output_dir / _PRODUCT_BACKED_FILENAME)
     report = builder.build_report(rows, summaries)
     (output_dir / _PRODUCT_BACKED_REPORT_FILENAME).write_text(report, encoding="utf-8")
-    print(report)
+    review = NiaTierAReviewTable()
+    table = review.build(rows)
+    review.write_csv(table, output_dir / _REVIEW_FILENAME)
+    markdown = review.build_markdown(table)
+    (output_dir / _REVIEW_REPORT_FILENAME).write_text(markdown, encoding="utf-8")
+    print(markdown)
 
 
 if __name__ == "__main__":
