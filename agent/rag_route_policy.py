@@ -51,8 +51,9 @@ class RagRoutePolicy:
             not has_ingredients and self._has_product_discovery_cue(request.query)
         )
         if normalized_product_discovery:
-            # 무엇을 사용할지 묻는 요청은 근거 설명이 아니라 후보 탐색이므로 실행 Intent도 보정한다.
-            intents = [intent for intent in intents if intent is not Intent.EVIDENCE_QA]
+            # 규칙으로 상품 탐색이 확정된 뒤에도 placeholder가 남으면 확인 질문이 먼저 실행된다.
+            replaced_intents = {Intent.CLARIFICATION, Intent.EVIDENCE_QA}
+            intents = [intent for intent in intents if intent not in replaced_intents]
             if Intent.PRODUCT_DISCOVERY not in intents:
                 intents.append(Intent.PRODUCT_DISCOVERY)
 

@@ -37,7 +37,6 @@ class IntentQualityScenario(AgentModel):
     expected_excluded_weekday: Weekday | None = None
     requires_citation: bool = False
     requires_follow_up: bool = False
-    known_gap: str | None = None
 
 
 class IntentQualityScenarioCatalog:
@@ -53,10 +52,6 @@ class IntentQualityScenarioCatalog:
                 expected_status=ChatStatus.PARTIAL,
                 expected_artifact=ExpectedArtifact.PRODUCT_CANDIDATES,
                 expected_product_id="product:niacinamide-serum",
-                known_gap=(
-                    "고민형 질문을 product_discovery로 보정할 때 기존 clarification Intent가 "
-                    "함께 남는다."
-                ),
             ),
             IntentQualityScenario(
                 scenario_id="product-filtered-texture",
@@ -201,17 +196,11 @@ class TestThreeIntentQualityScenarios:
     ) -> None:
         output = await IntentQualityHarness().run(scenario)
 
-        assert scenario.intent in output.intents
-        if scenario.known_gap is not None:
-            # 알려진 결함이 사라지면 xfail을 그대로 둘 수 없도록 명시적으로 갱신을 요구한다.
-            if output.intents == [scenario.intent]:
-                pytest.fail("알려진 Intent 결함이 해결됐으므로 known_gap을 제거해야 합니다.")
-            pytest.xfail(scenario.known_gap)
+        assert output.intents == [scenario.intent]
         assert output.status is scenario.expected_status
         assert bool(output.citations) is scenario.requires_citation
         assert (output.follow_up_question is not None) is scenario.requires_follow_up
         self._assert_artifact(output, scenario)
-        assert output.intents == [scenario.intent]
 
     def _assert_artifact(
         self,
