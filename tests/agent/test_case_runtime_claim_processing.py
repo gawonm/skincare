@@ -23,6 +23,7 @@ from agent.rag.case_schemas import (
     CaseSearchHit,
 )
 from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
+from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.schemas import ChatModelConfig, LlmProvider, LocalChatConfig, LocalRerankerConfig
 
 
@@ -113,8 +114,10 @@ class TestLocalBgeCaseRerankerV2M3:
             fixture.hit("CASE-4", "네 번째", 0.65),
         ]
         model = FakeCaseCrossEncoder([0.1, 0.9, 0.5, 0.7])
-        reranker = LocalBgeCaseRerankerV2M3(LocalRerankerConfig())
-        reranker._model = cast(Any, model)
+        config = LocalRerankerConfig()
+        scorer = LocalBgeCrossEncoderScorer(config)
+        scorer._model = cast(Any, model)
+        reranker = LocalBgeCaseRerankerV2M3(config, scorer=scorer)
 
         result = await reranker.rerank(
             CaseRerankRequest(query="피지가 많아요", candidates=candidates, limit=3)

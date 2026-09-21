@@ -20,9 +20,12 @@ from agent.adapters import FixtureProductTaxonomy
 from agent.factory import DevelopmentAgentApplication, DevelopmentAgentFactory
 from agent.llm import LlmClientFactory
 from agent.nodes import CLAIM_ONLY_PRODUCT_LIMITATION
+from agent.rag.case_claim_extractor import CaseClaimExtractorFactory
 from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.generation.evidence_statement_generator import EvidenceStatementGeneratorFactory
+from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
+from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
 from agent.rag.schemas import (
@@ -41,7 +44,7 @@ from agent.rag.schemas import (
 from agent.schemas import ExecutionLimits, RegisterRoomRequest, UnresolvedKind
 from backend.services.agent_configuration import AgentConfigurationAssembler
 from backend.services.two_layer_rag_adapters import (
-    TwoLayerClaimRetriever,
+    BackendNiaCaseRetriever,
     TwoLayerEvidenceSearchBackend,
     TwoLayerIngredientRepository,
     TwoLayerProductRepository,
@@ -292,23 +295,18 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
         self._reranker_config = config.create_reranker()
         self._retrieval_policy = config.create_retrieval_policy()
         self._database = LatestDumpDatabaseFactory().create()
-        claim_annotation_version = settings.agent.retrieval.claim_annotation_version
-        if claim_annotation_version is None:
-            raise RuntimeError(
-                "2-Layer CLI 실행에는 active Claim annotation_version 설정이 필요합니다."
-            )
 
         embedder = TextEmbedderFactory().create(self._embedding_config)
-        claim_retriever = TwoLayerClaimRetriever(
-            self._database.session_factory,
-            embedder,
-        )
+        reranker_scorer = LocalBgeCrossEncoderScorer(self._reranker_config)
         self._retriever = RecordingEvidenceRetriever(
             HybridEvidenceRetriever(
                 backend=TwoLayerEvidenceSearchBackend(self._database.session_factory),
                 embedder=embedder,
                 policy=self._retrieval_policy,
-                reranker=LocalBgeRerankerV2M3(self._reranker_config),
+                reranker=LocalBgeRerankerV2M3(
+                    self._reranker_config,
+                    scorer=reranker_scorer,
+                ),
             ),
             limit=limit,
         )
@@ -322,8 +320,13 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
             ingredient_repository=TwoLayerIngredientRepository(
                 self._database.session_factory
             ),
-            claim_retriever=claim_retriever,
-            claim_annotation_version=claim_annotation_version,
+            case_retriever=BackendNiaCaseRetriever(self._database.session_factory),
+            case_reranker=LocalBgeCaseRerankerV2M3(
+                self._reranker_config,
+                scorer=reranker_scorer,
+            ),
+            case_claim_extractor=CaseClaimExtractorFactory().create(self._chat_config),
+            case_embedder=embedder,
             evidence_retriever=self._retriever,
             answer_generator=AnswerGenerator(
                 EvidenceStatementGeneratorFactory().create(self._chat_config)

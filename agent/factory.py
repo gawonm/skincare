@@ -62,6 +62,7 @@ from agent.rag.ports import (
     TextEmbedder,
 )
 from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
+from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
 from agent.rag.schemas import (
@@ -259,8 +260,12 @@ class ProductionAgentFactory:
         ):
             raise ValueError("Claim 검색기는 BAAI/bge-m3 색인을 사용해야 합니다.")
         embedder = TextEmbedderFactory().create(config.embedding)
-        reranker = LocalBgeRerankerV2M3(config.reranker)
-        case_reranker = LocalBgeCaseRerankerV2M3(config.reranker)
+        reranker_scorer = LocalBgeCrossEncoderScorer(config.reranker)
+        reranker = LocalBgeRerankerV2M3(config.reranker, scorer=reranker_scorer)
+        case_reranker = LocalBgeCaseRerankerV2M3(
+            config.reranker,
+            scorer=reranker_scorer,
+        )
         case_claim_extractor = CaseClaimExtractorFactory().create(config.chat)
         evidence_retriever = HybridEvidenceRetriever(
             backend=dependencies.search_backend,
