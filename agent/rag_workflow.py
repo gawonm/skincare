@@ -1,7 +1,28 @@
 """Claim 탐색과 Evidence 검증을 분리한 LangGraph 노드 모음."""
 
+from uuid import NAMESPACE_URL, uuid5
+
 from agent.claim_verification import ClaimEvidenceVerifier, IngredientRecommendationSelector
 from agent.evidence_query_policy import EvidenceQueryPolicy
+from agent.ports import IngredientRepository
+from agent.rag.case_claim_anchor_adapter import CaseClaimToEvidenceQueryAnchorAdapter
+from agent.rag.case_claim_schemas import (
+    CaseClaimBundle,
+    CaseClaimExtractionRequest,
+    CaseClaimExtractionResult,
+    CaseClaimIngredientResolutionStatus,
+    CaseClaimValidationRequest,
+    ExtractedCaseClaim,
+    ResolvedCaseClaim,
+    ResolvedCaseClaimIngredient,
+)
+from agent.rag.case_claim_validator import CaseClaimValidator
+from agent.rag.case_schemas import (
+    CaseBundle,
+    CaseRerankRequest,
+    CaseSearchRequest,
+    CaseSearchResult,
+)
 from agent.rag.claim_anchor_adapter import ClaimHitToEvidenceQueryAnchorAdapter
 from agent.rag.claim_schemas import (
     ClaimBundle,
@@ -16,11 +37,22 @@ from agent.rag.claim_schemas import (
     UnresolvedClaimAnchor,
 )
 from agent.rag.pipeline import EvidencePipeline
-from agent.rag.ports import ClaimRetriever
+from agent.rag.ports import (
+    CaseClaimExtractor,
+    CaseReranker,
+    CaseRetriever,
+    ClaimRetriever,
+    TextEmbedder,
+)
+from agent.rag.retrieval.ingredient_alias_mapper import CommonIngredientAliasMapper
 from agent.rag.schemas import (
+    BGE_M3_EMBEDDING_DIMENSIONS,
+    EmbeddingRequest,
     EvidenceConditions,
     EvidenceQueryAnchor,
     EvidenceSearchRequest,
+    IngredientResolveRequest,
+    LocalEmbeddingModel,
     LookupStatus,
     ProductCandidate,
     ProductRecord,
@@ -37,15 +69,28 @@ class RagWorkflowNodes:
 
     def __init__(
         self,
-        claim_retriever: ClaimRetriever,
-        claim_annotation_version: str,
+        case_retriever: CaseRetriever,
+        case_reranker: CaseReranker,
+        case_claim_extractor: CaseClaimExtractor,
+        case_embedder: TextEmbedder,
+        ingredient_repository: IngredientRepository,
         evidence_pipeline: EvidencePipeline,
         response_assembler: RagResponseAssembler,
         runtime: AgentRuntime,
         query_policy: EvidenceQueryPolicy,
         claim_verifier: ClaimEvidenceVerifier,
         recommendation_selector: IngredientRecommendationSelector,
+        claim_retriever: ClaimRetriever | None = None,
+        claim_annotation_version: str | None = None,
     ) -> None:
+        self._case_retriever = case_retriever
+        self._case_reranker = case_reranker
+        self._case_claim_extractor = case_claim_extractor
+        self._case_embedder = case_embedder
+        self._ingredient_repository = ingredient_repository
+        self._case_claim_validator = CaseClaimValidator()
+        self._case_claim_anchor_adapter = CaseClaimToEvidenceQueryAnchorAdapter()
+        self._ingredient_aliases = CommonIngredientAliasMapper()
         self._claim_retriever = claim_retriever
         self._claim_annotation_version = claim_annotation_version
         self._claim_anchor_adapter = ClaimHitToEvidenceQueryAnchorAdapter()
@@ -56,6 +101,193 @@ class RagWorkflowNodes:
         self._claim_verifier = claim_verifier
         self._recommendation_selector = recommendation_selector
 
+    async def search_cases(self, state: AgentState) -> AgentState:
+        if not self._runtime.reserve_tool_call(state, GraphNode.SEARCH_CASES):
+            return state
+        query = self._case_query(state)
+        try:
+            embedding = await self._case_embedder.embed(EmbeddingRequest(texts=[query]))
+            if embedding.model != LocalEmbeddingModel.BGE_M3.value:
+                result = CaseSearchResult(
+                    status=LookupStatus.UNSUPPORTED,
+                    error_message=(
+                        "NIA Case 질의 임베딩 모델이 BGE-M3가 아닙니다: "
+                        f"actual={embedding.model}"
+                    ),
+                )
+            elif len(embedding.vectors) != 1:
+                result = CaseSearchResult(
+                    status=LookupStatus.ERROR,
+                    error_message=(
+                        "NIA Case 질의에는 임베딩 벡터가 정확히 하나 필요합니다: "
+                        f"actual={len(embedding.vectors)}"
+                    ),
+                )
+            elif len(embedding.vectors[0].values) != BGE_M3_EMBEDDING_DIMENSIONS:
+                result = CaseSearchResult(
+                    status=LookupStatus.UNSUPPORTED,
+                    error_message=(
+                        "NIA Case 질의 벡터가 1,024차원이 아닙니다: "
+                        f"actual={len(embedding.vectors[0].values)}"
+                    ),
+                )
+            else:
+                result = await self._case_retriever.search(
+                    CaseSearchRequest(
+                        query=query,
+                        query_embedding=embedding.vectors[0],
+                        text_version="nia_case_text/v1",
+                        embedding_model=embedding.model,
+                    )
+                )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            result = CaseSearchResult(
+                status=LookupStatus.ERROR,
+                error_message=f"NIA Case 질의 임베딩 또는 검색에 실패했습니다: {error}",
+            )
+        state.case_bundle = CaseBundle(search=result)
+        if result.status in (LookupStatus.ERROR, LookupStatus.UNSUPPORTED):
+            self._runtime.add_tool_failure(state, result.error_message)
+        self._runtime.record_node(
+            state,
+            GraphNode.SEARCH_CASES,
+            "NIA 유사 Case 1차 검색을 마쳤습니다.",
+        )
+        return state
+
+    async def rerank_cases(self, state: AgentState) -> AgentState:
+        bundle = state.case_bundle
+        if bundle is None or bundle.search.status is not LookupStatus.SUCCESS:
+            self._runtime.record_node(
+                state,
+                GraphNode.RERANK_CASES,
+                "재정렬할 NIA Case가 없어 건너뛰었습니다.",
+            )
+            return state
+        if not self._runtime.reserve_tool_call(state, GraphNode.RERANK_CASES):
+            return state
+        parsed = self._runtime.require_parsed(state)
+        try:
+            rerank = await self._case_reranker.rerank(
+                CaseRerankRequest(
+                    query=parsed.query,
+                    candidates=bundle.search.hits,
+                )
+            )
+            state.case_bundle = bundle.model_copy(update={"rerank": rerank})
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            # 재정렬 실패 시에도 벡터 Top-3는 출처가 보존된 유효 후보이므로 명시적 fallback으로 쓴다.
+            state.case_bundle = bundle.model_copy(update={"rerank_fallback_used": True})
+            self._runtime.add_tool_failure(state, f"NIA Case rerank 실패로 벡터 순위를 사용합니다: {error}")
+        self._runtime.record_node(
+            state,
+            GraphNode.RERANK_CASES,
+            "NIA Case Top-3 선정을 마쳤습니다.",
+        )
+        return state
+
+    async def extract_case_claims(self, state: AgentState) -> AgentState:
+        cases = state.case_bundle.selected_hits() if state.case_bundle is not None else []
+        if not cases:
+            state.case_claim_bundle = CaseClaimBundle(
+                extraction=CaseClaimExtractionResult(status=LookupStatus.NO_RESULTS)
+            )
+            self._runtime.record_node(
+                state,
+                GraphNode.EXTRACT_CASE_CLAIMS,
+                "Claim을 추출할 NIA Case가 없어 건너뛰었습니다.",
+            )
+            return state
+        if not self._runtime.reserve_tool_call(state, GraphNode.EXTRACT_CASE_CLAIMS):
+            return state
+        parsed = self._runtime.require_parsed(state)
+        result = await self._case_claim_extractor.extract(
+            CaseClaimExtractionRequest(query=parsed.query, cases=cases)
+        )
+        state.case_claim_bundle = CaseClaimBundle(extraction=result)
+        if result.status is LookupStatus.ERROR:
+            self._runtime.add_tool_failure(state, result.error_message)
+        self._runtime.record_node(
+            state,
+            GraphNode.EXTRACT_CASE_CLAIMS,
+            "NIA Case 원문에서 질문 관련 Claim 추출을 마쳤습니다.",
+        )
+        return state
+
+    async def validate_case_claims(self, state: AgentState) -> AgentState:
+        bundle = state.case_claim_bundle
+        cases = state.case_bundle.selected_hits() if state.case_bundle is not None else []
+        if bundle is None or bundle.extraction.status is not LookupStatus.SUCCESS:
+            self._runtime.record_node(
+                state,
+                GraphNode.VALIDATE_CASE_CLAIMS,
+                "검증할 런타임 Claim이 없어 건너뛰었습니다.",
+            )
+            return state
+        validation = self._case_claim_validator.validate(
+            CaseClaimValidationRequest(cases=cases, claims=bundle.extraction.claims)
+        )
+        state.case_claim_bundle = bundle.model_copy(update={"validation": validation})
+        self._runtime.record_node(
+            state,
+            GraphNode.VALIDATE_CASE_CLAIMS,
+            "런타임 Claim의 Case ID와 exact quote를 검증했습니다.",
+        )
+        return state
+
+    async def resolve_case_claim_ingredients(self, state: AgentState) -> AgentState:
+        bundle = state.case_claim_bundle
+        if bundle is None or bundle.validation is None:
+            self._runtime.record_node(
+                state,
+                GraphNode.RESOLVE_CASE_CLAIM_INGREDIENTS,
+                "식별할 Case Claim 성분이 없어 건너뛰었습니다.",
+            )
+            return state
+
+        resolved_claims: list[ResolvedCaseClaim] = []
+        evidence_anchors: list[EvidenceQueryAnchor] = []
+        target_ids: list[str] = []
+        request_id = self._runtime.require_turn(state).request_id
+        for claim in bundle.validation.valid_claims:
+            ingredients = [
+                await self._resolve_case_ingredient(state, ingredient.raw_name)
+                for ingredient in claim.ingredients
+            ]
+            resolved = ResolvedCaseClaim(
+                statement_id=self._case_claim_statement_id(claim),
+                claim=claim,
+                ingredients=ingredients,
+            )
+            resolved_claims.append(resolved)
+            anchor = self._case_claim_anchor_adapter.adapt(resolved, request_id=request_id)
+            if anchor is not None:
+                evidence_anchors.append(anchor)
+                target_ids.extend(anchor.ingredient_refs)
+
+        unique_target_ids = list(dict.fromkeys(target_ids))
+        state.case_claim_bundle = bundle.model_copy(
+            deep=True,
+            update={
+                "resolved_claims": resolved_claims,
+                "evidence_anchors": evidence_anchors,
+            },
+        )
+        state.resolved_entities = state.resolved_entities.model_copy(
+            deep=True,
+            update={
+                "ingredient_ids": list(
+                    dict.fromkeys(state.resolved_entities.ingredient_ids + unique_target_ids)
+                )
+            },
+        )
+        self._runtime.record_node(
+            state,
+            GraphNode.RESOLVE_CASE_CLAIM_INGREDIENTS,
+            "Case Claim의 성분 표준 ID 식별을 마쳤습니다.",
+        )
+        return state
+
     async def route_rag(self, state: AgentState) -> AgentState:
         parsed = self._runtime.require_parsed(state)
         # 기존 호출자가 rag_route를 아직 보내지 않아도 명시 성분 질의의 동작은 유지한다.
@@ -64,6 +296,8 @@ class RagWorkflowNodes:
         return state
 
     async def search_claims(self, state: AgentState) -> AgentState:
+        if self._claim_retriever is None or self._claim_annotation_version is None:
+            raise RuntimeError("offline Claim 검색기는 현재 기본 Case 경로에 주입되지 않았습니다.")
         parsed = self._runtime.require_parsed(state)
         if not self._runtime.reserve_tool_call(state, GraphNode.SEARCH_CLAIMS):
             return state
@@ -139,8 +373,8 @@ class RagWorkflowNodes:
         return state
 
     async def verify_claims(self, state: AgentState) -> AgentState:
-        bundle = state.claim_bundle
-        if bundle is None or not bundle.evidence_anchors:
+        anchors = self._claim_evidence_anchors(state)
+        if not anchors:
             state.claim_verification_bundle = ClaimVerificationBundle()
             self._runtime.record_node(
                 state,
@@ -151,7 +385,7 @@ class RagWorkflowNodes:
 
         parsed = self._runtime.require_parsed(state)
         results: list[ClaimVerificationResult] = []
-        for anchor in bundle.evidence_anchors:
+        for anchor in anchors:
             if not self._runtime.reserve_tool_call(state, GraphNode.VERIFY_CLAIMS):
                 break
             result = await self._claim_verifier.verify(
@@ -307,3 +541,77 @@ class RagWorkflowNodes:
             if value is not None:
                 setattr(known, field, value)
         return known
+
+    def _case_query(self, state: AgentState) -> str:
+        parsed = self._runtime.require_parsed(state)
+        concerns = parsed.skin_concerns + [concern.value for concern in state.profile.concerns]
+        return " ".join(dict.fromkeys([parsed.query, *concerns])).strip()
+
+    async def _resolve_case_ingredient(
+        self,
+        state: AgentState,
+        raw_name: str,
+    ) -> ResolvedCaseClaimIngredient:
+        if not self._runtime.reserve_tool_call(
+            state,
+            GraphNode.RESOLVE_CASE_CLAIM_INGREDIENTS,
+        ):
+            return ResolvedCaseClaimIngredient(
+                raw_name=raw_name,
+                status=CaseClaimIngredientResolutionStatus.ERROR,
+            )
+        request = IngredientResolveRequest(name=raw_name)
+        result = await self._ingredient_repository.resolve(request)
+        alias_request = self._ingredient_aliases.map_request(request)
+        if result.status is LookupStatus.NO_RESULTS and alias_request.name != request.name:
+            if not self._runtime.reserve_tool_call(
+                state,
+                GraphNode.RESOLVE_CASE_CLAIM_INGREDIENTS,
+            ):
+                return ResolvedCaseClaimIngredient(
+                    raw_name=raw_name,
+                    status=CaseClaimIngredientResolutionStatus.ERROR,
+                )
+            result = self._ingredient_aliases.validate_result(
+                alias_request,
+                await self._ingredient_repository.resolve(alias_request),
+            )
+        if result.status in (LookupStatus.ERROR, LookupStatus.UNSUPPORTED):
+            self._runtime.add_tool_failure(
+                state,
+                result.error_message
+                or f"Case Claim 성분을 조회하지 못했습니다: {raw_name}",
+            )
+            return ResolvedCaseClaimIngredient(
+                raw_name=raw_name,
+                status=CaseClaimIngredientResolutionStatus.ERROR,
+            )
+        if result.ambiguous_candidates:
+            return ResolvedCaseClaimIngredient(
+                raw_name=raw_name,
+                status=CaseClaimIngredientResolutionStatus.AMBIGUOUS,
+            )
+        if result.status is LookupStatus.SUCCESS and result.ingredient is not None:
+            return ResolvedCaseClaimIngredient(
+                raw_name=raw_name,
+                ingredient_id=result.ingredient.ingredient_id,
+                status=CaseClaimIngredientResolutionStatus.MATCHED,
+            )
+        return ResolvedCaseClaimIngredient(
+            raw_name=raw_name,
+            status=CaseClaimIngredientResolutionStatus.UNRESOLVED,
+        )
+
+    def _case_claim_statement_id(self, claim: ExtractedCaseClaim) -> str:
+        names = "|".join(ingredient.raw_name.casefold() for ingredient in claim.ingredients)
+        identity = (
+            f"{claim.case_id}:{claim.claim_type.value}:{names}:{claim.source_quote}"
+        )
+        return f"case-claim:{uuid5(NAMESPACE_URL, identity)}"
+
+    def _claim_evidence_anchors(self, state: AgentState) -> list[EvidenceQueryAnchor]:
+        if state.case_claim_bundle is not None:
+            return list(state.case_claim_bundle.evidence_anchors)
+        if state.claim_bundle is not None:
+            return list(state.claim_bundle.evidence_anchors)
+        return []

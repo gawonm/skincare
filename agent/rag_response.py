@@ -1,6 +1,7 @@
 """Claim 탐색 결과와 Evidence 검증 결과를 혼동하지 않고 응답 상태에 반영한다."""
 
 from agent.citations import EvidenceCitationMapper
+from agent.rag.case_claim_schemas import CaseClaimIngredientResolutionStatus
 from agent.rag.claim_schemas import ClaimVerificationResult, ClaimVerificationStatus
 from agent.rag.schemas import (
     ApplicabilityStatus,
@@ -76,6 +77,24 @@ class RagResponseAssembler:
         self._append_unresolved_claim_anchors(state)
 
     def _append_unresolved_claim_anchors(self, state: AgentState) -> None:
+        case_claim = state.case_claim_bundle
+        if case_claim is not None:
+            names = list(
+                dict.fromkeys(
+                    ingredient.raw_name
+                    for claim in case_claim.resolved_claims
+                    for ingredient in claim.ingredients
+                    if ingredient.status is not CaseClaimIngredientResolutionStatus.MATCHED
+                )
+            )
+            if names:
+                state.status = ChatStatus.PARTIAL
+                detail = "표준 성분을 확정하지 못한 Case Claim 성분: " + ", ".join(names)
+                state.unresolved.append(
+                    UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=detail)
+                )
+                state.response_parts.append(detail)
+            return
         claim = state.claim_bundle
         if claim is not None and claim.unresolved_anchors:
             state.status = ChatStatus.PARTIAL
@@ -135,6 +154,25 @@ class RagResponseAssembler:
         state.response_parts.append(detail)
 
     def _append_claim_context(self, state: AgentState) -> None:
+        case_claim = state.case_claim_bundle
+        if (
+            case_claim is not None
+            and case_claim.validation is not None
+            and case_claim.validation.valid_claims
+        ):
+            descriptions = list(
+                dict.fromkeys(
+                    claim.source_quote for claim in case_claim.validation.valid_claims
+                )
+            )
+            state.response_parts.append(
+                "유사한 사용자 사례의 탐색적 주장: " + " / ".join(descriptions)
+            )
+            if state.case_bundle is not None and state.case_bundle.rerank_fallback_used:
+                state.response_parts.append(
+                    "Case 재정렬 실패로 1차 벡터 검색 순위 Top-3를 사용했습니다."
+                )
+            return
         bundle = state.claim_bundle
         if bundle is None or bundle.search.status is not LookupStatus.SUCCESS:
             return
@@ -151,6 +189,36 @@ class RagResponseAssembler:
         )
 
     def _append_missing_evidence_path(self, state: AgentState) -> None:
+        case_bundle = state.case_bundle
+        case_claim = state.case_claim_bundle
+        if state.rag_route is RagRoute.CLAIM_THEN_EVIDENCE and case_bundle is not None:
+            if case_bundle.search.status is LookupStatus.ERROR:
+                state.response_parts.append(
+                    "NIA Case 검색 실패로 Claim 탐색 경로를 시작하지 못했습니다."
+                )
+                return
+            if case_bundle.search.status is LookupStatus.NO_RESULTS:
+                state.status = ChatStatus.PARTIAL
+                state.unresolved.append(
+                    UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=NO_CLAIM_MESSAGE)
+                )
+                state.response_parts.append(NO_CLAIM_MESSAGE)
+                return
+            if case_claim is not None and case_claim.extraction.status is LookupStatus.ERROR:
+                state.response_parts.append("NIA Case Claim 추출 오류로 성분 검증을 진행하지 못했습니다.")
+                return
+            if (
+                case_claim is None
+                or case_claim.extraction.status is LookupStatus.NO_RESULTS
+                or case_claim.validation is None
+                or not case_claim.validation.valid_claims
+            ):
+                state.status = ChatStatus.PARTIAL
+                state.unresolved.append(
+                    UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=NO_CLAIM_MESSAGE)
+                )
+                state.response_parts.append(NO_CLAIM_MESSAGE)
+                return
         claim = state.claim_bundle
         if state.rag_route is RagRoute.EVIDENCE_ONLY:
             if not state.response_parts:

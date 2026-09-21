@@ -5,6 +5,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import SecretStr, ValidationError
 
 from agent.adapters import (
+    FixtureCaseRetriever,
     FixtureClaimRetriever,
     FixtureIngredientRepository,
     FixtureProductRepository,
@@ -148,6 +149,7 @@ class TestAgentLlmConfigAndAssembly:
             product_taxonomy=FixtureProductTaxonomy().create(),
             ingredients=FixtureIngredientRepository(),
             routine_planner=FixtureRoutinePlanner(),
+            case_retriever=FixtureCaseRetriever(),
             claim_retriever=FixtureClaimRetriever(),
             search_backend=DummyHybridSearchBackend(),
             checkpointer=InMemorySaver(),
@@ -156,6 +158,9 @@ class TestAgentLlmConfigAndAssembly:
         assert app.service is not None
         assert app.embedder is not None
         assert app.evidence_retriever is not None
+        assert app.case_retriever is not None
+        assert app.case_reranker is not None
+        assert app.case_claim_extractor is not None
 
 
 class TestAgentConfigurationAssembler:

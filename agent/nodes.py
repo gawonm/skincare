@@ -122,6 +122,8 @@ class AgentNodes:
         state.parsed_request = None
         state.resolved_entities = ResolvedEntities()
         state.rag_route = None
+        state.case_bundle = None
+        state.case_claim_bundle = None
         state.claim_bundle = None
         state.claim_verification_bundle = None
         state.recommendation_ingredients = None
