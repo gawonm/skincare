@@ -951,6 +951,36 @@ UV_FILTER 5 / QA_PRIORITY 7, 부족분 없음. 이번부터 query·초록·MeSH�
   (5) 표본의 "active" 20개 중 약 12개는 실제로는 계면활성제·용제·점토·염 등이라 universe 범주 노이즈가 남아 있다(이미 known limitation).
   (6) 검색 결과 0건인 성분이 16개(botanical 8 포함).
 
+### PubMed full collection 결과 (2026-09-21, botanical 제외, 저장만, embedding·DB write 없음)
+대상: provisional universe(COLLECT_BASELINE 405 + QA_PRIORITY 34 = **439**, botanical 13 제외). PubMed 읽기 요청 707+건, 오류 0건
+(중간에 efetch 400 오류로 한 번 중단됐고, HTTP 오류를 진행 기록에 남기고 계속하도록 고친 뒤 이어서 실행했다). 결과 파일(gitignore):
+`pubmed_full.jsonl`(성분×PMID, 초록·MeSH·분류·이유 포함), `pubmed_full_progress.jsonl`, `pubmed_full_summary.json`, `pubmed_full_qa_sample.csv`.
+
+| 항목 | 값 |
+|---|---:|
+| 조회 성분 | 439 (검색 결과 0건 129) |
+| 가져온 record | 4,240 |
+| candidate / selected | 1,726 / **156** |
+| selected가 있는 성분 / 없는 성분 | 83 / 356 |
+| 등급 | direct 93 · review 22 · combination 41 |
+| category별 selected | active 152(80개 성분) · UV 3 · peptide 1 · 기타 0 |
+| decision별 selected | COLLECT_BASELINE 122(70개 성분) · QA_PRIORITY 34(13개 성분) |
+
+품질 위험 카운트: 파생/이름 경계 의심 selected 19, combination 41, review 22, candidate 중 route_unclear 342 · mixed_design_review 152 ·
+no_claim_topic 22.
+
+**selected 156편 전수 제목 점검 결과**: 경로 topical 156, 설계 human_clinical 130 + review 26, 전부 피부 관련·성분이 시험 대상. 순수 oral/injection·
+in vitro·comparator-only 누출은 없다. 다만 **명백한 FP 약 10편(6.4%)**이 있고 세 유형이다.
+1. **animal 단서가 임상 단서에 가려짐(구조적 결함)**: 설계 분류가 임상 단서를 먼저 봐서 쥐 모델·mice+human 혼합 논문이 human_clinical로 통과
+   (Cysteine 쥐 창상 모델, Raspberry Ketone mice). animal 단서를 mixed 처리에 포함해야 한다.
+2. **수식된 성분명·공정 도구 오귀속**: "ornithine decarboxylase"(Ornithine), "polyethylene glycol"(Polyethylene), "Poly-L-Lactic Acid"(Lactic Acid),
+   "taurine bromamine"(Taurine), "quaternium-18 bentonite"(Bentonite), 효소를 공정에 쓴 논문(Lipase, Protease-treated royal jelly).
+3. **비국소 경로**: pemphigus immunoadsorption(Tryptophan)이 topical로 분류됨(체외 흡착).
+- 범위 밖 known limitation: 창상 debridement·항균·화상 등 의료 논문(Oxygen, Bromelain, Isopropyl Alcohol, Fullerenes 리뷰) 약 5편은 화장품 범위가 아니지만 통과.
+- 자동 이름 경계 휴리스틱(`pubmed_collection_report.py`)은 19편을 의심으로 표시했고 그중 4~5편이 위 FP다. 효소·"성분 + 다른 명사"는 못 잡는다.
+- human QA 표본 50편(`pubmed_full_qa_sample.csv`): 의심 15 · QA_PRIORITY 10 · 복합 8 · 리뷰 8 · category 층화 9.
+- 검색 결과 0건 성분 129개는 그대로 0 selected(강제 채움 없음). botanical 13개 제외 및 query normalization 미착수는 결정대로다.
+
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
 ④ candidate 필터·대표 선택 ⑤ document/chunk 생성 ⑥ BGE-M3 embedding ⑦ DB ingest ⑧ audit 재실행 ⑨ Tier A QA ⑩ retrieval 평가.
