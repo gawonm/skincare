@@ -1005,6 +1005,29 @@ claim_topics, reviewer_verdict(KEEP/EXCLUDE/UNCERTAIN), reviewer_reason + 초록
 claim topic이 초록과 일치, derivative·compound-name 충돌, 다른 성분/공정 도구 귀속 여부, DB 적재 가능 여부. QA 후 집계(KEEP/EXCLUDE/UNCERTAIN,
 제외 사유 분포, 성분별 유지 수, 근거 0건이 된 성분, 남은 체계적 오류)로 CIR 보강 범위를 정한다. embedding·DB write는 QA 승인 전까지 하지 않는다.
 
+### PubMed selected 149편 전수 QA 결과 (2026-09-22)
+검수 시트 원본: `data/outputs/evidence_coverage/pubmed_final_selected_qa_reviewed.csv`(gitignore).
+
+| 판정 | 편 수 |
+|---|---:|
+| **KEEP** | 96 (고유 PMID 93) |
+| EXCLUDE | 31 |
+| UNCERTAIN | 22 |
+
+- EXCLUDE 31: 의료·창상·궤양·화상·소독 등 스킨케어 범위 밖 20 / 파생물질·이름 충돌·공정 도구 귀속 7(quaternium-18 bentonite, ornithine decarboxylase,
+  polyethylene glycol, taurine bromamine, protease 처리, 이성질체 등) / 비국소 경로 3(HA filler 주사, gamma-linolenic acid 경구, immunoadsorption) / 성분 자체를
+  시험한 근거 아님 1(glycolic acid peel 후 moisturizer 비교).
+- UNCERTAIN 22: **복합·병행 제형인데 `direct_single`로 분류돼 성분 기여를 분리할 수 없는 것 19**, 기타 3(리뷰인데 combination 등급으로 표시된 메타데이터 불일치,
+  HA 리뷰의 topical 범위 불명, para-hydroxycinnamic acid 이성질체 귀속).
+- 성분별 유지 KEEP 수(79개 성분): 0건 24 / 1건 26 / 2건 17 / 3건 이상 12. 3건 성분: Niacinamide, Retinol, Ascorbic Acid, Salicylic Acid, Bakuchiol,
+  Dexpanthenol, Gluconolactone, Mandelic Acid, Sodium Ascorbyl Phosphate, Tranexamic Acid, Saccharide Isomerate, 4-t-Butylcyclohexanol.
+- KEEP 96편의 등급: direct_single 47 / combination 35 / review 14.
+- 근거 0건이 된 성분 24개: Bromelain, Ceramide NG, Ceramide NS, Epigallocatechin Gallate, Glucosylrutin, Honey, Hydroxycinnamic Acid, Isopropyl Alcohol, Linoleic Acid,
+  Linolenic Acid, Ornithine, Oxygen, Phloretin, Phosphatidylcholine, Phospholipids, Polyethylene, Polylactic Acid, Polyvinyl Alcohol, Protease, Quercetin, Riboflavin,
+  Taurine, Tryptophan, Zinc Chloride. 이 중 7개(EGCG, Glucosylrutin, Hydroxycinnamic Acid, Phloretin, Phosphatidylcholine, Quercetin, Riboflavin)는 UNCERTAIN만 남은 성분이다.
+- **남은 체계적 오류**: (1) 복합 제형 판정이 제목 어휘에만 의존해 다성분 제형이 direct_single로 통과(QA에서 UNCERTAIN 19편, 최대 유형), (2) 의료·창상 논문 통과(EXCLUDE 20편),
+  (3) 수식된 성분명·공정 도구 오귀속(EXCLUDE 7편), (4) 비국소 경로 3편. 코드는 QA 결과를 보고 결정하기로 해서 이번에도 수정하지 않았다.
+
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
 ④ candidate 필터·대표 선택 ⑤ document/chunk 생성 ⑥ BGE-M3 embedding ⑦ DB ingest ⑧ audit 재실행 ⑨ Tier A QA ⑩ retrieval 평가.
