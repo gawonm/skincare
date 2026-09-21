@@ -5,23 +5,35 @@ from uuid import uuid4
 from data.scripts.evidence_collection_universe import (
     MIN_PRODUCTS_FOR_BASELINE,
     QA_NIA_MIN_CASES,
+    QA_SAMPLE_PER_STRATUM,
     SMOKE_INGREDIENTS,
     CollectionEligibility,
     FamilyDetector,
+    SafetyReviewRegistry,
+    StratifiedQaSampler,
 )
 from data.scripts.evidence_coverage_schemas import (
     CollectionDecision,
     CoverageRow,
     CoverageStatus,
     PriorityTier,
+    ReviewFlag,
+    SafetyRegistryEntry,
+    SafetyReviewStatus,
     UniverseCategory,
+    UniverseRow,
 )
 
 _E = CollectionEligibility()
+_COLLECT = {CollectionDecision.COLLECT_BASELINE, CollectionDecision.QA_PRIORITY}
 
 
 def _row(
-    name: str, nia: int = 0, products: int = 0, tier: PriorityTier = PriorityTier.P4
+    name: str,
+    nia: int = 0,
+    products: int = 0,
+    tier: PriorityTier = PriorityTier.P4,
+    evidence: int = 0,
 ) -> CoverageRow:
     return CoverageRow(
         ingredient_id=uuid4(),
@@ -34,7 +46,7 @@ def _row(
         cir_chunk_count=0,
         pubmed_document_count=0,
         pubmed_chunk_count=0,
-        scientific_document_count=0,
+        scientific_document_count=evidence,
         scientific_chunk_count=0,
         source_types_present="",
         efficacy_count=0,
@@ -49,6 +61,10 @@ def _row(
     )
 
 
+def _decide(row: CoverageRow, eligibility: CollectionEligibility = _E) -> CollectionDecision:
+    return eligibility.decide(row, eligibility.category(row.ingredient_name)).decision
+
+
 def test_category_rules_order() -> None:
     assert _E.category("Glycerin") is UniverseCategory.BASE_SOLVENT_HUMECTANT
     assert _E.category("Hexapeptide-2") is UniverseCategory.PEPTIDE_OR_PROTEIN
@@ -60,36 +76,109 @@ def test_category_rules_order() -> None:
     assert _E.category("Niacinamide") is UniverseCategory.ACTIVE_OR_FUNCTIONAL
 
 
+def test_qa_reclassification() -> None:
+    # UV 필터는 preservative 의 "benzoate" 규칙보다 먼저라 잘리지 않는다
+    assert _E.category("Diethylamino Hydroxybenzoyl Hexyl Benzoate") is UniverseCategory.UV_FILTER
+    assert (
+        _E.category("Bis-Ethylhexyloxyphenol Methoxyphenyl Triazine") is UniverseCategory.UV_FILTER
+    )
+    assert _E.category("Boron Nitride") is UniverseCategory.FILLER_POWDER
+    assert _E.category("Algin") is UniverseCategory.POLYMER_THICKENER
+    assert _E.category("Triethyl Citrate") is UniverseCategory.FORMULATION_AID
+    assert _E.category("Butyloctyl Salicylate") is UniverseCategory.FORMULATION_AID
+    assert _E.category("Sodium Citrate") is UniverseCategory.PH_ADJUSTER_SALT
+    assert _E.category("Elaeis Guineensis (Palm) Oil") is UniverseCategory.CARRIER_OIL
+    assert _E.category("Vitis Vinifera (Grape) Seed Oil") is UniverseCategory.CARRIER_OIL
+
+
 def test_manual_decision_overrides_rules() -> None:
-    row = _row("Salicylic Acid", nia=3, products=178)
-    decision, _ = _E.decide(row, _E.category(row.ingredient_name))
-    assert decision is CollectionDecision.QA_PRIORITY
-    row = _row("Mineral Salts", nia=1268, products=11, tier=PriorityTier.P1)
-    assert (
-        _E.decide(row, _E.category(row.ingredient_name))[0]
-        is CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION
-    )
+    assert _decide(_row("Salicylic Acid", nia=3, products=178)) is CollectionDecision.QA_PRIORITY
+    mineral = _row("Mineral Salts", nia=1268, products=11, tier=PriorityTier.P1)
+    assert _decide(mineral) is CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION
 
 
-def test_non_active_excluded_unless_nia_mention() -> None:
-    plain = _row("Butylene Glycol", products=1784)
-    assert (
-        _E.decide(plain, _E.category(plain.ingredient_name))[0]
-        is CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION
+def test_formulation_categories_excluded_unless_nia_mention() -> None:
+    assert _decide(_row("Carbomer", products=616)) is (
+        CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION
     )
-    mentioned = _row("Butylene Glycol", nia=5, products=1784)
-    assert (
-        _E.decide(mentioned, _E.category(mentioned.ingredient_name))[0] is CollectionDecision.DEFER
-    )
+    assert _decide(_row("Carbomer", nia=5, products=616)) is CollectionDecision.DEFER
+
+
+def test_humectant_and_amino_acid_deferred_not_excluded() -> None:
+    assert _decide(_row("Sorbitol", products=93)) is CollectionDecision.DEFER
+    assert _decide(_row("Lysine", products=81)) is CollectionDecision.DEFER
+
+
+def test_irritant_surfactant_deferred_with_safety_flag() -> None:
+    row = _row("Sodium Laureth Sulfate", products=4)
+    decided = _E.decide(row, _E.category(row.ingredient_name))
+    assert decided.decision is CollectionDecision.DEFER
+    assert ReviewFlag.SAFETY_RELEVANT in decided.flags
 
 
 def test_long_tail_deferred_and_relevant_collected() -> None:
-    tail = _row("Example Active X", products=MIN_PRODUCTS_FOR_BASELINE - 1)
-    assert _E.decide(tail, _E.category(tail.ingredient_name))[0] is CollectionDecision.DEFER
-    ok = _row("Example Active X", products=MIN_PRODUCTS_FOR_BASELINE)
-    assert _E.decide(ok, _E.category(ok.ingredient_name))[0] is CollectionDecision.COLLECT_BASELINE
-    high = _row("Example Active X", nia=QA_NIA_MIN_CASES)
-    assert _E.decide(high, _E.category(high.ingredient_name))[0] is CollectionDecision.QA_PRIORITY
+    assert _decide(_row("Example Active X", products=MIN_PRODUCTS_FOR_BASELINE - 1)) is (
+        CollectionDecision.DEFER
+    )
+    assert _decide(_row("Example Active X", products=MIN_PRODUCTS_FOR_BASELINE)) is (
+        CollectionDecision.COLLECT_BASELINE
+    )
+    assert _decide(_row("Example Active X", nia=QA_NIA_MIN_CASES, products=1)) is (
+        CollectionDecision.QA_PRIORITY
+    )
+
+
+def test_uv_filter_is_collected() -> None:
+    row = _row("Bis-Ethylhexyloxyphenol Methoxyphenyl Triazine", products=8)
+    assert _decide(row) is CollectionDecision.COLLECT_BASELINE
+
+
+def test_botanical_and_carrier_oil_need_nia_or_evidence() -> None:
+    # 제품 수가 아무리 많아도 NIA·기존 근거가 없으면 수집하지 않는다
+    assert (
+        _decide(_row("Example Officinalis Leaf Extract", products=500)) is CollectionDecision.DEFER
+    )
+    assert _decide(_row("Example Seed Oil", products=500)) is CollectionDecision.DEFER
+    assert _decide(_row("Example Officinalis Leaf Extract", nia=1, products=6)) in _COLLECT
+    assert _decide(_row("Example Officinalis Leaf Extract", products=6, evidence=1)) in _COLLECT
+
+
+def test_nia_only_without_product_goes_to_review_not_collect() -> None:
+    for name in ("Achyranthes Bidentata Root Extract", "Chitin", "Example Active X"):
+        row = _row(name, nia=504, products=0)
+        assert _decide(row) is CollectionDecision.NAME_OR_LINEAGE_REVIEW
+    # NIA 가 0 이면 제품이 없어도 이 경로가 아니라 long tail 규칙이다
+    assert _decide(_row("Example Active X", nia=0, products=0)) is CollectionDecision.DEFER
+
+
+def test_safety_registry_candidate_is_not_auto_collected_and_approved_is() -> None:
+    candidate = _row("Lavandula Angustifolia (Lavender) Oil", products=141)
+    approved = _row("Mentha Piperita (Peppermint) Leaf Extract", products=20)
+    registry = SafetyReviewRegistry(
+        [
+            SafetyRegistryEntry(
+                ingredient_id=candidate.ingredient_id,
+                ingredient_name=candidate.ingredient_name,
+                group="Lavandula",
+                status=SafetyReviewStatus.CANDIDATE,
+            ),
+            SafetyRegistryEntry(
+                ingredient_id=approved.ingredient_id,
+                ingredient_name=approved.ingredient_name,
+                group="Mentha",
+                status=SafetyReviewStatus.APPROVED,
+                note="검토 승인",
+            ),
+        ]
+    )
+    eligibility = CollectionEligibility(registry)
+    flagged = eligibility.decide(candidate, eligibility.category(candidate.ingredient_name))
+    assert flagged.decision is CollectionDecision.DEFER
+    assert ReviewFlag.SAFETY_REVIEW_CANDIDATE in flagged.flags
+    assert _decide(approved, eligibility) is CollectionDecision.COLLECT_BASELINE
+    # 승인 항목을 뺀 규칙 단독 평가에서는 승인이 사라진다
+    without = CollectionEligibility(registry.without_approvals())
+    assert _decide(approved, without) is CollectionDecision.DEFER
 
 
 def test_family_detection_keeps_ids_separate() -> None:
@@ -114,25 +203,7 @@ def test_smoke_set_size_and_required_members() -> None:
         assert name in SMOKE_INGREDIENTS
 
 
-def test_botanical_gate() -> None:
-    from data.scripts.evidence_collection_universe import BOTANICAL_MIN_PRODUCTS
-
-    name = "Example Officinalis Leaf Extract"
-    low = _row(name, products=BOTANICAL_MIN_PRODUCTS - 1)
-    assert _E.decide(low, _E.category(name))[0] is CollectionDecision.DEFER
-    assert _E.decide(_row(name, products=BOTANICAL_MIN_PRODUCTS), _E.category(name))[0] is (
-        CollectionDecision.COLLECT_BASELINE
-    )
-    # NIA 언급이 있으면 제품이 적어도 gate 를 통과한다
-    assert _E.decide(_row(name, nia=1, products=1), _E.category(name))[0] is (
-        CollectionDecision.COLLECT_BASELINE
-    )
-
-
 def test_qa_sampler_is_stratified_and_deterministic() -> None:
-    from data.scripts.evidence_collection_universe import QA_SAMPLE_PER_STRATUM, StratifiedQaSampler
-    from data.scripts.evidence_coverage_schemas import UniverseRow
-
     universe = [
         UniverseRow(
             ingredient_id=uuid4(),
@@ -144,6 +215,7 @@ def test_qa_sampler_is_stratified_and_deterministic() -> None:
             confirmed_product_count=0,
             scientific_document_count=0,
             current_priority_tier=PriorityTier.P4,
+            flags="",
             families="",
             in_smoke_set=False,
         )

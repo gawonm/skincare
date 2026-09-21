@@ -18,6 +18,7 @@ import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select, text
@@ -28,8 +29,12 @@ from data.scripts.evidence_coverage_audit import CoverageAuditRunner, CoverageCs
 from data.scripts.evidence_coverage_schemas import (
     CollectionDecision,
     CoverageRow,
+    Decision,
     FamilyMemberRow,
     PriorityTier,
+    ReviewFlag,
+    SafetyRegistryEntry,
+    SafetyReviewStatus,
     UniverseCategory,
     UniverseRow,
 )
@@ -38,9 +43,6 @@ from models.ingredient import IngredientMaster
 # 제품 근거가 이 수 이상이거나 NIA 언급이 있어야 baseline 수집 대상으로 본다. 제품 1~4개짜리 long tail 은
 # 수집해도 상담에서 쓰일 일이 드물어 DEFER 한다(임의 기준이며 사람 확인이 필요하다).
 MIN_PRODUCTS_FOR_BASELINE = 5
-# botanical 추가 gate: NIA 언급·기존 근거가 없으면 제품이 이 수 이상 쓰이는 것만 baseline 후보로 본다.
-# 추출물은 종류가 매우 많아 제품 5개 기준만으로는 597개가 통과한다. 임시값이며 50개 QA 후 조정한다.
-BOTANICAL_MIN_PRODUCTS = 20
 QA_NIA_MIN_CASES = 170  # coverage audit 의 NIA 높음 기준과 같은 값
 QA_ACTIVE_MIN_PRODUCTS = 100  # coverage audit 의 제품 높음 기준과 같은 값
 
@@ -48,6 +50,7 @@ _OUTPUT_DIR = Path("data/outputs/evidence_coverage")
 _UNIVERSE_FILENAME = "collection_universe.csv"
 _FAMILY_FILENAME = "ingredient_family_candidates.csv"
 _QA_SAMPLE_FILENAME = "collection_universe_qa_sample.csv"
+_SAFETY_REGISTRY_PATH = Path("docs/data/safety_review_registry.json")
 
 
 class FamilyRule(BaseModel):
@@ -196,12 +199,42 @@ _CATEGORY_RULES: tuple[tuple[UniverseCategory, re.Pattern[str]], ...] = (
         _rx(r"^bha$", r"^aha$", r"^melanin$", r"^tyrosinase$", r"^mineral salts$"),
     ),
     (
+        # preservative 의 "benzoate" 보다 먼저 봐야 Diethylamino Hydroxybenzoyl Hexyl Benzoate 같은 UV 필터가 안 잘린다
+        UniverseCategory.UV_FILTER,
+        _rx(
+            r"triazine",
+            r"benzophenone",
+            r"dibenzoylmethane",
+            r"octocrylene",
+            r"methoxycinnamate",
+            r"trimethoxycinnamate",
+            r"homosalate",
+            r"ethylhexyl salicylate",
+            r"^titanium dioxide$",
+            r"^zinc oxide$",
+            r"diethylamino hydroxybenzoyl",
+            r"drometrizole",
+            r"ensulizole",
+            r"bemotrizinol",
+        ),
+    ),
+    (
         UniverseCategory.PEPTIDE_OR_PROTEIN,
         _rx(
             r"peptide", r"collagen", r"elastin", r"protein", r"keratin", r"albumen", r"^sodium dna$"
         ),
     ),
     (UniverseCategory.ACTIVE_OR_FUNCTIONAL, _rx(r"hyaluron")),
+    (
+        UniverseCategory.FILLER_POWDER,
+        _rx(
+            r"nitride",
+            r"^talc$",
+            r"^kaolin$",
+            r"alumina",
+            r"bismuth",
+        ),
+    ),
     (
         UniverseCategory.PRESERVATIVE_STABILIZER,
         _rx(
@@ -231,6 +264,17 @@ _CATEGORY_RULES: tuple[tuple[UniverseCategory, re.Pattern[str]], ...] = (
             r"^sodium chloride$",
             r"triethanolamine",
             r"sodium phosphate",
+        ),
+    ),
+    (
+        UniverseCategory.FORMULATION_AID,
+        _rx(
+            r"citrate$",
+            r"butyloctyl",
+            r"propylene carbonate",
+            r"dicaprylyl carbonate",
+            r"^poloxamer",
+            r"^alcohol",
         ),
     ),
     (
@@ -270,6 +314,10 @@ _CATEGORY_RULES: tuple[tuple[UniverseCategory, re.Pattern[str]], ...] = (
             r"polyquaternium",
             r"starch",
             r"\bagar\b",
+            r"^algin$",
+            r"alginate",
+            r"carrageenan",
+            r"pectin",
             r"pullulan",
             r"polymer",
         ),
@@ -317,7 +365,6 @@ _CATEGORY_RULES: tuple[tuple[UniverseCategory, re.Pattern[str]], ...] = (
             r"triheptanoin",
             r"paraffin",
             r"petrolatum",
-            r"^alcohol",
             r"^glass$",
             r"^mica$",
             r"ultramarine",
@@ -338,6 +385,7 @@ _CATEGORY_RULES: tuple[tuple[UniverseCategory, re.Pattern[str]], ...] = (
             rf"^({_AMINO_ACIDS})$",
         ),
     ),
+    (UniverseCategory.CARRIER_OIL, _rx(r"\boil$", r"\bbutter$")),
     (
         UniverseCategory.BOTANICAL_OR_FERMENT,
         _rx(
@@ -357,20 +405,51 @@ _CATEGORY_RULES: tuple[tuple[UniverseCategory, re.Pattern[str]], ...] = (
     ),
 )
 
-# 수집 자격이 없다고 보는 범주. 이 범주는 NIA 언급이 있어도 DEFER 로만 남기고 자동 수집하지 않는다.
-_NON_ACTIVE_CATEGORIES = frozenset(
+# 제형 기능이 주된 역할이라 자동 수집하지 않는 범주. NIA 언급이 있으면 DEFER, 없으면 EXCLUDE.
+_FORMULATION_CATEGORIES = frozenset(
     {
-        UniverseCategory.BASE_SOLVENT_HUMECTANT,
         UniverseCategory.PRESERVATIVE_STABILIZER,
         UniverseCategory.POLYMER_THICKENER,
         UniverseCategory.SURFACTANT_EMULSIFIER_EMOLLIENT,
         UniverseCategory.PH_ADJUSTER_SALT,
+        UniverseCategory.FILLER_POWDER,
+        UniverseCategory.FORMULATION_AID,
     }
 )
+# 식물성 범주는 NIA 언급 또는 기존 근거가 있어야 baseline 후보가 된다(제품 수 단독 gate 는 QA 에서 기각됐다).
+_PLANT_CATEGORIES = frozenset({UniverseCategory.BOTANICAL_OR_FERMENT, UniverseCategory.CARRIER_OIL})
+# 자극성 세정 계면활성제. blanket EXCLUDE 대신 안전성 근거 가치가 있는 항목으로 남긴다.
+_IRRITANT_SURFACTANT = _rx(r"(laureth|lauryl|myreth|deceth).*sulfate$")
+
+
+class SafetyReviewRegistry:
+    """curated safety-review registry(JSON). 파일이 없으면 조용히 넘어가지 않고 실패한다."""
+
+    def __init__(self, entries: list[SafetyRegistryEntry]) -> None:
+        self._by_id = {e.ingredient_id: e for e in entries}
+
+    @classmethod
+    def load(cls, path: Path) -> "SafetyReviewRegistry":
+        if not path.exists():
+            raise RuntimeError(f"safety-review registry 파일이 없습니다: {path}")
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        return cls([SafetyRegistryEntry.model_validate(e) for e in raw])
+
+    def get(self, ingredient_id: UUID) -> SafetyRegistryEntry | None:
+        return self._by_id.get(ingredient_id)
+
+    def without_approvals(self) -> "SafetyReviewRegistry":
+        """QA 표본에 맞춰 승인한 항목을 뺀 규칙 단독 평가용(과적합 확인)."""
+        return SafetyReviewRegistry(
+            [e for e in self._by_id.values() if e.status is not SafetyReviewStatus.APPROVED]
+        )
 
 
 class CollectionEligibility:
     """카테고리와 수집 자격을 규칙으로 정한다. 같은 입력이면 같은 결과가 나온다."""
+
+    def __init__(self, registry: SafetyReviewRegistry | None = None) -> None:
+        self._registry = registry or SafetyReviewRegistry([])
 
     def category(self, name: str) -> UniverseCategory:
         for category, pattern in _CATEGORY_RULES:
@@ -378,49 +457,99 @@ class CollectionEligibility:
                 return category
         return UniverseCategory.ACTIVE_OR_FUNCTIONAL
 
-    def decide(
-        self, row: CoverageRow, category: UniverseCategory
-    ) -> tuple[CollectionDecision, str]:
+    def decide(self, row: CoverageRow, category: UniverseCategory) -> Decision:
         manual = MANUAL_DECISIONS.get(row.ingredient_name)
         if manual is not None:
-            return manual
-        if category is UniverseCategory.FAMILY_OR_MECHANISM_TERM:
-            return (
-                CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION,
-                "계열명/기전 용어는 수집 단위가 아니다",
+            return Decision(decision=manual[0], reason=manual[1])
+        entry = self._registry.get(row.ingredient_id)
+        if entry is not None and entry.status is SafetyReviewStatus.APPROVED:
+            return Decision(
+                decision=CollectionDecision.COLLECT_BASELINE,
+                reason=f"safety-review registry 승인({entry.group}): {entry.note}",
+                flags=(ReviewFlag.SAFETY_RELEVANT,),
             )
-        if category in _NON_ACTIVE_CATEGORIES:
-            if row.nia_case_count > 0:
-                return (
-                    CollectionDecision.DEFER,
-                    f"{category.value}이나 NIA {row.nia_case_count}건 언급 - 사람 확인",
+        flags = (
+            (ReviewFlag.SAFETY_REVIEW_CANDIDATE,)
+            if entry is not None and entry.status is SafetyReviewStatus.CANDIDATE
+            else ()
+        )
+        if category is UniverseCategory.FAMILY_OR_MECHANISM_TERM:
+            return Decision(
+                decision=CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION,
+                reason="계열명/기전 용어는 수집 단위가 아니다",
+            )
+        blocked = self._blocked_category(row, category)
+        if blocked is not None:
+            return blocked
+        if row.nia_case_count > 0 and row.confirmed_product_count == 0:
+            # 제품이 없어도 성분·효능 정보 조회 use case 가 있어 버리지 않고, 이름·계보 확인 뒤 결정한다
+            return Decision(
+                decision=CollectionDecision.NAME_OR_LINEAGE_REVIEW,
+                reason=f"NIA {row.nia_case_count}건이나 confirmed 제품 0개: 이름/계보 확인 후 결정",
+                flags=flags,
+            )
+        if row.nia_case_count == 0 and row.confirmed_product_count < MIN_PRODUCTS_FOR_BASELINE:
+            return Decision(
+                decision=CollectionDecision.DEFER,
+                reason=(
+                    f"NIA 0건, 제품 {row.confirmed_product_count}개"
+                    f"(<{MIN_PRODUCTS_FOR_BASELINE}) long tail"
+                ),
+                flags=flags,
+            )
+        if category in _PLANT_CATEGORIES and not self._plant_relevant(row):
+            reason = (
+                "safety-review 후보: 사람 검토 전 자동 수집 안 함"
+                if flags
+                else (
+                    f"{category.value}: NIA 0·근거 0"
+                    f"(제품 {row.confirmed_product_count}개만으로는 수집 안 함)"
                 )
-            return (
-                CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION,
-                f"{category.value}: 제품에 들어가지만 효능·안전성 상담 근거 대상이 아님",
+            )
+            return Decision(decision=CollectionDecision.DEFER, reason=reason, flags=flags)
+        if self._is_qa_priority(row, category):
+            return Decision(
+                decision=CollectionDecision.QA_PRIORITY,
+                reason="수집 대상 + 사람 QA 우선(NIA/제품/routing 기준)",
+                flags=flags,
+            )
+        return Decision(
+            decision=CollectionDecision.COLLECT_BASELINE, reason="baseline 수집 대상", flags=flags
+        )
+
+    def _blocked_category(self, row: CoverageRow, category: UniverseCategory) -> Decision | None:
+        if category in _FORMULATION_CATEGORIES:
+            if _IRRITANT_SURFACTANT.search(row.ingredient_name):
+                return Decision(
+                    decision=CollectionDecision.DEFER,
+                    reason="safety_relevant: 자극성 세정 계면활성제(안전성·장벽 근거 가치), 우선순위는 낮음",
+                    flags=(ReviewFlag.SAFETY_RELEVANT,),
+                )
+            if row.nia_case_count > 0:
+                return Decision(
+                    decision=CollectionDecision.DEFER,
+                    reason=f"{category.value}이나 NIA {row.nia_case_count}건 언급 - 사람 확인",
+                )
+            return Decision(
+                decision=CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION,
+                reason=f"{category.value}: 제형 기능이 주된 역할이라 효능·안전성 상담 근거 대상이 아님",
+            )
+        if category is UniverseCategory.BASE_SOLVENT_HUMECTANT:
+            # 아미노산·당류·보습제는 barrier/safety 근거 가치가 있을 수 있어 EXCLUDE 하지 않고 보류한다
+            return Decision(
+                decision=CollectionDecision.DEFER,
+                reason="base/humectant/amino acid: blanket 제외하지 않음, 독립 효능 우선순위 낮아 보류",
             )
         if category is UniverseCategory.FRAGRANCE_ALLERGEN:
-            return CollectionDecision.DEFER, "향료 알레르겐: 안전성 전용 근거로 별도 판단"
-        if row.nia_case_count == 0 and row.confirmed_product_count < MIN_PRODUCTS_FOR_BASELINE:
-            return (
-                CollectionDecision.DEFER,
-                f"NIA 0건, 제품 {row.confirmed_product_count}개(<{MIN_PRODUCTS_FOR_BASELINE}) long tail",
+            return Decision(
+                decision=CollectionDecision.DEFER,
+                reason="향료 알레르겐: 안전성 전용 근거로 별도 판단",
+                flags=(ReviewFlag.SAFETY_RELEVANT,),
             )
-        if category is UniverseCategory.BOTANICAL_OR_FERMENT and not self._botanical_relevant(row):
-            return (
-                CollectionDecision.DEFER,
-                f"botanical: NIA 0·근거 0·제품 {row.confirmed_product_count}개(<{BOTANICAL_MIN_PRODUCTS})",
-            )
-        if self._is_qa_priority(row, category):
-            return CollectionDecision.QA_PRIORITY, "수집 대상 + 사람 QA 우선(NIA/제품/routing 기준)"
-        return CollectionDecision.COLLECT_BASELINE, "baseline 수집 대상"
+        return None
 
-    def _botanical_relevant(self, row: CoverageRow) -> bool:
-        return (
-            row.nia_case_count > 0
-            or row.scientific_document_count > 0
-            or row.confirmed_product_count >= BOTANICAL_MIN_PRODUCTS
-        )
+    def _plant_relevant(self, row: CoverageRow) -> bool:
+        return row.nia_case_count > 0 or row.scientific_document_count > 0
 
     def _is_qa_priority(self, row: CoverageRow, category: UniverseCategory) -> bool:
         if row.ingredient_name in SMOKE_INGREDIENTS:
@@ -460,26 +589,27 @@ class FamilyDetector:
 
 
 class UniverseBuilder:
-    def __init__(self) -> None:
-        self._eligibility = CollectionEligibility()
+    def __init__(self, registry: SafetyReviewRegistry | None = None) -> None:
+        self._eligibility = CollectionEligibility(registry)
         self._families = FamilyDetector()
 
     def build(self, rows: list[CoverageRow]) -> list[UniverseRow]:
         result: list[UniverseRow] = []
         for r in rows:
             category = self._eligibility.category(r.ingredient_name)
-            decision, reason = self._eligibility.decide(r, category)
+            decided = self._eligibility.decide(r, category)
             result.append(
                 UniverseRow(
                     ingredient_id=r.ingredient_id,
                     ingredient_name=r.ingredient_name,
                     category=category,
-                    decision=decision,
-                    decision_reason=reason,
+                    decision=decided.decision,
+                    decision_reason=decided.reason,
                     nia_case_count=r.nia_case_count,
                     confirmed_product_count=r.confirmed_product_count,
                     scientific_document_count=r.scientific_document_count,
                     current_priority_tier=r.priority_tier,
+                    flags=";".join(f.value for f in decided.flags),
                     families=";".join(self._families.families_of(r.ingredient_name)),
                     in_smoke_set=r.ingredient_name in SMOKE_INGREDIENTS,
                 )
@@ -594,6 +724,55 @@ class CollectorInputExporter:
         return ingredients
 
 
+_REVIEWED_FILENAME = "collection_universe_qa_sample_reviewed.csv"
+_COLLECT_DECISIONS = frozenset(
+    {CollectionDecision.COLLECT_BASELINE, CollectionDecision.QA_PRIORITY}
+)
+_EXPECTED_BY_VERDICT: dict[str, CollectionDecision] = {
+    "KEEP": CollectionDecision.COLLECT_BASELINE,
+    "DEFER": CollectionDecision.DEFER,
+    "EXCLUDE": CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION,
+    "UNCERTAIN": CollectionDecision.NAME_OR_LINEAGE_REVIEW,
+}
+
+
+class QaReplay:
+    """사람이 검수한 50개 verdict 에 현재 규칙을 다시 적용해 일치도와 오류 유형을 센다."""
+
+    def evaluate(self, reviewed_csv: Path, universe: list[UniverseRow]) -> dict[str, object]:
+        by_id = {u.ingredient_id: u for u in universe}
+        with reviewed_csv.open(encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.DictReader(f))
+        strict = binary = false_include = false_exclude = missed_keep = 0
+        errors: list[str] = []
+        for r in rows:
+            verdict = r["reviewer_verdict"]
+            new = by_id[UUID(r["ingredient_id"])].decision
+            expected = _EXPECTED_BY_VERDICT[verdict]
+            keep = verdict == "KEEP"
+            if (new in _COLLECT_DECISIONS) if keep else (new is expected):
+                strict += 1
+            else:
+                errors.append(f"{r['ingredient_name']}: {verdict} vs {new.value}")
+            if (new in _COLLECT_DECISIONS) == keep:
+                binary += 1
+            if new in _COLLECT_DECISIONS and not keep:
+                false_include += 1
+            if new is CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION and keep:
+                false_exclude += 1
+            if keep and new not in _COLLECT_DECISIONS:
+                missed_keep += 1
+        return {
+            "total": len(rows),
+            "strict_agreement": strict,
+            "collect_vs_not_agreement": binary,
+            "false_include": false_include,
+            "false_exclude(KEEP인데 EXCLUDE)": false_exclude,
+            "missed_keep(KEEP인데 수집 안 됨)": missed_keep,
+            "disagreements": errors,
+        }
+
+
 async def _run(
     database_url: str,
     nia_summary: Path,
@@ -602,7 +781,7 @@ async def _run(
     names: list[str],
 ) -> None:
     snapshot = await CoverageAuditRunner().load(database_url, nia_summary)
-    builder = UniverseBuilder()
+    builder = UniverseBuilder(SafetyReviewRegistry.load(_SAFETY_REGISTRY_PATH))
     universe = builder.build(snapshot.rows)
     writer = CoverageCsvWriter()
     writer.write(output_dir / _UNIVERSE_FILENAME, universe, UniverseRow)
@@ -610,6 +789,12 @@ async def _run(
         output_dir / _FAMILY_FILENAME, builder.family_members(snapshot.rows), FamilyMemberRow
     )
     print(builder.summary(universe))
+    reviewed = output_dir / _REVIEWED_FILENAME
+    if reviewed.exists():
+        registry = SafetyReviewRegistry.load(_SAFETY_REGISTRY_PATH)
+        rule_only = UniverseBuilder(registry.without_approvals()).build(snapshot.rows)
+        print("QA replay(registry 승인 포함):", QaReplay().evaluate(reviewed, universe))
+        print("QA replay(규칙 단독):", QaReplay().evaluate(reviewed, rule_only))
     sample = StratifiedQaSampler().sample(universe)
     with (output_dir / _QA_SAMPLE_FILENAME).open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)

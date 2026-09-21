@@ -112,13 +112,49 @@ class UniverseCategory(StrEnum):
     PH_ADJUSTER_SALT = "ph_adjuster_salt"
     FRAGRANCE_ALLERGEN = "fragrance_allergen"
     FAMILY_OR_MECHANISM_TERM = "family_or_mechanism_term"
+    UV_FILTER = "uv_filter"  # 일반 active 와 구분하지만 별도 파이프라인은 없다(수집 대상에는 포함)
+    CARRIER_OIL = "carrier_oil"
+    FILLER_POWDER = "filler_powder"
+    FORMULATION_AID = "formulation_aid"
 
 
 class CollectionDecision(StrEnum):
     COLLECT_BASELINE = "COLLECT_BASELINE"
     QA_PRIORITY = "QA_PRIORITY"  # 수집 대상이며 사람이 먼저 검수한다(수집 제외가 아님)
     DEFER = "DEFER"
+    # NIA 에는 나오지만 confirmed 제품이 0개라 자동 수집하지 않는다. 사람이 이름·계보를 확인한 뒤 결정한다.
+    NAME_OR_LINEAGE_REVIEW = "NAME_OR_LINEAGE_REVIEW"
     EXCLUDE_FROM_SCIENTIFIC_COLLECTION = "EXCLUDE_FROM_SCIENTIFIC_COLLECTION"
+
+
+class ReviewFlag(StrEnum):
+    SAFETY_RELEVANT = "safety_relevant"
+    SAFETY_REVIEW_CANDIDATE = "safety_review_candidate"
+
+
+class SafetyReviewStatus(StrEnum):
+    CANDIDATE = "candidate"  # 사람이 검토할 후보. 자동 수집하지 않는다
+    APPROVED = "approved"  # 사람이 안전성 근거 수집 대상으로 승인함
+
+
+class SafetyRegistryEntry(BaseModel):
+    """curated safety-review registry 한 줄. 코드에 성분명을 박지 않고 이 파일로 관리한다."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ingredient_id: UUID
+    ingredient_name: str
+    group: str
+    status: SafetyReviewStatus
+    note: str = ""
+
+
+class Decision(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    decision: CollectionDecision
+    reason: str
+    flags: tuple[ReviewFlag, ...] = ()
 
 
 class UniverseRow(BaseModel):
@@ -131,6 +167,7 @@ class UniverseRow(BaseModel):
     confirmed_product_count: int
     scientific_document_count: int
     current_priority_tier: PriorityTier
+    flags: str
     families: str
     in_smoke_set: bool
 
