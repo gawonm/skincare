@@ -798,10 +798,7 @@ embedding·DB write·전체 collection universe 실행은 하지 않았다.
 | Hexapeptide-2 | 0 | PubMed 결과 0건: 강제로 채우지 않고 0 허용(정책대로) |
 | BHA | 1 | butylated hydroxyanisole 내분비 논문 → **모호 용어가 다른 물질로 검색됨(negative control 확인)** |
 
-발견한 필터 gap(설계 반영 대상, 이번엔 코드 수정 안 함): (a) 투여 경로(경구·주사 vs 국소) 구분 없음 — 국소 맥락은 감점뿐이라 경구가 선택됨,
-(b) in vitro/세포 연구가 `human_study`로 분류됨(MeSH `Cells, Cultured`/`In Vitro Techniques` 미사용), (c) 제목에 성분이 비교 대조로만
-등장한 논문(직접 근거 아님) 구분 없음, (d) alias가 비어 있어(예: Niacinamide→Nicotinamide) family expansion 미적용, (e) 일부 논문
-claim_topics가 비어 있음. 이 gap은 필터 계약(직접성·경로·study design)에 반영해야 한다.
+발견한 필터 gap 5가지(투여 경로, in vitro 오분류, 직접성, alias 부재, 빈 claim_topics)는 아래 "PubMed 필터 gap 수정"에서 코드로 반영했다.
 
 **② 50개 stratified QA 표본** (`collection_universe_qa_sample.csv`, seed 고정): active 10 / botanical 10 / QA_PRIORITY 10 /
 DEFER 10 / EXCLUDE 10. 사람이 `reviewer_verdict`를 채운다. 예비 관찰(아직 규칙에 반영 안 함):
@@ -858,6 +855,30 @@ Palm Oil(EXCLUDE vs DEFER), Chitin·Albumen Extract(EXCLUDE vs NAME_OR_LINEAGE_R
 **남은 UNCERTAIN 3개**(Helianthus Annuus Seed, Achyranthes Bidentata Root Extract, Lonicera Caerulea Fruit Juice)는 자동 규칙으로 확정하지 않고
 모두 NAME_OR_LINEAGE_REVIEW다. **미해결**: active/functional은 여전히 COLLECT+QA 347개(전체 후보의 77%)이고 NIA>0은 소수라, 규칙 보강 뒤에도
 이 잔여 범주에 노이즈가 남아 있을 수 있다. 다음 QA는 이 범주를 다시 표본 검수하는 것이 좋다.
+
+### PubMed 필터 gap 수정 (2026-09-21, 새 PubMed 호출 없음)
+저장된 smoke 10 결과(selected 25 + candidate 82)로 필터·선정 로직을 고치고 회귀 테스트를 추가했다(`pubmed_evidence_rules.py`,
+`pubmed_selection_policy.py`). 필터 계약 전문은 [COMPACT_EVIDENCE_COLLECTOR.md](COMPACT_EVIDENCE_COLLECTOR.md)의 PubMed 절.
+저장된 결과를 새 규칙으로 재평가한 결과(입력은 이전 성분별 record 13건 안팎, 예산 3):
+
+| 성분 | 이전 selected | 수정 후 selected | 비고 |
+|---|---:|---:|---|
+| Niacinamide | 3(복합 2) | 3(단일 직접 3) | 복합 제형은 over_budget candidate로 후순위 |
+| Retinol | 3 | 3 | Hexapeptide-9 논문은 `comparator_only` candidate |
+| Salicylic Acid | 3 | 3(복합·리뷰 포함) | 단일 직접 논문이 적어 복합/리뷰가 채움(등급 표시) |
+| Ascorbic Acid | 3(cystinosis 포함) | 3(전부 국소 인체) | cystinosis 논문 버림(피부 무관) |
+| 3-O-Ethyl Ascorbic Acid | 3(in vitro 3) | **0** | 세포·proteomics는 in_vitro candidate |
+| Centella Asiatica Extract | 3 | **0** | 경구·in vitro |
+| Sodium Hyaluronate | 3 | **0** | 경구·주사·liposome |
+| Collagen | 3 | **0** | 전부 경구 |
+| Hexapeptide-2 | 0 | 0 | 결과 0건, 강제로 채우지 않음 |
+| BHA | 1(내분비 독성) | **0** | 피부 무관으로 버림. 특수처리 없이 일반 규칙 |
+
+**남은 한계**: (1) claim topic은 키워드 규칙이라 국소 임상 논문도 topic 단어가 없으면 candidate로 밀린다(예: DLE 시험은 초록 뒷부분이
+있어야 topic이 잡힘). (2) 단일 직접 논문이 적은 성분은 복합 제형·리뷰가 selected를 채운다(등급으로 구분). (3) 경로 단서 없는 국소
+임상 논문(예: 클리닉에서 시술하는 peel)은 `route_unclear`로 밀린다. (4) 같은 claim을 반복하는 유사 논문 중복 제거는 아직 없다.
+(5) MeSH·publication type은 저장 bundle에 없어 회귀 fixture에서 재구성했다. (6) 질의 자체(경구 제외 등)는 바꾸지 않았다.
+10개 재-smoke는 승인 후 실행한다.
 
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정

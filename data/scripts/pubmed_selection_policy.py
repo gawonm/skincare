@@ -1,17 +1,32 @@
 """PubMed 후보 record 를 성분 기준으로 평가·선별하는 정책. 네트워크·LLM 없음.
 
 title / abstract / publication type / MeSH 만으로 결정적(deterministic)으로 판단한다.
-확신할 수 없는 record 는 SELECTED 가 아니라 CANDIDATE 로 남겨 사람이 검토하게 한다.
+SELECTED 는 "이 성분의 국소 피부 직접 근거"만이다: 피부 관련성, 임상 설계, 국소 투여, 성분이 시험 대상,
+abstract 가 지지하는 claim topic 이 모두 확인돼야 한다. 확신할 수 없으면 SELECTED 가 아니라 이유를 붙인
+CANDIDATE 로 남기고, 성분과 무관하거나 피부와 무관하면 버린다. 예산을 채우려고 부적절한 논문을 고르지 않으며
+0편도 허용한다.
 """
 
 import re
 
 from data.scripts.evidence_collector_schemas import (
+    AdministrationRoute,
     CollectionIngredient,
+    EvidenceGrade,
+    IngredientRole,
     PubmedAssessment,
     PubmedRecord,
     PubmedSelectionDisposition,
     PubmedSelectionReason,
+    SkinRelevance,
+    StudyDesign,
+)
+from data.scripts.pubmed_evidence_rules import (
+    ClaimTopicClassifier,
+    DirectnessClassifier,
+    RouteClassifier,
+    SkinRelevanceClassifier,
+    StudyDesignClassifier,
 )
 from models.evidence_document import (
     EvidenceClaimTopic,
@@ -20,8 +35,9 @@ from models.evidence_document import (
 )
 
 # 성분 전체 기준 상한. "수백 편 적재" 같은 실수를 구조적으로 막으려고 생성자에서 강제한다.
-MAX_PAPERS_HARD_LIMIT = 4
-DEFAULT_MAX_PAPERS_PER_INGREDIENT = 4
+# 대표 근거 1~3편이 목표이고 quota 가 아니다(적합한 논문이 없으면 0편).
+MAX_PAPERS_HARD_LIMIT = 3
+DEFAULT_MAX_PAPERS_PER_INGREDIENT = 3
 MAX_QUERY_NAME_VARIANTS = 3
 
 # 사람 검토용 candidate 도 무제한으로 쌓지 않는다
@@ -32,7 +48,6 @@ _ABSTRACT_MENTION_SCORE = 1
 _MESH_MENTION_SCORE = 1
 _CLAIM_TOPIC_HIT_SCORE = 1
 _COMBINATION_PENALTY = 1
-_COSMETIC_CONTEXT_SCORE = 2
 _MIN_SELECT_SCORE = 5
 
 _SKIN_SCOPE_TERMS = "skin OR topical OR cosmetic OR dermatolog*"
@@ -64,11 +79,6 @@ _TRIAL_PUBLICATION_TYPES = frozenset(
     }
 )
 _SYSTEMATIC_PUBLICATION_TYPES = frozenset({"systematic review", "meta-analysis"})
-_REVIEW_PUBLICATION_TYPE = "review"
-_ANIMAL_MESH = "animals"
-_HUMAN_MESH = "humans"
-_IN_VITRO_MESH = "in vitro techniques"
-_IN_VITRO_TITLE_PATTERN = re.compile(r"\bin vitro\b", re.IGNORECASE)
 
 _STUDY_TYPE_SCORE = {
     EvidenceStudyType.HUMAN_STUDY: 3,
@@ -80,53 +90,19 @@ _STUDY_TYPE_SCORE = {
 }
 _TRIAL_BONUS = 2
 _SYSTEMATIC_REVIEW_BONUS = 3
-_SELECTABLE_STUDY_TYPES = frozenset(
-    {
-        EvidenceStudyType.HUMAN_STUDY,
-        EvidenceStudyType.REVIEW,
-        EvidenceStudyType.MIXED_IN_VITRO_AND_HUMAN,
-    }
+# 임상 설계로 볼 수 있는 것만 selected 후보가 된다. in vitro/ex vivo/동물/불명은 candidate 로만 남는다.
+_SELECTABLE_DESIGNS = frozenset(
+    {StudyDesign.HUMAN_CLINICAL, StudyDesign.MIXED_HUMAN_AND_LAB, StudyDesign.REVIEW}
 )
 
-# 서비스 대상은 화장품이라 국소 도포 맥락의 근거를 경구 복용·주사 연구보다 우선한다
-_COSMETIC_CONTEXT_KEYWORDS = (
-    "topical",
-    "cosmetic",
-    "cream",
-    "moisturi",
-    "lotion",
-    "serum",
-    "facial",
-)
-
-_CLAIM_TOPIC_KEYWORDS: dict[EvidenceClaimTopic, tuple[str, ...]] = {
-    EvidenceClaimTopic.EFFICACY: (
-        "wrinkle",
-        "hyperpigment",
-        "melasma",
-        "barrier",
-        "sebum",
-        "acne",
-        "moistur",
-        "hydrat",
-        "elasticity",
-        "brighten",
-        "pigmentation",
-        "anti-aging",
-        "photoaging",
-    ),
-    EvidenceClaimTopic.PRECAUTION: (
-        "irritat",
-        "sensitiz",
-        "sensitis",
-        "adverse",
-        "allerg",
-        "dermatitis",
-        "safety",
-        "tolerab",
-        "toxic",
-    ),
+# 선택 순서: 단일 성분 직접 근거 → 리뷰 → 복합 제형. 복합 제형은 제외하지 않되 뒤로 민다.
+_GRADE_ORDER = {
+    EvidenceGrade.DIRECT_SINGLE_TOPICAL_HUMAN: 0,
+    EvidenceGrade.TOPICAL_REVIEW: 1,
+    EvidenceGrade.COMBINATION_TOPICAL_HUMAN: 2,
+    EvidenceGrade.NOT_GRADED: 3,
 }
+
 # 복합 제형 표지. 결정적 규칙이라 놓치는 경우가 있어 제외가 아니라 감점과 표시만 한다.
 # "patients with acne" 같은 일반 문장의 with/and 를 오탐하지 않도록 성분명에 붙은 접속만 본다.
 _COMBINATION_CONNECTOR = r"(?:,|\band\b|\bplus\b|\bwith\b|\+|/)"
@@ -142,6 +118,11 @@ class PubmedSelectionPolicy:
                 f"(받은 값: {max_papers_per_ingredient}). compact corpus 는 성분당 소수만 수집합니다."
             )
         self.max_papers_per_ingredient = max_papers_per_ingredient
+        self._designs = StudyDesignClassifier()
+        self._routes = RouteClassifier()
+        self._directness = DirectnessClassifier()
+        self._skin = SkinRelevanceClassifier()
+        self._topics = ClaimTopicClassifier()
 
     # ------------------------------------------------------------------ queries
 
@@ -157,7 +138,11 @@ class PubmedSelectionPolicy:
         return f"({self._name_clause(ingredient)}) AND humans[MeSH Terms] AND ({_SKIN_SCOPE_TERMS})"
 
     def search_names(self, ingredient: CollectionIngredient) -> list[str]:
-        """PubMed 는 영문 색인이라 한글 등 비ASCII 표기는 제외한다."""
+        """PubMed 는 영문 색인이라 한글 등 비ASCII 표기는 제외한다.
+
+        `ingredient.aliases` 는 exact-equivalent 표기만 담는다는 계약이다(CollectionIngredient 참고).
+        family·파생형·계열명 용어는 이 입력으로 들어오지 않아야 하며, 여기서 임의로 덧붙이지도 않는다.
+        """
         names: list[str] = []
         for name in [ingredient.standard_name_en, *ingredient.aliases]:
             cleaned = name.replace('"', "").strip()
@@ -210,22 +195,36 @@ class PubmedSelectionPolicy:
         )[:MAX_REVIEW_CANDIDATES_PER_INGREDIENT]
         return [*selected, *candidates]
 
-    def _rank_key(self, assessment: PubmedAssessment) -> tuple[int, int, int]:
+    def _rank_key(self, assessment: PubmedAssessment) -> tuple[int, int, int, int]:
         year = assessment.record.publication_date.year if assessment.record.publication_date else 0
-        # 점수 높은 순 → 최신 순 → PMID 오름차순(재실행 시 순서가 흔들리지 않게)
-        return (-assessment.score, -year, int(assessment.record.pmid))
+        # 등급(단일 직접 → 리뷰 → 복합) → 점수 높은 순 → 최신 순 → PMID 오름차순(재실행 시 순서가 흔들리지 않게)
+        return (
+            _GRADE_ORDER[assessment.evidence_grade],
+            -assessment.score,
+            -year,
+            int(assessment.record.pmid),
+        )
 
     def _assess_one(
         self, ingredient: CollectionIngredient, record: PubmedRecord
     ) -> PubmedAssessment:
         names = self.search_names(ingredient)
-        study_type = self.classify_study_type(record)
+        design = self._designs.classify(record)
+        study_type = self._designs.to_storage_type(design)
+        route = self._routes.classify(record, design)
+        role = self._directness.classify(record, names)
+        skin = self._skin.classify(record)
         formulation = self.classify_formulation(record, names)
-        topics = self._claim_topics(record)
+        topics = self._topics.classify(record)
         title_mentioned = self._mentions(names, record.title)
         score = self._score(record, names, study_type, formulation, topics, title_mentioned)
 
-        disposition, reason = self._decide(record, names, study_type, title_mentioned, score)
+        disposition, reason = self._decide(
+            record, names, design, route, role, skin, topics, title_mentioned, score
+        )
+        grade = EvidenceGrade.NOT_GRADED
+        if disposition is PubmedSelectionDisposition.SELECTED:
+            grade = self._grade(design, formulation)
         return PubmedAssessment(
             ingredient_id=ingredient.ingredient_id,
             record=record,
@@ -235,13 +234,30 @@ class PubmedSelectionPolicy:
             score=score,
             disposition=disposition,
             reason=reason,
+            route=route,
+            study_design=design,
+            ingredient_role=role,
+            skin_relevance=skin,
+            evidence_grade=grade,
         )
+
+    def _grade(self, design: StudyDesign, formulation: EvidenceFormulationType) -> EvidenceGrade:
+        if formulation is EvidenceFormulationType.COMBINATION_FORMULATION:
+            # 복합 제형은 이 성분의 기여를 논문에서 분리할 수 없어 단일 성분 직접 근거로 올리지 않는다
+            return EvidenceGrade.COMBINATION_TOPICAL_HUMAN
+        if design is StudyDesign.REVIEW:
+            return EvidenceGrade.TOPICAL_REVIEW
+        return EvidenceGrade.DIRECT_SINGLE_TOPICAL_HUMAN
 
     def _decide(
         self,
         record: PubmedRecord,
         names: list[str],
-        study_type: EvidenceStudyType,
+        design: StudyDesign,
+        route: AdministrationRoute,
+        role: IngredientRole,
+        skin: SkinRelevance,
+        topics: list[EvidenceClaimTopic],
         title_mentioned: bool,
         score: int,
     ) -> tuple[PubmedSelectionDisposition, PubmedSelectionReason | None]:
@@ -254,9 +270,23 @@ class PubmedSelectionPolicy:
             return rejected, PubmedSelectionReason.EXCLUDED_PUBLICATION_TYPE
         if not self._mentions(names, record.title, record.abstract, *record.mesh_terms):
             return rejected, PubmedSelectionReason.NOT_RELEVANT_TO_INGREDIENT
+        # 성분 이름만 걸린 비피부 논문은 버린다(예: cystinosis, 내분비 독성 연구)
+        if skin is SkinRelevance.NOT_RELEVANT:
+            return rejected, PubmedSelectionReason.NOT_SKIN_RELEVANT
+        if design not in _SELECTABLE_DESIGNS:
+            return candidate, PubmedSelectionReason.NON_CLINICAL_STUDY_DESIGN
+        if route in (AdministrationRoute.ORAL, AdministrationRoute.INJECTION):
+            return candidate, PubmedSelectionReason.ROUTE_NOT_TOPICAL
+        if route is not AdministrationRoute.TOPICAL:
+            return candidate, PubmedSelectionReason.ROUTE_UNCLEAR
+        if role is IngredientRole.COMPARATOR_OR_BACKGROUND:
+            return candidate, PubmedSelectionReason.COMPARATOR_ONLY
         if not title_mentioned:
             return candidate, PubmedSelectionReason.INGREDIENT_NOT_IN_TITLE
-        if study_type not in _SELECTABLE_STUDY_TYPES or score < _MIN_SELECT_SCORE:
+        if not topics:
+            # abstract 가 지지하는 topic 을 못 찾으면 임의로 만들지 않고 자동 selected 도 하지 않는다
+            return candidate, PubmedSelectionReason.NO_CLAIM_TOPIC
+        if score < _MIN_SELECT_SCORE:
             return candidate, PubmedSelectionReason.STUDY_TYPE_NOT_SELECTABLE
         return PubmedSelectionDisposition.SELECTED, None
 
@@ -282,9 +312,6 @@ class PubmedSelectionPolicy:
         if publication_types & _SYSTEMATIC_PUBLICATION_TYPES:
             score += _SYSTEMATIC_REVIEW_BONUS
         score += _CLAIM_TOPIC_HIT_SCORE * len(topics)
-        text = f"{record.title} {record.abstract or ''}".lower()
-        if any(keyword in text for keyword in _COSMETIC_CONTEXT_KEYWORDS):
-            score += _COSMETIC_CONTEXT_SCORE
         if formulation is EvidenceFormulationType.COMBINATION_FORMULATION:
             score -= _COMBINATION_PENALTY
         return score
@@ -292,26 +319,7 @@ class PubmedSelectionPolicy:
     # ----------------------------------------------------------- classification
 
     def classify_study_type(self, record: PubmedRecord) -> EvidenceStudyType:
-        publication_types = {value.lower() for value in record.publication_types}
-        mesh = {value.lower() for value in record.mesh_terms}
-        is_human = _HUMAN_MESH in mesh or bool(publication_types & _TRIAL_PUBLICATION_TYPES)
-        is_animal = _ANIMAL_MESH in mesh
-        is_in_vitro = _IN_VITRO_MESH in mesh or bool(_IN_VITRO_TITLE_PATTERN.search(record.title))
-
-        if (
-            publication_types & _SYSTEMATIC_PUBLICATION_TYPES
-            or _REVIEW_PUBLICATION_TYPE in publication_types
-        ):
-            return EvidenceStudyType.REVIEW
-        if is_human and is_in_vitro:
-            return EvidenceStudyType.MIXED_IN_VITRO_AND_HUMAN
-        if is_human:
-            return EvidenceStudyType.HUMAN_STUDY
-        if is_animal:
-            return EvidenceStudyType.ANIMAL_STUDY
-        if is_in_vitro:
-            return EvidenceStudyType.IN_VITRO
-        return EvidenceStudyType.UNKNOWN
+        return self._designs.to_storage_type(self._designs.classify(record))
 
     def classify_formulation(
         self, record: PubmedRecord, names: list[str]
@@ -332,14 +340,6 @@ class PubmedSelectionPolicy:
             if re.search(pattern, title, re.IGNORECASE):
                 return EvidenceFormulationType.COMBINATION_FORMULATION
         return EvidenceFormulationType.SINGLE_INGREDIENT
-
-    def _claim_topics(self, record: PubmedRecord) -> list[EvidenceClaimTopic]:
-        text = f"{record.title} {record.abstract or ''}".lower()
-        return [
-            topic
-            for topic, keywords in _CLAIM_TOPIC_KEYWORDS.items()
-            if any(keyword in text for keyword in keywords)
-        ]
 
     def _mentions(self, names: list[str], *texts: str) -> bool:
         haystack = " ".join(texts)

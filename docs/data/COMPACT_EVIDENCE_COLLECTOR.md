@@ -33,7 +33,7 @@ uv run python -m data.scripts.compact_evidence_collector --source pubmed \
 | --- | --- |
 | `--source pubmed\|cir` | source 별로 분리 실행 |
 | `--max-ingredients N` | 입력 앞에서 N개 성분만 처리 |
-| `--max-papers-per-ingredient N` | PubMed 성분당 편수. 기본 4, **1~4 초과 시 오류**(성분 전체 기준) |
+| `--max-papers-per-ingredient N` | PubMed 성분당 편수. 기본 3, **1~3 초과 시 오류**(성분 전체 기준, quota 아님: 0편 허용) |
 | `--dry-run` | 파일을 쓰지 않는다. PubMed 는 읽기 요청(ESearch/EFetch)은 나간다 |
 | `--cir-reports-file` | `--source cir` 입력: `CirReportCandidate` JSON 배열(PDF 경로 포함) |
 
@@ -48,11 +48,28 @@ uv run python -m data.scripts.compact_evidence_collector --source pubmed \
 - 공식 E-utilities 만 사용, 요청 간격 0.4초, 실패는 3회 재시도 후 예외.
 - 질의: ① 임상 근거(RCT/clinical trial/SR/meta-analysis) + 피부/국소 범위 → 예산을 못 채우면
   ② humans[MeSH] + 피부/국소 범위. 질의당 최대 15건만 가져온다. 한글 별칭은 질의에서 제외.
-- 선별(LLM 없음, title/abstract/publication type/MeSH 만): abstract 없음·erratum·editorial·
-  letter·case report 등은 제외. 제목에 성분명이 없거나 연구 유형이 human/review/mixed 가 아니면
-  자동 확정하지 않고 **candidate** 로 남긴다. 점수는 성분 직접 언급, RCT·SR, human, efficacy/
-  precaution 키워드, 국소·화장품 맥락(경구 보충제 연구 후순위)이 올리고 복합 제형이 내린다.
-  동점은 최신 → PMID 순. 상위 N편(≤4)만 SELECTED, 나머지는 `over_budget` candidate(성분당 최대 10).
+- 선별(LLM 없음, title/abstract/publication type/MeSH 만, `pubmed_evidence_rules.py`): SELECTED 는 **이 성분의 국소 피부
+  직접 근거**만이다. 다음을 모두 통과해야 하고, 통과하지 못하면 이유를 붙인 candidate(또는 버림)로 남는다. 성분당 대표 1~3편, 적합한
+  논문이 없으면 0편이다.
+  1. abstract 있음, erratum·editorial·letter·case report 등 제외
+  2. **피부 관련성**: 제목/MeSH 에 피부 맥락이 있거나 초록에 서로 다른 피부 용어 2개 이상. 통과 못 하면 **버림**
+     (`skin` 이 세포 출처로만 스치는 cystinosis 논문 등)
+  3. **연구 설계**: human_clinical / mixed(임상+실험실) / review 만. 임상 설계 단서(무작위·placebo·split-face 등)와 사람 대상 단서가
+     함께 있어야 human 이고 "Humans" MeSH 단독은 human 이 아니다. in_vitro / ex_vivo / animal / unclear 는 candidate
+     (`non_clinical_study_design`). DB enum 에 ex_vivo 가 없어 저장 시 in_vitro 로 접는다(마이그레이션 없음)
+  4. **투여 경로**: topical 만. oral·injection 은 candidate(`route_not_topical`), 판별 불가는 topical 로 간주하지 않고
+     candidate(`route_unclear`). 제목 단서가 우선, `oral cavity` 등은 경구 투여로 보지 않는다
+  5. **직접성**: 제목에서 `outperforms/versus/compared with/than <성분>` 처럼 비교 대조로만 등장하면 candidate(`comparator_only`).
+     제목에 성분이 없으면 candidate(`ingredient_not_in_title`)
+  6. **claim topic**: abstract 가 지지하는 topic 만 연결(제목만으로는 안 됨). topic 이 비면 임의로 만들지 않고 자동 selected 도 하지 않는다
+     (candidate `no_claim_topic`). `cytotoxicity`·일반 `safety` 단어는 precaution 이 아니다
+  점수는 성분 언급, RCT·SR, 근거 topic 수가 올리고 복합 제형이 내린다. 동점은 최신 → PMID 순.
+  **등급 우선 정렬**: 단일 성분 직접(`direct_single_topical_human`) → 리뷰 → 복합 제형(`combination_topical_human`) 순으로 뽑고,
+  상위 N편(≤3)만 SELECTED, 나머지는 `over_budget` candidate(성분당 최대 10). route/study_design/ingredient_role/skin_relevance/
+  evidence_grade 는 candidate JSONL 에만 남고 DB 컬럼은 없다.
+- **alias 계약**: `CollectionIngredient.aliases` 는 exact-equivalent 표기(철자·구 INCI 명칭)만 담는다. universe export 는
+  IngredientMaster 의 구 영문명만 넣고, family expansion 용어·파생형·계열명(BHA/AHA 등)은 넣지 않는다. family 용어 결과를 원형 성분에
+  귀속하지 않기 위해서다. 모호한 계열 용어의 일반화 처리는 Agent 쪽 정책이며 여기서 성분별로 하드코딩하지 않는다.
 - 복합 제형: 제목에서 성분명에 붙은 `and/with/plus/+/,` 또는 combination/combined 를 감지해
   `formulation_type=combination_formulation` 으로 표시하고 감점한다.
 - Chunk: 1 PMID = document 1건, abstract 원문 전체 = chunk 1건(`section="abstract"`,

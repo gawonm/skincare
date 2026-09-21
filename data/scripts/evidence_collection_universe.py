@@ -679,6 +679,25 @@ class StratifiedQaSampler:
 class CollectorInputExporter:
     """universe 결과를 기존 compact collector 입력(CollectionIngredient JSON)으로 내보낸다. 수동 목록을 따로 만들지 않는다."""
 
+    @staticmethod
+    def build_ingredient(
+        ingredient_id: UUID, name_en: str, name_ko: str | None, old_names_en: list[str]
+    ) -> CollectionIngredient:
+        """aliases 에는 IngredientMaster 의 구 영문명(exact-equivalent)만 넣는다.
+
+        family expansion 용어나 파생형은 원형 성분에 결과가 자동 귀속되므로 여기서 절대 넣지 않는다.
+        """
+        aliases: list[str] = []
+        for name in old_names_en:
+            if name and name != name_en and name not in aliases:
+                aliases.append(name)
+        return CollectionIngredient(
+            ingredient_id=ingredient_id,
+            standard_name_en=name_en,
+            standard_name_ko=name_ko,
+            aliases=aliases,
+        )
+
     async def export(
         self,
         database_url: str,
@@ -705,15 +724,7 @@ class CollectorInputExporter:
                 rows = {r[0]: (r[1], list(r[2] or [])) for r in result.all()}
         finally:
             await engine.dispose()
-        ingredients = [
-            CollectionIngredient(
-                ingredient_id=i,
-                standard_name_en=n,
-                standard_name_ko=rows[i][0],
-                aliases=rows[i][1],
-            )
-            for i, n in ids.items()
-        ]
+        ingredients = [self.build_ingredient(i, n, rows[i][0], rows[i][1]) for i, n in ids.items()]
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
             json.dumps(
