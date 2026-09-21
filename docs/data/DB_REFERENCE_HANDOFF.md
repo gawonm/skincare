@@ -7,36 +7,45 @@
 
 ## 1. DB 기준본 (source of truth)
 
-현재 기준본은 **`skincare_reference_2026-09-20_v2.dump`** 이다(Product taxonomy backfill까지 반영된 최종본).
+현재 기준본은 **`skincare_reference_2026-09-21_v4.dump`** 이다(Agent 쪽에서 생성한 팀 공용 canonical dump).
 
 | 항목 | 값 |
 | --- | --- |
-| dump 파일 | `skincare_reference_2026-09-20_v2.dump` |
-| 크기 | 54,399,358 bytes |
-| SHA-256 | `5ecd670ee1e85553008abb5d7c43da0700a3149089eeb4c061948361271a5d54` |
+| dump 파일 | `skincare_reference_2026-09-21_v4.dump` |
+| 크기 | 80,015,861 bytes |
+| SHA-256 | `8c3eb724f86f706614dbf2c37d6fb156591e9dbb85166cee423ac213abe30111` |
 | 형식 | PostgreSQL custom format (`pg_dump -Fc --no-owner --no-acl`) |
-| 생성 | 2026-09-20 10:22 UTC, `pg_dump` 17.x, 원본 DB명 `skincare_data_finalize` |
-| Alembic revision | `2063ce3feae3` (현재 main의 migration head와 동일. chat history 테이블 migration까지 포함, `alembic upgrade`가 필요 없다) |
+| 원본 DB / pg_dump | `skincare_integrated_20260920` / `pg_dump` 17.6 |
+| Alembic revision | `9f4c2a7d8e61` (dump에 migration이 이미 적용돼 있어 `alembic upgrade`를 다시 실행하지 않는다) |
 | 서버 | `paradedb/paradedb:0.18.6-pg17` (compose의 `postgres`, `vector`/`pg_search` 확장 포함). 그보다 낮은 PostgreSQL 버전에는 복원되지 않는다 |
-| 복원 검증 | **PASS** — 새 빈 DB에 `pg_restore --exit-on-error --no-owner`로 복원해 revision과 핵심 행 수 21개 지표가 원본과 모두 일치함을 확인했다. taxonomy도 2,262행의 (자연키, 유형, 서비스 그룹) 해시가 원본과 같다(**PASS**) |
+| 사용자·채팅 데이터 | `app_user`/`chat_room`/`chat_message`/`chat_turn_state`는 **스키마만** 있고 데이터 행은 제외했다 |
+| 복원 검증 | **PASS** |
+| 복원 시 환경변수 | `PGOPTIONS="-c maintenance_work_mem=32MB -c max_parallel_maintenance_workers=0"` (3절 참고) |
 
 ### 이전 dump는 SUPERSEDED (사용 중단)
+
+**`skincare_reference_2026-09-20_v2.dump`** (v2, 54,399,358 bytes, SHA-256
+`5ecd670ee1e85553008abb5d7c43da0700a3149089eeb4c061948361271a5d54`, revision `2063ce3feae3`)도 **더 이상 쓰지 않는다.**
+v4로 교체됐다. Evidence 구성(`evidence_document` 14 → 46 등)과 migration head가 v4와 다르다.
 
 **`skincare_reference_2026-09-20.dump`** (v1, 54,391,839 bytes, SHA-256
 `9c9bb2dd7b0f8e359364262029a90c907ac1a51a89ef67cc0214383b9102291d`)는 **더 이상 쓰지 않는다.** Product taxonomy
 backfill을 반영하기 전에 만든 파일이라 `product_type_normalized`/`service_category`가 채워져 있지 않다. 이 파일을
-받았다면 `_v2` 파일로 교체한다.
+받았다면 `_v4` 파일로 교체한다.
 
 **`skincare_latest_2026-09-17.dump`** (8,817,775 bytes, SHA-256 `534e41c6e65c8bedab53dfbce1acc2c888bc2e79afc458c630a413002f16d91f`,
 revision `3165318c750d`)도 **더 이상 쓰지 않는다.** 이유는 다음과 같다.
 
-- Product `display_title`이 2,262건 중 83건만 한글화돼 있다(현재 기준본은 2,259건 반영).
+- Product `display_title`이 2,262건 중 83건만 한글화돼 있다(v2 이후 기준본은 2,259건 반영. v4 값은 아래 "최종 행 수" 안내 참고).
 - MFDS Evidence가 `evidence_document`/`evidence_chunk`에 적재되지 않았다(신규 저장소에는 시범 3건뿐).
 - chat history 테이블(`chat_room`, `chat_message`, `chat_turn_state`)이 없고 Product taxonomy도 반영되지 않았다.
 
 Drive나 로컬에 위 파일들이 남아 있으면 삭제하거나 "구버전"으로 구분해 두고, 새 dump만 복원한다.
 
 ### 최종 행 수
+
+> `evidence_*` 행은 v4 값이다. 그 외 행(`product` 등)은 v2 복원 검증 때 확인한 값을 그대로 두었고, **v4 dump로
+> 다시 확인하지 않았다.** v4를 복원한 뒤 4절 쿼리로 대조하고 다르면 이 표를 고친다.
 
 | 테이블 | 행 수 |
 | --- | --- |
@@ -47,11 +56,11 @@ Drive나 로컬에 위 파일들이 남아 있으면 삭제하거나 "구버전"
 | `ingredient_master` | 21,974 |
 | `ingredient_knowledge_fact` | 2,411 |
 | `evidence` (legacy MFDS) | 8,288 |
-| `evidence_document` | 14 (MFDS 11 + PubMed 3) |
-| `evidence_chunk` | 8,291 (MFDS 8,288 + `pubmed_abstract` 3) |
-| `evidence_chunk_ingredient` | 8,291 |
+| `evidence_document` | 46 (MFDS 11 + CIR 10 + PubMed 25) |
+| `evidence_chunk` | 8,369 (MFDS 8,288 + CIR 56 + PubMed 25) |
+| `evidence_chunk_ingredient` | 8,377 |
 | `rag_chunk` | 0 |
-| `chat_room` / `chat_message` / `chat_turn_state` | 0 / 0 / 0 (schema only) |
+| `chat_room` / `chat_message` / `chat_turn_state` | 0 / 0 / 0 (schema only, `app_user`도 데이터 제외) |
 | `claim_document` / `claim_chunk` | 1 / 5 (2-Layer RAG 시범 데이터) |
 
 **개발자 로컬의 기존 `app` DB를 기준본으로 쓰지 않는다.** 92 snapshot / 5,244 `product_ingredient`만 가진
@@ -103,10 +112,13 @@ taxonomy backfill은 **완료**됐다. 현재 main의 `ProductTaxonomyNormalizer
 ### Evidence
 
 - legacy `evidence` 8,288건은 그대로 남아 있고, 이를 MFDS 관할(jurisdiction)별 `evidence_document` 11건과
-  `evidence_chunk` 8,288건으로 **전량 적재**했다. 나머지 `evidence_document` 3건/`evidence_chunk` 3건은 PubMed
-  smoke/pilot 데이터(`pubmed_abstract`)이며 삭제하지 않았다.
-- 임베딩: `BAAI/bge-m3`, 1,024차원, 전 행 동일. embedding NULL 0건, 중복 `chunk_id` 0건, orphan 0건.
-- `evidence_chunk_ingredient`는 chunk마다 1건씩 연결돼 있다(8,291건).
+  `evidence_chunk` 8,288건으로 **전량 적재**했다. 나머지는 CIR(document 10 / chunk 56)과 PubMed
+  (document 25 / chunk 25) compact evidence다.
+- MFDS는 사용제한·배합제한 등 regulatory record이고 PubMed/CIR이 scientific evidence다. 전체 chunk 수를 scientific
+  evidence coverage로 읽지 않는다. source별 역할은 [EVIDENCE_RAG_DESIGN.md](EVIDENCE_RAG_DESIGN.md) H절 참고.
+- 임베딩: `BAAI/bge-m3`, 1,024차원. v2 복원 검증 때 embedding NULL 0건, 중복 `chunk_id` 0건, orphan 0건을 확인했고
+  v4에서는 다시 확인하지 않았다(4절 쿼리로 확인한다).
+- `evidence_chunk_ingredient`는 8,377건이다(청크-성분 연결 행이라 chunk 수보다 많다).
 
 ### Claim 시범 데이터, chat, rag_chunk
 
@@ -120,10 +132,10 @@ taxonomy backfill은 **완료**됐다. 현재 main의 `ProductTaxonomyNormalizer
 기준 dump는 팀 Google Drive로 전달한다. 저장소에는 dump가 없다.
 
 - Google Drive: https://drive.google.com/drive/u/0/folders/1BprrOow_A461_lnjf6rtPpXpY_Zm3-nl
-- 폴더에는 새 기준본 파일 두 개가 있어야 한다.
-  - `skincare_reference_2026-09-20_v2.dump`
-  - `skincare_reference_2026-09-20_v2.dump.sha256` (내용 한 줄: `5ecd670ee1e85553008abb5d7c43da0700a3149089eeb4c061948361271a5d54  skincare_reference_2026-09-20_v2.dump`)
-- 폴더에 `skincare_reference_2026-09-20.dump`(v1, `_v2` 없음)나 `skincare_latest_2026-09-17.dump`가 보이면 **구 기준본(SUPERSEDED)** 이므로 받지 않는다. 파일명 끝의 `_v2`를 꼭 확인한다.
+- 폴더에는 새 기준본 dump 파일이 있어야 한다.
+  - `skincare_reference_2026-09-21_v4.dump` (80,015,861 bytes)
+  - 체크섬 파일이 함께 있다면 내용은 `8c3eb724f86f706614dbf2c37d6fb156591e9dbb85166cee423ac213abe30111  skincare_reference_2026-09-21_v4.dump` 한 줄이어야 한다.
+- 폴더에 `_v4`가 아닌 `skincare_reference_*.dump`(`2026-09-20` v1/v2)나 `skincare_latest_2026-09-17.dump`가 보이면 **구 기준본(SUPERSEDED)** 이므로 받지 않는다. 파일명 끝의 `_v4`를 꼭 확인한다.
 - 내려받은 뒤 SHA-256이 위 표의 값과 **일치할 때만** 복원한다. 다르면 복원하지 말고 Data 담당자에게 알린다.
 
 ## 3. 복원 방법
@@ -132,22 +144,24 @@ taxonomy backfill은 **완료**됐다. 현재 main의 `ProductTaxonomyNormalizer
 
 ```bash
 # Drive 에서 받은 dump 를 data/ 아래(gitignored)에 둔다
-shasum -a 256 data/skincare_reference_2026-09-20_v2.dump   # 5ecd670e…a5d54 와 같을 때만 다음 단계로
+shasum -a 256 data/skincare_reference_2026-09-21_v4.dump   # 8c3eb724…30111 과 같을 때만 다음 단계로
 
 docker compose exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" <TARGET_DB>'
-docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d <TARGET_DB> --exit-on-error --no-owner' \
-  < data/skincare_reference_2026-09-20_v2.dump
+# 인덱스 재생성 중 메모리 부족으로 복원이 실패하지 않도록 PGOPTIONS 를 함께 준다
+docker compose exec -T -e PGOPTIONS="-c maintenance_work_mem=32MB -c max_parallel_maintenance_workers=0" postgres \
+  sh -c 'pg_restore -U "$POSTGRES_USER" -d <TARGET_DB> --exit-on-error --no-owner' \
+  < data/skincare_reference_2026-09-21_v4.dump
 ```
 
 - `--exit-on-error`: 일부만 복원된 채로 조용히 끝나는 것을 막는다.
 - `--no-owner`: dump 소유자 role이 각자 환경에 없어도 복원되게 한다.
 - 복원한 DB를 쓰려면 `config.yaml`의 `database.url` 끝의 DB명을 `<TARGET_DB>`로 바꾼다. 이 파일은 gitignored이다.
-- 복원한 DB에는 이미 최신 migration이 적용돼 있으므로 `alembic upgrade`를 다시 실행하지 않는다.
+- 복원한 v4에는 migration(`9f4c2a7d8e61`)이 이미 적용돼 있으므로 `alembic upgrade`를 다시 실행하지 않는다.
 
 ## 4. 복원 후 검증
 
 ```sql
-SELECT version_num FROM alembic_version;   -- 2063ce3feae3
+SELECT version_num FROM alembic_version;   -- 9f4c2a7d8e61
 
 SELECT
   (SELECT count(*) FROM product)                                                     AS product,                    -- 2262
@@ -162,9 +176,9 @@ SELECT
   (SELECT count(*) FROM ingredient_master)                                           AS ingredient_master,          -- 21974
   (SELECT count(*) FROM ingredient_knowledge_fact)                                   AS ingredient_knowledge_fact,  -- 2411
   (SELECT count(*) FROM evidence)                                                    AS evidence_legacy,            -- 8288
-  (SELECT count(*) FROM evidence_document)                                           AS evidence_document,          -- 14
-  (SELECT count(*) FROM evidence_chunk)                                              AS evidence_chunk,             -- 8291
-  (SELECT count(*) FROM evidence_chunk_ingredient)                                   AS evidence_chunk_ingredient,  -- 8291
+  (SELECT count(*) FROM evidence_document)                                           AS evidence_document,          -- 46
+  (SELECT count(*) FROM evidence_chunk)                                              AS evidence_chunk,             -- 8369
+  (SELECT count(*) FROM evidence_chunk_ingredient)                                   AS evidence_chunk_ingredient,  -- 8377
   (SELECT count(*) FROM evidence_chunk WHERE embedding IS NULL)                      AS embedding_null,             -- 0
   (SELECT count(*) FROM rag_chunk)                                                   AS rag_chunk,                  -- 0
   (SELECT count(*) FROM chat_room)                                                   AS chat_room,                  -- 0
@@ -172,7 +186,7 @@ SELECT
   (SELECT count(*) FROM claim_chunk)                                                 AS claim_chunk;                -- 5
 ```
 
-값이 하나라도 다르면 진행하지 말고 Data 담당자에게 알린다. 복원 직후 확인한 무결성: `product_ingredient`의
+`alembic_version`과 `evidence_*` 이외 값은 v2 검증 때의 기대값이다. v4에서 다르게 나오면 v4 값을 확인해 위 표를 고친다. 값이 하나라도 예상과 다르면 진행하지 말고 Data 담당자에게 알린다. 복원 직후 확인한 무결성: `product_ingredient`의
 `ingredient_id`/`snapshot_id` orphan 0건, `evidence_chunk`→`evidence_document` orphan 0건,
 `evidence_chunk_ingredient` orphan 0건, 중복 `chunk_id` 0건, 1,024차원이 아닌 embedding 0건.
 
