@@ -55,6 +55,12 @@ class ExtractedCaseClaim(RagModel):
         return self
 
 
+class CaseClaimModelOutput(RagModel):
+    """LLM 구조화 출력. 검색 상태와 모델 정보는 코드가 덧붙인다."""
+
+    claims: list[ExtractedCaseClaim] = Field(default_factory=list)
+
+
 class CaseClaimExtractionRequest(RagModel):
     query: str = Field(min_length=1)
     cases: list[CaseSearchHit] = Field(min_length=1, max_length=3)
@@ -90,5 +96,29 @@ class CaseClaimExtractionResult(RagModel):
         return self
 
 
+class CaseClaimValidationReason(StrEnum):
+    UNKNOWN_CASE_ID = "unknown_case_id"
+    QUOTE_NOT_FOUND = "quote_not_found"
+    INGREDIENT_NOT_IN_QUOTE = "ingredient_not_in_quote"
+    DUPLICATE_CLAIM = "duplicate_claim"
+
+
+class RejectedCaseClaim(RagModel):
+    claim: ExtractedCaseClaim
+    reason: CaseClaimValidationReason
+    message: str = Field(min_length=1)
+
+
+class CaseClaimValidationRequest(RagModel):
+    cases: list[CaseSearchHit] = Field(min_length=1, max_length=3)
+    claims: list[ExtractedCaseClaim] = Field(default_factory=list)
+
+
+class CaseClaimValidationResult(RagModel):
+    valid_claims: list[ExtractedCaseClaim] = Field(default_factory=list)
+    rejected_claims: list[RejectedCaseClaim] = Field(default_factory=list)
+
+
 class CaseClaimBundle(RagModel):
     extraction: CaseClaimExtractionResult
+    validation: CaseClaimValidationResult | None = None
