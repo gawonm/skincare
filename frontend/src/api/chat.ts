@@ -38,10 +38,15 @@ export class ChatApi {
    * Agent 오류(`status: "error"`)는 예외가 아니라 정상 응답(200)으로 온다. 계약서가 그렇게
    * 정했으므로 여기서 예외로 바꾸지 않고, 상태별 처리는 호출부가 한다.
    */
-  static async sendMessage(body: ChatSendRequest): Promise<ChatTurnResponse> {
+  static async sendMessage(
+    body: ChatSendRequest,
+    signal?: AbortSignal,
+  ): Promise<ChatTurnResponse> {
     const raw = await fetchJson<unknown>(ChatEndpoint.Chat, {
       method: "POST",
       body: JSON.stringify(body),
+      // 정지 버튼과 화면 이탈 때 대기를 끊기 위한 신호. 서버 처리까지 취소하지는 못한다.
+      signal,
     });
 
     const parsed = chatTurnResponseSchema.safeParse(raw);
