@@ -199,6 +199,30 @@ class EvidenceSourceType(StrEnum):
     HETIONET = "hetionet"
 
 
+class EvidenceSourceLane(StrEnum):
+    EFFICACY = "efficacy"
+    SAFETY = "safety"
+    REGULATION = "regulation"
+
+
+class EvidenceSourcePlan(RagModel):
+    lane: EvidenceSourceLane
+    primary_source_types: list[EvidenceSourceType] = Field(min_length=1)
+    fallback_source_types: list[EvidenceSourceType] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_source_types(self) -> Self:
+        primary = set(self.primary_source_types)
+        fallback = set(self.fallback_source_types)
+        if len(primary) != len(self.primary_source_types):
+            raise ValueError("주 출처 목록에 중복된 출처 유형이 있습니다.")
+        if len(fallback) != len(self.fallback_source_types):
+            raise ValueError("보완 출처 목록에 중복된 출처 유형이 있습니다.")
+        if primary.intersection(fallback):
+            raise ValueError("주 출처와 보완 출처는 중복될 수 없습니다.")
+        return self
+
+
 class EvidenceTextKind(StrEnum):
     EXCERPT = "excerpt"
     SUMMARY = "summary"
@@ -368,6 +392,7 @@ class EvidenceSearchRequest(RagModel):
     query: str = Field(min_length=1)
     target_ids: list[str] = Field(default_factory=list)
     limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
+    source_plan: EvidenceSourcePlan | None = None
     # 제품과 전성분을 한 집합으로 합치면 병용 대상 두 개를 복원할 수 없다.
     combination_target_ids: list[str] = Field(default_factory=list)
 
