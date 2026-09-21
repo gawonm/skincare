@@ -205,6 +205,12 @@ class PubmedSelectionPolicy:
             int(assessment.record.pmid),
         )
 
+    def assess_record(
+        self, ingredient: CollectionIngredient, record: PubmedRecord
+    ) -> PubmedAssessment:
+        """예산과 무관하게 record 한 편을 단독 평가한다(버려진 record 의 사유를 남길 때 쓴다)."""
+        return self._assess_one(ingredient, record)
+
     def _assess_one(
         self, ingredient: CollectionIngredient, record: PubmedRecord
     ) -> PubmedAssessment:
