@@ -39,6 +39,7 @@ class LookupStatus(StrEnum):
 
 class EvidenceQueryOrigin(StrEnum):
     CLAIM_HIT = "claim_hit"
+    CASE_CLAIM = "case_claim"
     DIRECT_QUERY = "direct_query"
 
 
@@ -100,7 +101,10 @@ class EvidenceQueryAnchor(RagModel):
 
     @model_validator(mode="after")
     def validate_origin_and_scope(self) -> Self:
-        if self.origin is EvidenceQueryOrigin.CLAIM_HIT and self.origin_ref is None:
+        if self.origin in (
+            EvidenceQueryOrigin.CLAIM_HIT,
+            EvidenceQueryOrigin.CASE_CLAIM,
+        ) and self.origin_ref is None:
             raise ValueError("Claim 유래 Evidence 질의에는 origin_ref가 필수입니다.")
         if self.origin is EvidenceQueryOrigin.DIRECT_QUERY and self.origin_ref is not None:
             raise ValueError("직접 Evidence 질의의 origin_ref는 반드시 None이어야 합니다.")

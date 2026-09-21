@@ -6,7 +6,7 @@ from typing import Self
 from pydantic import Field, field_validator, model_validator
 
 from agent.rag.case_schemas import CaseSearchHit
-from agent.rag.schemas import LookupStatus, RagModel
+from agent.rag.schemas import EvidenceQueryAnchor, LookupStatus, RagModel
 
 DEFAULT_CASE_CLAIM_LIMIT = 10
 CASE_CLAIM_PROMPT_VERSION = "nia-case-claim/v1"
@@ -119,6 +119,58 @@ class CaseClaimValidationResult(RagModel):
     rejected_claims: list[RejectedCaseClaim] = Field(default_factory=list)
 
 
+class CaseClaimIngredientResolutionStatus(StrEnum):
+    MATCHED = "matched"
+    UNRESOLVED = "unresolved"
+    AMBIGUOUS = "ambiguous"
+    ERROR = "error"
+
+
+class ResolvedCaseClaimIngredient(RagModel):
+    raw_name: str = Field(min_length=1)
+    ingredient_id: str | None = Field(default=None, min_length=1)
+    status: CaseClaimIngredientResolutionStatus
+
+    @model_validator(mode="after")
+    def validate_resolution(self) -> Self:
+        if (
+            self.status is CaseClaimIngredientResolutionStatus.MATCHED
+            and self.ingredient_id is None
+        ):
+            raise ValueError("MATCHED Case Claim 성분에는 ingredient_id가 필요합니다.")
+        if (
+            self.status is not CaseClaimIngredientResolutionStatus.MATCHED
+            and self.ingredient_id is not None
+        ):
+            raise ValueError("미확정 Case Claim 성분에는 ingredient_id를 넣을 수 없습니다.")
+        return self
+
+
+class ResolvedCaseClaim(RagModel):
+    statement_id: str = Field(min_length=1)
+    claim: ExtractedCaseClaim
+    ingredients: list[ResolvedCaseClaimIngredient] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_ingredient_count(self) -> Self:
+        if len(self.ingredients) != len(self.claim.ingredients):
+            raise ValueError("Case Claim의 추출 성분과 식별 결과 수가 일치해야 합니다.")
+        return self
+
+    def matched_ingredient_ids(self) -> list[str]:
+        return [
+            ingredient.ingredient_id
+            for ingredient in self.ingredients
+            if ingredient.status is CaseClaimIngredientResolutionStatus.MATCHED
+            and ingredient.ingredient_id is not None
+        ]
+
+    def is_fully_resolved(self) -> bool:
+        return len(self.matched_ingredient_ids()) == len(self.ingredients)
+
+
 class CaseClaimBundle(RagModel):
     extraction: CaseClaimExtractionResult
     validation: CaseClaimValidationResult | None = None
+    resolved_claims: list[ResolvedCaseClaim] = Field(default_factory=list)
+    evidence_anchors: list[EvidenceQueryAnchor] = Field(default_factory=list)
