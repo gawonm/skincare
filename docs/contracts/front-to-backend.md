@@ -1,21 +1,27 @@
-# front → backend: AI 채팅 (비로그인 일회성, 서버 저장 없음)
+# front → backend: AI 채팅 (로그인 사용자, 서버 저장형)
 
-호출하는 쪽(front)이 쓴 초안이다. 확정 전이며, 아래 "아직 안 정한 것" 은 backend·agent
-담당과 합의한 뒤 채운다. 합의 전에는 이 형태로 구현하지 않는다 (CLAUDE.md 규칙 16).
+2026-09-19 backend가 수정한 초안이다. 처음 front가 쓴 초안은 "비로그인 일회성, 서버 저장 없음"
+이었으나, Agent 담당자 확인(사용자당 방 1개, 화면을 벗어났다 돌아오면 화면은 빈 상태지만
+Agent는 이전 대화를 기억)에 따라 서버 저장형으로 바꿨다. 응답 형태는 Agent 구조를 따라 단일
+JSON으로 정했다(2026-09-21). 확정 전이며, 아래 "아직 안 정한 것"은 front·agent 담당과 합의한 뒤
+채운다. 합의 전에는 이 형태로 구현하지 않는다(CLAUDE.md 규칙 16).
 
 ## 범위
 
-- 이번 작업은 `POST /chat` 하나다.
-- 대화 이력은 프론트 화면 컴포넌트의 메모리(상태 배열)에만 있다. 서버·에이전트는 무상태다.
-- 화면을 나가면 프론트가 그 배열을 버리는 것이 곧 "초기화"다.
-- 로그인 사용자도 지금은 대화를 저장하지 않는다. 이름 인사(`GET /auth/me`)만 다르다.
-- 로그인 사용자 대화 저장은 이 계약 범위 밖이다. 아래 "다음 작업" 참고.
+- 이번 작업은 `POST /chat` 한 턴(메시지 하나 보내고 답 받기)이다.
+- **로그인 사용자 전용**이다. 비로그인(게스트) 채팅은 이번 범위에 없다.
+- **서버가 대화를 저장한다.** 사용자당 채팅방은 1개이며, 서버가 세션의 로그인 사용자로 방을
+  찾는다(없으면 만든다). 그래서 요청에 방 식별자를 실어 보내지 않는다.
+- 화면을 나갔다 다시 들어오면 프론트는 빈 화면에서 시작한다. 그래도 Agent는 이전 대화를
+  기억한다. 이전 메시지를 화면에 다시 그려주는 조회 API는 이번 범위 밖이다.
+- 저장 테이블(`chat_room`/`chat_message`/`chat_turn_state`)은 data 파트가 만든다.
+  [backend-to-data.md](backend-to-data.md), [docs/erd/app.md](../erd/app.md) 참고.
 
 ## 부르는 대상
 
 - `POST /chat`
-  - 응답: `text/event-stream` (SSE). 스트리밍 중 클라이언트가 연결을 끊어 취소할 수 있다.
-  - 인증: 선택. 세션 쿠키가 있으면 실어 보내되, 없어도 200 으로 동작한다.
+  - 인증: **필수**. 세션 쿠키가 없거나 만료면 `401`. 401을 받은 프론트 화면 처리는 미정이다.
+  - 응답: 단일 JSON(`application/json`). 아래 "출력" 절 참고.
 
 ## 입력
 
@@ -24,95 +30,92 @@
   - 프론트: `frontend/src/schemas/chat.ts` 에 zod 로 미러링만 한다. 원본을 프론트가 갖지 않는다.
 
 ```python
-from enum import StrEnum
-
-from pydantic import BaseModel
-
-
-class Role(StrEnum):
-    USER = "user"
-    ASSISTANT = "assistant"
-
-
-class ChatMessage(BaseModel):
-    role: Role
-    content: str
-
-
 class ChatRequest(BaseModel):
-    # 현재 화면 세션의 전체 대화. 마지막 원소가 방금 보낸 사용자 메시지다.
-    # 서버는 이 배열을 저장하지 않고, 에이전트 프롬프트 조립에만 쓴다.
-    messages: list[ChatMessage]
+    # 클라이언트가 발급한다. 네트워크 재시도로 같은 요청이 다시 와도 같은 턴으로 인식하게
+    # 하려는 것이다(멱등성).
+    request_id: str
+    message: str
+    # 이전에 화면에 보여준 후보 목록·루틴을 가리킬 때만 채운다. 채우는 방식은 미정.
+    candidate_set_id: str | None = None
+    routine_version: int | None = None
 ```
+
+- 이전 버전 초안의 `messages: list[ChatMessage]`(전체 대화 배열)는 폐기했다. 서버가 대화를
+  저장하므로 프론트가 매번 전체를 보낼 필요가 없다.
+- `backend/schemas/chat.py`의 `ChatSendMessageRequest`가 위 형태와 같다(방 식별자 없음).
 
 ### 예시
 
 ```json
 {
-  "messages": [
-    { "role": "user", "content": "비타민C랑 레티놀 같이 써도 돼?" },
-    { "role": "assistant", "content": "같이 사용할 수 있지만 시간대를 나눠 쓰는 걸 권장해요. ..." },
-    { "role": "user", "content": "지성 피부는 레티놀 몇 %부터 시작해?" }
-  ]
+  "request_id": "b3c1f6e0-...",
+  "message": "지성 피부는 레티놀 몇 %부터 시작해?"
 }
 ```
 
-## 출력 — SSE 이벤트
+## 출력
 
-시안 04B(대화 중)·04C(응답 중) 기준. `event` 이름은 아래로 하되 각 `data` 의 정확한
-형태는 미정이다.
+Agent는 한 턴이 끝나면 완성된 응답(`ChatTurnOutput`)을 한 번에 돌려주므로, 응답도 그대로 단일
+JSON으로 내려준다. 토큰을 조금씩 내보내는 스트리밍 응답은 없다. 타입은 `backend/schemas/chat.py`의
+`ChatTurnResponse`가 소유하고, 필드 구성은 Agent의 `ChatTurnOutput`과 같다.
 
-```
-event: stage    data: {"label": "입력하신 요청을 확인하고 있어요"}
-event: token    data: {"text": "같이 "}
-event: warning  data: {"text": "동시에 바르면 자극이 커질 수 있어요."}
-event: sources  data: {"items": [{"label": "성분 DB", "count": 1}, {"label": "피부과 임상 가이드", "count": 2}]}
-event: done     data: {}
-event: error    data: {"detail": "..."}
-```
-
-- `stage`: 응답 생성 전/중의 진행 상태 문구. 0회 이상.
-- `token`: 답변 본문 조각. 프론트가 순서대로 이어 붙인다.
-- `warning`: 답변에 딸리는 주의 문구(시안 04B의 붉은 박스). 0회 이상.
-- `sources`: 근거 출처 요약(시안 04B의 "출처 ·" 줄).
-- `done`: 정상 종료. 이 뒤로 이벤트 없음.
-- `error`: 실패로 종료. 이 뒤로 이벤트 없음.
+| 필드 | 설명 |
+| --- | --- |
+| `chat_room_id`, `request_id` | 어느 방의 어느 요청에 대한 응답인지 |
+| `assistant_message_id` | 저장된 어시스턴트 메시지 ID |
+| `status` | `completed` / `needs_input` / `partial` / `error` |
+| `message` | 답변 본문 |
+| `intents` | Agent가 해석한 요청 의도 목록 |
+| `follow_up_question` | `needs_input`일 때 되묻는 질문 |
+| `artifacts` | 후보 상품 목록, 루틴, 근거 답변 등 |
+| `citations` | 답변의 근거 인용 |
+| `unresolved` | 확정하지 못한 성분·상품 등 |
+| `error_code`, `retryable` | 오류일 때 코드와 재시도 가능 여부 |
+| `save_handoff` | 루틴 저장 안내 |
 
 ## 실패했을 때 (규칙 7)
 
-- 에이전트 타임아웃·오류: `event: error` 를 보내고 스트림을 닫는다. 프론트 UI 처리는 미정.
-- 요청 본문 검증 실패: SSE 시작 전 `422` 로 응답한다.
+- 로그인하지 않았거나 세션 만료: `401`.
+- 요청 본문 검증 실패: `422`.
+- 같은 `request_id`로 다른 입력을 다시 보내거나, 같은 요청이 아직 처리 중일 때의 응답은
+  Agent 실패 계약(`docs/contracts/backend-to-agent.md` 6절)을 따른다. HTTP로 어떻게 옮길지는
+  미정이다.
+- 에이전트 타임아웃·오류: 응답의 `status`가 `error`이고 `error_code`/`retryable`로 알린다.
+  프론트 UI 처리는 미정이다.
 
 ## 아직 안 정한 것
 
-임의로 채우지 않는다 (규칙 3). backend·agent 담당과 합의 후 기록한다.
+임의로 채우지 않는다 (규칙 3). front·agent 담당과 합의 후 기록한다.
 
-- `sources` 객체 형태: 라벨 + 건수로 충분한지, 성분노트로 가는 링크나 id 가 필요한지.
-- 경고 전달 방식: 별도 `warning` 이벤트로 줄지, `token` 본문 안에 마크업으로 섞을지.
-- 에러가 났을 때 프론트 화면 상태: 재시도 버튼, 부분 답변 유지 여부 등. 시안 없음.
-- 대화가 길어질 때 자르기: 토큰 예산을 아는 에이전트가 프롬프트 조립 단계에서 처리하는 쪽이 유력.
-- `stage` 문구를 서버가 정해 보낼지, 코드값만 보내고 프론트가 문구를 갖고 있을지.
+1. **비로그인 사용자가 채팅 화면에 들어왔을 때**: 로그인 유도 화면 등 프론트 처리. 시안 없음.
+2. 에러가 났을 때 프론트 화면 상태: 재시도 버튼 등. 시안 없음.
+3. 같은 `request_id` 충돌·처리 중(`REQUEST_CONFLICT`/`REQUEST_IN_PROGRESS`)을 HTTP 상태 코드로
+   어떻게 옮길지.
+4. `candidate_set_id`/`routine_version`을 프론트가 언제 어떻게 채우는지.
+5. "대화 초기화"(에이전트 기억만 새로 시작) 기능이 필요한지. 필요하면 별도 엔드포인트가 필요하다.
+6. 화면은 비어 있는데 Agent가 이전 대화를 언급할 때의 사용자 경험(안내 문구 등)은 front·기획이 판단한다.
+7. 대화가 길어질 때 자르기: 토큰 예산을 아는 에이전트가 프롬프트 조립 단계에서 처리하는 쪽이 유력.
 
 ## 다음 작업 (이번 범위 밖)
 
-- 로그인 사용자 대화 서버 저장: `conversation_id`, 대화 목록/이력 조회 엔드포인트,
-  대화·메시지 저장 테이블. 새 테이블이므로 먼저 ERD 문서(규칙 14)와 저장 테이블 소유
-  파트(backend / data) 합의가 필요하다.
+- 이전 대화 목록/이력 조회 엔드포인트(화면에 과거 메시지를 다시 보여줄 때).
+- 게스트(비로그인) 채팅: front 쪽 논의에서 별도로 다룬다(단기 `sessionStorage`, 장기 Redis 세션).
 
 ## 절차 (규칙 16)
 
-1. (완료) front 가 이 초안을 작성한다.
-2. backend·agent 담당에게 설명한다. 넘길 값의 형태와, 상대 파트에 요청하는 것(SSE 엔드포인트,
-   에이전트가 낼 수 있는 이벤트 종류)을 공유한다.
-3. "아직 안 정한 것" 을 논의해 확정한다.
+1. (폐기) front 가 처음 초안을 작성했다 — 비로그인·무상태 전제, SSE 스트리밍 응답.
+2. (완료) backend 가 서버 저장형·사용자당 방 1개 기준으로 이 문서를 수정한다.
+3. front·agent 담당에게 변경 내용을 설명하고 "아직 안 정한 것"을 논의해 확정한다.
 4. 확정 후 구현한다. 불리는 쪽이 `backend/schemas/chat.py` 와 stub 엔드포인트를 먼저 만들고,
-   프론트가 그것으로 붙인다.
+   프론트가 그것으로 붙인다. 채팅 저장 테이블은 data 파트가 먼저 만들어야 한다.
 5. front·backend 양쪽 `README.md` "관련 문서" 에 이 파일 링크를 건다.
 
 ## 관련 문서
 
-- `docs/contracts/backend-to-agent.md` (backend 가 초안, 아직 없음): 이 계약의 SSE 이벤트는
-  에이전트가 낼 수 있는 것에서 나온다. backend 는 이 문서를 확정하기 전에 그쪽과 맞춰야 한다.
+- [backend-to-agent.md](backend-to-agent.md): backend 가 Agent 를 부르는 계약. 방 식별·멱등성·
+  실패 계약이 여기서 나온다.
+- [backend-to-data.md](backend-to-data.md): 채팅 저장 테이블 생성 요청.
+- [docs/erd/app.md](../erd/app.md): `chat_room`/`chat_message`/`chat_turn_state` ERD.
 
 ---
 
