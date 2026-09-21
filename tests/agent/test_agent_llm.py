@@ -10,7 +10,6 @@ from agent.adapters import (
     FixtureIngredientRepository,
     FixtureProductRepository,
     FixtureProductTaxonomy,
-    FixtureRoutinePlanner,
     InMemoryChatHistoryRepository,
 )
 from agent.factory import (
@@ -148,7 +147,6 @@ class TestAgentLlmConfigAndAssembly:
             products=FixtureProductRepository(),
             product_taxonomy=FixtureProductTaxonomy().create(),
             ingredients=FixtureIngredientRepository(),
-            routine_planner=FixtureRoutinePlanner(),
             case_retriever=FixtureCaseRetriever(),
             claim_retriever=FixtureClaimRetriever(),
             search_backend=DummyHybridSearchBackend(),

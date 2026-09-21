@@ -28,6 +28,7 @@ from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
 from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
+from agent.rag.routine_planner import RoutinePlannerFactory
 from agent.rag.schemas import (
     ChatModelConfig,
     EmbeddingProvider,
@@ -336,6 +337,7 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
                 self._database.session_factory
             ),
             product_taxonomy=FixtureProductTaxonomy().create(),
+            routine_planner=RoutinePlannerFactory().create(self._chat_config),
         ).create()
         self._app.history.register_room(
             RegisterRoomRequest(

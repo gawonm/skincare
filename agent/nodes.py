@@ -928,14 +928,20 @@ class AgentNodes:
                 chat_room_id=state.chat_room_id,
                 request_id=self._require_turn(state).request_id,
                 products=products,
+                user_request=parsed.query,
                 excluded_weekdays=excluded_weekdays,
+                evidence_records=state.evidence,
                 current_plan=state.routine,
             )
         )
         if not self._reserve_tool_call(state, GraphNode.PROCESS_TASK):
             return
         validation = await self._routine_planner.validate(
-            RoutineValidationRequest(plan=plan, excluded_weekdays=excluded_weekdays)
+            RoutineValidationRequest(
+                plan=plan,
+                products=products,
+                excluded_weekdays=excluded_weekdays,
+            )
         )
         if not validation.valid:
             state.status = ChatStatus.PARTIAL
@@ -945,6 +951,14 @@ class AgentNodes:
             )
             state.response_parts.append("루틴 제약 충돌로 계획을 확정하지 못했습니다.")
             return
+
+        state.unresolved.extend(
+            UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=warning)
+            for warning in validation.warnings
+        )
+        if validation.warnings:
+            # 출처가 불확실한 Rule을 일정에 강제하지 않았음을 최종 상태에서도 드러낸다.
+            state.status = ChatStatus.PARTIAL
 
         state.routine = plan
         state.artifacts.append(plan)

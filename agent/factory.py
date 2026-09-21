@@ -65,6 +65,7 @@ from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
 from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
+from agent.rag.routine_planner import RoutinePlannerFactory
 from agent.rag.schemas import (
     ChatModelConfig,
     EmbeddingProvider,
@@ -222,7 +223,7 @@ class ProductionAgentDependencies(AgentModel):
     products: ProductRepository
     product_taxonomy: ProductTaxonomy
     ingredients: IngredientRepository
-    routine_planner: RoutinePlanner
+    routine_planner: RoutinePlanner | None = None
     case_retriever: CaseRetriever
     claim_retriever: ClaimRetriever | None = None
     search_backend: HybridSearchBackend
@@ -278,6 +279,9 @@ class ProductionAgentFactory:
             evaluator=EvidenceApplicabilityEvaluator(),
             generator=AnswerGenerator(EvidenceStatementGeneratorFactory().create(config.chat)),
         )
+        routine_planner = dependencies.routine_planner or RoutinePlannerFactory().create(
+            config.chat
+        )
         service = AgentFactory().create(
             AgentDependencies(
                 llm=LlmClientFactory().create(config.chat),
@@ -285,7 +289,7 @@ class ProductionAgentFactory:
                 products=dependencies.products,
                 product_taxonomy=dependencies.product_taxonomy,
                 ingredients=dependencies.ingredients,
-                routine_planner=dependencies.routine_planner,
+                routine_planner=routine_planner,
                 case_retriever=dependencies.case_retriever,
                 case_reranker=case_reranker,
                 case_claim_extractor=case_claim_extractor,
@@ -343,6 +347,7 @@ class DevelopmentAgentFactory:
         answer_generator: AnswerGenerator | None = None,
         product_repository: ProductRepository | None = None,
         product_taxonomy: ProductTaxonomy | None = None,
+        routine_planner: RoutinePlanner | None = None,
     ) -> None:
         self._execution_limits = execution_limits or ExecutionLimits()
         self._context_limits = context_limits or ContextLimits()
@@ -359,6 +364,7 @@ class DevelopmentAgentFactory:
         self._answer_generator = answer_generator
         self._product_repository = product_repository
         self._product_taxonomy = product_taxonomy
+        self._routine_planner = routine_planner
         if product_repository is not None and product_taxonomy is None:
             raise ValueError("상품 조회 구현을 교체할 때 지원 분류 목록도 함께 전달해야 합니다.")
 
@@ -390,7 +396,7 @@ class DevelopmentAgentFactory:
                 claim_annotation_version=self._claim_annotation_version,
                 use_offline_claim_path=claim_retriever is not None,
                 evidence_pipeline=evidence_pipeline,
-                routine_planner=FixtureRoutinePlanner(),
+                routine_planner=self._routine_planner or FixtureRoutinePlanner(),
                 checkpointer=checkpointer,
             ),
             execution_limits=self._execution_limits,
