@@ -62,7 +62,8 @@ class AgentConfigurationAssembler:
                 rrf_k=agent.retrieval.rrf_k,
                 rerank_candidate_limit=agent.retrieval.rerank_candidate_limit,
             ),
-            claim_annotation_version=self._claim_annotation_version(agent),
+            # 기본 Case 경로는 offline Claim index에 의존하지 않으며, 값이 있으면 비교 경로에만 쓴다.
+            claim_annotation_version=agent.retrieval.claim_annotation_version,
         )
 
     def create_chat(
@@ -181,15 +182,6 @@ class AgentConfigurationAssembler:
             "config.yaml의 agent.retrieval.free_text_min_vector_similarity를 "
             f"{agent.embedding.model.value} 검증값으로 설정해야 합니다."
         )
-
-    def _claim_annotation_version(self, agent: AgentSettings) -> str:
-        annotation_version = agent.retrieval.claim_annotation_version
-        if annotation_version is None:
-            raise RuntimeError(
-                "config.yaml의 agent.retrieval.claim_annotation_version을 "
-                "active Claim annotation 버전으로 설정해야 합니다."
-            )
-        return annotation_version
 
     def _device(self, device: CoreLocalModelDevice | None) -> AgentLocalModelDevice | None:
         if device is None:
