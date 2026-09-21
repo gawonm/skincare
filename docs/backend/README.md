@@ -170,6 +170,7 @@ uv run python -m backend.services.nia_case_ingestion_service
 ## 관련 문서
 
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
+- [DB 기반 Product Taxonomy 연동 상태](../agent/RAG_YK/2026-09-21_1832_DB_PRODUCT_TAXONOMY_INTEGRATION_STATUS.md)
 - [Data → Backend NIA Case 적재 계약](../contracts/data-to-backend.md)
 - [Backend → Data 채팅 히스토리 테이블 생성 요청](../contracts/backend-to-data.md)
 - [Agent 통합 검토](../agent/AGENT_INTEGRATION_REVIEW.md)
@@ -247,3 +248,44 @@ uv run python -m backend.services.claim_ingestion_service
 - Case 기본 경로에서는 offline Claim `annotation_version`이 없어도 운영 설정을 조립할 수 있다.
 
 읽기 전용 실제 DB 통합 테스트에서 후보 20건, 중복 Case ID 0건, 본문·버전 DTO 변환을 확인했다.
+
+## DB 기반 Product Taxonomy Agent 연동 (2026-09-21 18:34 KST)
+
+> 상태: **DB 조회·변환 및 2-Layer CLI 주입 완료 / Backend API 운영 조립은 추가 연결 필요**
+
+Backend는 `product` 테이블의 실제 `service_category`와 `product_type_normalized`를 집계해
+Agent 소유 `ProductTaxonomy`로 변환한다.
+
+```text
+AgentProductReadRepository.list_taxonomy()
+→ TwoLayerProductTaxonomyProvider.load()
+→ ProductTaxonomy
+```
+
+현재 일반 2-Layer CLI와 Trace CLI는 시작 시 Provider를 호출하고 그 결과를 Agent에 명시적으로
+주입한다. 따라서 두 CLI에서 실행되는 질문 해석과 상품 필터는 `FixtureProductTaxonomy`가 아니라
+DB의 최신 분류값을 사용한다.
+
+실행 배너에서는 다음 항목으로 확인할 수 있다.
+
+```text
+상품 taxonomy: product-taxonomy/db-v1:<digest>
+```
+
+`DevelopmentAgentFactory`의 fixture 기본값은 DB 없이 실행하는 단위 테스트와 개발 fallback을 위해
+유지한다. CLI는 `product_taxonomy`를 직접 넘기므로 이 fallback을 사용하지 않는다.
+
+실제 Backend API 운영 경로까지 완료하려면 애플리케이션 시작 또는 Agent 의존성 조립 시 다음
+연결을 추가해야 한다.
+
+```text
+DB session factory
+→ TwoLayerProductTaxonomyProvider.load()
+→ ProductionAgentDependencies.product_taxonomy
+→ ProductionAgentFactory.create()
+```
+
+Provider·DTO 계약을 새로 복제하지 않고 기존 구현을 재사용한다. Backend 운영 진입점이 확정되기
+전까지는 CLI 연동 완료와 API 연동 완료를 구분해서 표시한다. 전체 구현 위치와 확인 기준은
+[DB 기반 Product Taxonomy 연동 상태](../agent/RAG_YK/2026-09-21_1832_DB_PRODUCT_TAXONOMY_INTEGRATION_STATUS.md),
+호출 계약은 [Backend → Agent 호출 계약](../contracts/backend-to-agent.md) 11절을 따른다.
