@@ -357,15 +357,15 @@ class TestEntityResolutionFallback:
         assert output.status is ChatStatus.NEEDS_INPUT
         assert len(scenario.search.requests) == 1
 
-    async def test_unreviewed_evidence_is_not_promoted_by_fallback(self) -> None:
+    async def test_document_status_does_not_block_fallback_evidence(self) -> None:
         scenario = FallbackScenario()
         scenario.evidence(EvidenceReviewStatus.UNREVIEWED)
         app = scenario.create()
         output = await app.service.handle_turn(
             AgentTestFactory().request("room-a", "1", scenario.llm.parsed.query)
         )
-        assert not scenario.claims.requests
-        assert not output.citations
+        assert scenario.claims.requests
+        assert output.citations
         assert output.status is ChatStatus.PARTIAL
 
     async def test_unknown_pair_does_not_generate_combination_claims(self) -> None:
