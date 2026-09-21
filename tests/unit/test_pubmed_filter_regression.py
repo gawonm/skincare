@@ -358,3 +358,93 @@ class TestEncapsulationPaper:
         (assessment,) = PubmedSelectionPolicy(3).assess(_ingredient("Retinol"), [record])
         assert assessment.disposition is _CANDIDATE
         assert assessment.reason is PubmedSelectionReason.MIXED_DESIGN_REVIEW
+
+
+class TestAnimalHumanPrecedence:
+    """full collection 재평가에서 확인된 구조적 결함: animal 단서가 임상 단서에 가려지던 문제."""
+
+    _CYSTEINE_TITLE = "Topical and Systemic Effects of N-acetyl Cysteine on Wound Healing in a Diabetic Rat Model."
+    _CYSTEINE_ABSTRACT = (
+        "OBJECTIVE: This study evaluates the effects of topical and systemic N-acetyl cysteine (NAC) treatment "
+        "on wound healing in a diabetic rat model. A total of 48 male Wistar Albino rats were randomly divided "
+        "into 4 groups. A full-thickness wound was created on the back of each animal and treated with NAC gauze; "
+        "the wounded skin area was measured and skin histopathology assessed."
+    )
+    _RASPBERRY_TITLE = (
+        "Effect of topical application of raspberry ketone on dermal production of insulin-like growth "
+        "factor-I in mice and on hair growth and skin elasticity in humans."
+    )
+    _RASPBERRY_ABSTRACT = (
+        "We examined this possibility in mice and humans. Raspberry ketone increased CGRP release from "
+        "neurons isolated from wild-type mice. Topical application of 0.01% RK increased dermal IGF-I levels "
+        "in mice, and in a placebo-controlled study it improved skin elasticity and hair growth in humans."
+    )
+
+    def _rec(self, title: str, abstract: str, pubtypes: list[str], mesh: list[str]) -> PubmedRecord:
+        return PubmedRecord(
+            pmid="88",
+            doi=None,
+            title=title,
+            abstract=abstract,
+            journal=None,
+            publication_date=None,
+            publication_types=pubtypes,
+            mesh_terms=mesh,
+            authors=[],
+        )
+
+    def test_rat_model_with_misattached_trial_metadata_is_animal_and_not_selected(self) -> None:
+        # 실제 PubMed 레코드: 쥐 논문인데 publication type 에 RCT, MeSH 에 Humans 가 붙어 있었다
+        record = self._rec(
+            self._CYSTEINE_TITLE,
+            self._CYSTEINE_ABSTRACT,
+            ["Comparative Study", "Randomized Controlled Trial"],
+            ["Humans", "Wound Healing"],
+        )
+        assert StudyDesignClassifier().classify(record) is StudyDesign.ANIMAL
+        (assessment,) = PubmedSelectionPolicy(3).assess(_ingredient("Cysteine"), [record])
+        assert assessment.disposition is _CANDIDATE
+        assert assessment.reason is PubmedSelectionReason.NON_CLINICAL_STUDY_DESIGN
+
+    def test_mice_plus_humans_is_mixed_and_not_selected(self) -> None:
+        record = self._rec(
+            self._RASPBERRY_TITLE,
+            self._RASPBERRY_ABSTRACT,
+            ["Clinical Trial", "Randomized Controlled Trial"],
+            ["Animals", "Humans"],
+        )
+        assert StudyDesignClassifier().classify(record) is StudyDesign.MIXED_HUMAN_AND_LAB
+        (assessment,) = PubmedSelectionPolicy(3).assess(_ingredient("Raspberry Ketone"), [record])
+        assert assessment.disposition is _CANDIDATE
+        assert assessment.reason is PubmedSelectionReason.MIXED_DESIGN_REVIEW
+
+    def test_human_only_trial_still_human_clinical(self) -> None:
+        record = self._rec(
+            "Topical niacinamide cream for facial skin wrinkles",
+            "Forty volunteers applied a topical cream to facial skin in a randomized trial; wrinkles improved.",
+            ["Randomized Controlled Trial"],
+            ["Humans"],
+        )
+        assert StudyDesignClassifier().classify(record) is StudyDesign.HUMAN_CLINICAL
+
+    def test_animal_only_without_trial_metadata_is_animal(self) -> None:
+        record = self._rec("Effects on mouse skin", "Mice were treated topically.", [], ["Animals"])
+        assert StudyDesignClassifier().classify(record) is StudyDesign.ANIMAL
+
+    def test_stray_animals_mesh_on_human_trial_does_not_make_it_animal(self) -> None:
+        record = self._rec(
+            "Effectiveness of a zinc oxide cream for mosquito bite symptoms",
+            "Participants applied a topical cream in a controlled clinical trial; subjects reported less itching.",
+            ["Controlled Clinical Trial"],
+            ["Animals", "Humans"],
+        )
+        assert StudyDesignClassifier().classify(record) is StudyDesign.HUMAN_CLINICAL
+
+    def test_canine_study_is_animal(self) -> None:
+        record = self._rec(
+            "Topical emulsion for canine atopic dermatitis",
+            "A randomized, double-blind study in dogs with atopic dermatitis.",
+            ["Randomized Controlled Trial"],
+            ["Humans"],
+        )
+        assert StudyDesignClassifier().classify(record) is StudyDesign.ANIMAL

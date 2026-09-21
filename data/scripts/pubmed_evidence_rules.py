@@ -48,6 +48,7 @@ _HUMAN_SUBJECT = _rx(
     r"\bsubjects?\b",
     r"\b(?:women|men|adults|children)\b",
 )
+_HUMANS_WORD = _rx(r"\bhumans\b")
 _CLINICAL_DESIGN = _rx(
     r"\brandomi[sz]ed\b",
     r"\brandomly\b",
@@ -87,6 +88,10 @@ _ANIMAL = _rx(
     r"\brabbits?\b",
     r"\bguinea pigs?\b",
     r"\bzebrafish\b",
+    r"\bcanine\b",
+    r"\bdogs?\b",
+    r"\bporcine\b",
+    r"\bpigs?\b",
 )
 
 
@@ -100,6 +105,13 @@ class StudyDesignClassifier:
         if publication_types & _REVIEW_PUBLICATION_TYPES:
             return StudyDesign.REVIEW
 
+        # animal 단서가 있으면 임상 단서보다 먼저 본다. publication type/MeSH 는 초록과 어긋날 수 있어(쥐 논문에
+        # Randomized Controlled Trial·Humans 가, 사람 시험에 Animals 가 붙은 사례) animal·human 모두 본문 단서로만 판단한다.
+        has_animal = bool(_ANIMAL.search(text))
+        if has_animal:
+            has_human_text = bool(_HUMAN_SUBJECT.search(text)) or bool(_HUMANS_WORD.search(text))
+            return StudyDesign.MIXED_HUMAN_AND_LAB if has_human_text else StudyDesign.ANIMAL
+
         is_clinical = bool(publication_types & _TRIAL_PUBLICATION_TYPES) or (
             bool(_HUMAN_SUBJECT.search(text)) and bool(_CLINICAL_DESIGN.search(text))
         )
@@ -110,8 +122,6 @@ class StudyDesignClassifier:
             if has_ex_vivo or has_in_vitro:
                 return StudyDesign.MIXED_HUMAN_AND_LAB
             return StudyDesign.HUMAN_CLINICAL
-        if "animals" in mesh or _ANIMAL.search(text):
-            return StudyDesign.ANIMAL
         if has_ex_vivo:
             return StudyDesign.EX_VIVO
         if has_in_vitro:
