@@ -636,6 +636,66 @@ corpus를 무작정 늘리지 않고 coverage gap을 메운다. 우선순위:
 
 ---
 
+## Tier A manual review (2026-09-21)
+
+Audit의 P1/P2/P3/P4는 최종 가치등급이 아니라 후보를 좁히는 routing label이다. P1 12개 + P3 5개 +
+threshold 참고(Retinol) + 이상치 확인(Tyrosinase) = 19개를 NIA mention 패턴, 제품 토큰, canonical 단위를
+기준으로 손으로 검토했다. 임계값(NIA 170, 제품 100)과 routing 규칙은 바꾸지 않았고 새 점수식도 없다.
+PubMed/CIR 검색·수집은 하지 않았다. 전체 표: `data/outputs/evidence_coverage/tier_a_manual_review.csv`(gitignore, 아래 표가 기록본).
+
+판정 근거의 한계: NIA 원문을 다시 읽지 않고 `nia_case_ingredient_mentions.csv`의 매칭 alias·answer/question 비율·
+concern 수 패턴으로 "템플릿성 반복"을 **추정**했다(예: 소문자 INCI 한 형태가 한 concern에서 1,000회 안팎 반복).
+확정이 아니므로 DEFER 후보는 원문 표본 확인으로 뒤집힐 수 있다.
+
+| 성분 | NIA case / answer / concern | 제품 | CIR / PubMed | routing | mention 성격 | 판정 | target topics |
+|---|---:|---:|---:|---|---|---|---|
+| Collagen | 940 / 68 / 5 | 67 | 0 / 0 | P1 | 효능·사용 언급(질문 중심) | **INCLUDE** | efficacy |
+| 3-O-Ethyl Ascorbic Acid | 170 / 170 / 1 | 110 | 0 / 0 | P1 | 효능·사용 언급 | **INCLUDE** | efficacy, precaution, concentration |
+| Centella Asiatica Extract | 13 / 7 / 2 | 590 | 1 / 0 | P3 | 효능·사용 언급 | **INCLUDE** | efficacy |
+| Retinol (threshold 참고) | 167 / 105 / 5 | 74 | 0 / 3 | P4 | 효능·사용 언급 | **INCLUDE** | precaution, usage, combination |
+| Hexapeptide-2 | 1023 / 1021 / 1 | 12 | 0 / 0 | P1 | 템플릿 의심 | DEFER | (재검토 시) efficacy |
+| Sulfur | 1003 / 848 / 1 | 1 | 0 / 0 | P1 | 템플릿 의심 | DEFER | (재검토 시) precaution, concentration |
+| Elastin | 421 / 7 / 4 | 14 | 0 / 0 | P1 | 질문 중심 | DEFER | (재검토 시) efficacy |
+| Arctium Lappa Root Extract | 280 / 279 / 1 | 11 | 0 / 0 | P1 | 템플릿 의심 | DEFER | - |
+| Aloe Barbadensis Leaf Juice Powder | 481 / 291 / 1 | 4 | 0 / 0 | P1 | 템플릿 의심 | DEFER | - |
+| Squalane | 1 / 0 / 1 | 366 | 1 / 0 | P3 | 언급 1건 | DEFER | - |
+| Sodium Hyaluronate | 0 | 1145 | 1 / 0 | P3 | NIA 없음 | DEFER | - |
+| Tocopherol | 0 | 807 | 1 / 0 | P3 | NIA 없음 | DEFER | - |
+| Beta-Glucan | 0 | 363 | 1 / 0 | P3 | NIA 없음 | DEFER | - |
+| Mineral Salts | 1268 / 852 / 2 | 11 | 0 / 0 | P1 | 템플릿 의심 | EXCLUDE | - |
+| Melanin | 1243 / 1228 / 1 | 1 | 0 / 0 | P1 | 기전 용어 | EXCLUDE | - |
+| Momordica Charantia Fruit Extract | 1004 / 865 / 1 | 3 | 0 / 0 | P1 | 템플릿 의심 | EXCLUDE | - |
+| BHA | 503 / 330 / 4 | 8 | 0 / 0 | P1 | 계열명 | EXCLUDE | - |
+| Carapa Guianensis Seed Oil | 456 / 260 / 1 | 4 | 0 / 0 | P1 | 템플릿 의심 | EXCLUDE | - |
+| Tyrosinase | 581 / 1 / 1 | 0 | 0 / 0 | P2 | 기전 용어 | EXCLUDE | - |
+
+**집계**: INCLUDE 4 / DEFER 9 / EXCLUDE 6 (검토 19개).
+
+**Tier A 제안(신규 수집 대상)**: Collagen, 3-O-Ethyl Ascorbic Acid, Centella Asiatica Extract, Retinol.
+Tier A는 10~20개로 좁힌다는 방침 대비 신규 대상은 4개뿐이다. 이미 근거가 있는 Niacinamide·Allantoin·Panthenol·
+Tranexamic Acid·Ceramide NP·Hyaluronic Acid 등은 이번 검토 대상이 아니라 그대로 두며, 최종 Tier A 규모는
+아래 "사용자 결정 필요"가 정해진 뒤 확정한다.
+target topics는 **수집 목표**일 뿐이다. usage/concentration/combination은 저장값이 없어 0건으로 나오지만
+"현재 비어 있다"는 뜻이 아니라 "산출 불가"였다(Audit result 참고).
+
+**Ambiguous mapping**
+- **BHA**(`e48d0911-…`): 제품 토큰 `BHA` 8건은 레티놀 제품이 대부분이라 butylated hydroxyanisole(산화방지제)일
+  가능성이 있고, NIA의 `bha`는 beta hydroxy acid 문맥이다. 지식 데이터 설명은 살리실산 쪽이다. 이 ID로는 수집하지 않는다.
+- **Salicylic Acid**(`5c3fa47f-…`): 제품 178개, NIA 3건, 근거 0건인데 audit routing에서는 P4다.
+  BHA 대신 각질·모공 근거를 맡을 후보로 사용자 판단이 필요하다. Ascorbic Acid(제품 179, NIA 36, 근거 0건)도 같은 성격이다.
+- **Aloe / Hyaluronate**: 알로에(잎즙·추출물·분말 등)와 히알루론산 계열이 여러 canonical로 쪼개져 있다.
+  계열 통합 단위를 정하기 전에는 개별 성분으로 근거를 쌓지 않는다.
+- **Centella**: `Centella Asiatica Extract`와 Madecassoside·Asiaticoside 등이 별도 성분이다. 근거를 어느 단위에 붙일지 확인이 필요하다.
+- **Carapa Guianensis Seed Oil**: 제품은 `Guaianensis` 철자(old name)로 매칭됐다.
+
+**Threshold-sensitive reference**: Retinol(NIA 167, 임계값 170 아래)은 routing 상 P4지만 검토 결과 INCLUDE다.
+같은 이유로 임계값 근처 다른 성분이 놓쳤을 수 있으나 이번에는 임계값을 바꾸지 않았다.
+
+**사용자 결정 필요**: (1) Salicylic Acid·Ascorbic Acid를 이번 Tier A 검토 대상에 추가할지, (2) 알로에·히알루론산 계열 단위,
+(3) DEFER 중 Hexapeptide-2를 PubMed 선탐색 후 재판단할지. 다음 단계는 확정된 Tier A에 대한 PubMed/CIR 수집이며 아직 수행하지 않았다.
+
+---
+
 ## 확정 안 된 것 (다음 단계 시작 전 결정 필요)
 
 - H.2의 source별 retrieval lane과 MFDS의 efficacy 검색 기본 제외 정책(Agent/Backend 합의 필요, 미반영)
