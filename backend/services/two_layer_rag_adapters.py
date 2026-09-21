@@ -263,6 +263,9 @@ class EvidenceTopicIntentMapper:
         "regulation": QuestionIntent.REGULATION,
         "usage": QuestionIntent.USAGE_FREQUENCY,
         "combination": QuestionIntent.COMBINATION,
+        # MFDS 등의 규제/사용법 claim_topics를 Agent 질문 축으로 지원
+        "concentration_regulation": QuestionIntent.REGULATION,
+        "usage_instruction": QuestionIntent.USAGE_FREQUENCY,
     }
 
     def map(self, topics: list[str]) -> list[QuestionIntent]:
@@ -359,7 +362,8 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
         )
         draft = RagChunkDraft(
             chunk_id=row.chunk_id,
-            field_id=row.section,
+            # MFDS 청크처럼 section이 NULL인 경우 기본 필드 식별자 'content'를 지정한다
+            field_id=row.section or "content",
             content=row.content,
             evidence=record,
             intents=self._intent_mapper.map(row.claim_topics),
@@ -394,7 +398,8 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
             source_id=row.source_id,
             source_title=row.source_title,
             text=row.content,
-            locator=f"{row.section}:{row.chunk_index}",
+            # section이 없는 MFDS 청크는 chunk index 기반 locator를 조립한다
+            locator=f"{row.section}:{row.chunk_index}" if row.section else f"chunk:{row.chunk_index}",
             target_ids=target_ids,
             conditions=EvidenceConditions(
                 formulation=row.formulation_type,

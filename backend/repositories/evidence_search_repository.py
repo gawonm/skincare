@@ -33,7 +33,8 @@ class EvidenceSearchRow(BaseModel):
     retrieved_at: datetime
     chunk_id: str = Field(min_length=1)
     chunk_source_type: str = Field(min_length=1)
-    section: str = Field(min_length=1)
+    # PubMed 청크는 abstract가 있지만 MFDS 규제 청크는 section이 NULL이므로 None을 허용한다
+    section: str | None = None
     chunk_index: int = Field(ge=0)
     content: str = Field(min_length=1)
     chunk_url: str | None = None

@@ -24,6 +24,7 @@ from agent.rag.schemas import (
     EmbeddingVector,
     EvidenceReviewStatus,
     EvidenceSearchRequest,
+    EvidenceSourceType,
     IngredientResolveRequest,
     LocalEmbeddingModel,
     LookupStatus,
@@ -189,6 +190,46 @@ class TestTwoLayerRagLatestDump:
             assert all(
                 ingredient_ids[0] in product.ingredient_ids
                 for product in products.products
+            )
+        finally:
+            await database.dispose()
+
+    async def test_mfds_evidence_search_with_nullable_section_succeeds(self) -> None:
+        """MFDS 청크는 section이 NULL이므로 DTO 변환 시 실패하지 않고 정상 반환되어야 한다."""
+        database = LatestDumpDatabaseFactory().create()
+        embedder = FixedBgeM3Embedder()
+        try:
+            evidence_retriever = HybridEvidenceRetriever(
+                backend=TwoLayerEvidenceSearchBackend(database.session_factory),
+                embedder=embedder,
+                policy=RagRetrievalPolicy(
+                    free_text_min_vector_similarity=-1.0,
+                    rrf_k=60,
+                    rerank_candidate_limit=30,
+                ),
+            )
+            # 살리실산(BHA)은 MFDS 규제 근거(section=NULL)를 보유하고 있다
+            evidence = await evidence_retriever.search(
+                EvidenceSearchRequest(
+                    query="살리실산 BHA 피지 각질 제거",
+                    target_ids=["5c3fa47f-b797-452c-bc86-04a872aa3f71"],
+                    limit=5,
+                )
+            )
+
+            assert evidence.status is LookupStatus.SUCCESS
+            assert 1 <= len(evidence.records) <= 5
+            assert all(
+                record.review_status is EvidenceReviewStatus.UNREVIEWED
+                for record in evidence.records
+            )
+            assert all(
+                record.source_type is EvidenceSourceType.MFDS
+                for record in evidence.records
+            )
+            assert all(
+                record.locator.startswith("chunk:")
+                for record in evidence.records
             )
         finally:
             await database.dispose()
