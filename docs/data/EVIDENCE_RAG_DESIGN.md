@@ -1056,6 +1056,18 @@ bundle 구성: 연구 human 77 / review 16, 복합 제형 32, claim topic effica
 
 A는 DB 쓰기(evidence_chunk_ingredient)가 필요해 승인 전까지 하지 않았다. B는 registry(`CirReportCandidate` JSON)에 넣기 전에 사람이 attachment를 확인해야 한다.
 
+### CIR 다음 단계 결정 (2026-09-22)
+- **A. 기존 DB CIR 문서 재사용 8개 승인**: 지금은 DB write를 하지 않고, 최종 PubMed+CIR bundle 확정 후 embedding/DB 적재 단계에서
+  `evidence_chunk_ingredient` 성분 연결을 함께 추가한다(Hyaluronates: Hydrolyzed Hyaluronic Acid·Sodium Acetylated Hyaluronate·Hydrolyzed Sodium Hyaluronate·Potassium Hyaluronate,
+  Ceramides: Ceramide AP·EOP·Phytosphingosine, Tocopherols: Tocopheryl Acetate). 연결은 그 성분명이 본문에 나오는 chunk에만 건다.
+- **B. 신규 attachment 확인**: 우선 6개(Retinol, Ascorbic Acid, Sodium Ascorbyl Phosphate, Salicylic Acid, Adenosine, Capryloyl Salicylic Acid), 보류 4개(Cholesterol,
+  Gluconolactone, Acetyl Hexapeptide-8, 3-O-Ethyl Ascorbic Acid: 대응 확정 전까지 unmapped).
+- **규칙**: robots.txt 우회·검색/스크래핑 자동화 금지. **사람이 status/report 페이지에서 attachment id·PDF를 확보한 경우만** curated registry
+  (`docs/data/cir_report_registry.json`, 현재 빈 목록)에 추가한다. 제목 유사성만으로 성분을 연결하지 않고, 확보한 PDF 텍스트에서 성분명이 report 범위에 실제로
+  있는지 `cir_scope_checker.py`로 확인(REFERENCES 이전 본문, 페이지·문맥 포함)한 뒤에만 연결한다.
+- **현황**: attachment는 아직 하나도 확보되지 않았다(사람 확인 대기). 확인 시트 `cir_attachment_checklist.csv`(gitignore)에 성분별 기대 report, 확인 사항, 기록할 컬럼
+  (status_page_url, attachment_id, status_label, is_amended, document_date, pdf_path, scope_verified)을 준비했다.
+
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
 ④ candidate 필터·대표 선택 ⑤ document/chunk 생성 ⑥ BGE-M3 embedding ⑦ DB ingest ⑧ audit 재실행 ⑨ Tier A QA ⑩ retrieval 평가.
