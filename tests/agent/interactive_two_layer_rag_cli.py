@@ -61,19 +61,22 @@ from tests.agent.interactive_rag_cli import (
 )
 
 
-class LatestDumpDatabaseFactory:
-    """공용 접속 정보는 유지하고 실행 대상만 최신 dump DB로 고정한다."""
-
-    DATABASE_NAME: ClassVar[str] = "skincare_latest"
+class ConfiguredDatabaseFactory:
+    """CLI도 애플리케이션과 동일한 `config.yaml` DB를 사용하도록 조립한다."""
 
     def create(self) -> Database:
-        url = make_url(settings.database.url).set(database=self.DATABASE_NAME)
         return Database(
             DatabaseConfig(
-                url=url.render_as_string(hide_password=False),
+                url=settings.database.url,
                 model_modules=settings.database.model_modules,
             )
         )
+
+    def database_name(self) -> str:
+        database_name = make_url(settings.database.url).database
+        if database_name is None or not database_name.strip():
+            raise RuntimeError("config.yaml의 database.url에 DB 이름이 없습니다.")
+        return database_name
 
 
 class Utf8ConsoleConfigurator:
@@ -296,7 +299,9 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
         self._embedding_config = config.create_embedding()
         self._reranker_config = config.create_reranker()
         self._retrieval_policy = config.create_retrieval_policy()
-        self._database = LatestDumpDatabaseFactory().create()
+        database_factory = ConfiguredDatabaseFactory()
+        self._database_name = database_factory.database_name()
+        self._database = database_factory.create()
 
         embedder = TextEmbedderFactory().create(self._embedding_config)
         reranker_scorer = LocalBgeCrossEncoderScorer(self._reranker_config)
@@ -362,7 +367,7 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
         )
         print(f"\n{DIVIDER_LINE}")
         print(" 2-Layer 스킨케어 Agent LangGraph CLI")
-        print(f"DB: {LatestDumpDatabaseFactory.DATABASE_NAME}")
+        print(f"DB: {self._database_name}")
         print(
             f"Intent·답변 모델: {self._chat_config.provider.value} / {chat_model}"
         )
@@ -372,7 +377,7 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
             f"{self._embedding_config.output_dimensions()}차원"
         )
         print(f"Evidence 리랭커: {self._reranker_config.model.value}")
-        print("Claim·Evidence·성분·상품: skincare_latest 실제 DB")
+        print(f"Claim·Evidence·성분·상품: {self._database_name} 실제 DB")
         print("히스토리·체크포인터·루틴·상품 taxonomy: 개발용 메모리 구현")
         print("실제 OpenAI API 호출 비용이 발생합니다.")
         print(f"출력 모드: {self._display_mode.value}")
