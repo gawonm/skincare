@@ -1,11 +1,16 @@
 /**
- * AI 답변 아래 붙는 출처 줄(시안 04B: "출처 · 성분 DB · 피부과 임상 가이드 2건").
+ * AI 말풍선 안의 출처 줄(시안 109:76: "출처 · 성분 DB · 피부과 임상 가이드 2건").
  *
  * TODO(contract): sources 객체 형태가 미정이다. 지금은 라벨과 건수만 온다고 보고,
  *  건수가 2 이상일 때만 "N건" 을 덧붙인다. 링크/id 가 필요해지면 여기와 스키마를 함께 고친다.
  */
 
-import type { SourceItem } from "../schemas/chat";
+// TODO(design): 응답의 `citations`(source_title/locator/url)를 이 줄에 연결할지 시안 확인 전이라,
+//  SSE 시절 스키마에서 옮겨 온 임시 타입이다. 결정되면 `Citation` 기준으로 바꾼다.
+interface SourceItem {
+  label: string;
+  count: number;
+}
 
 const SOURCE_PREFIX = "출처";
 const SEPARATOR = " · ";
@@ -23,5 +28,5 @@ export function ChatSources({ items }: { items: SourceItem[] }) {
 
   const line = [SOURCE_PREFIX, ...items.map(formatSourceItem)].join(SEPARATOR);
 
-  return <p className="px-1 pt-1 text-xs text-slate-400">{line}</p>;
+  return <p className="text-[10px] leading-[1.45] text-ink-soft">{line}</p>;
 }

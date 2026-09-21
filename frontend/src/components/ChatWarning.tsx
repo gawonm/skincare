@@ -1,28 +1,14 @@
 /**
- * AI 답변에 딸리는 주의 문구(시안 04B 의 옅은 빨강 박스).
+ * AI 말풍선 안의 안전 안내(시안 109:76 `Safety Note`).
  *
- * TODO(contract): 경고를 별도 `warning` 이벤트로 받을지 `token` 본문에 섞을지 미정.
- *  지금은 별도 이벤트로 받은 문구 한 줄을 그린다.
+ * TODO(design): 응답 어느 필드(`unresolved`, `partial` 상태 등)를 여기에 보여 줄지 정해지지
+ *  않아 아직 어디서도 쓰지 않는다. 지금은 시안 모양만 맞춰 둔다.
  */
 
 export function ChatWarning({ text }: { text: string }) {
   return (
-    <div className="mt-2 flex items-start gap-1.5 rounded-xl bg-warn-surface px-3 py-2 text-xs text-warn-ink">
-      <svg
-        viewBox="0 0 24 24"
-        className="mt-px size-4 shrink-0"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M12 4 2 20h20L12 4z" />
-        <path d="M12 10v5" />
-        <path d="M12 18h.01" />
-      </svg>
-      <span>{text}</span>
+    <div className="rounded-[10px] bg-clay-tint px-2.5 py-2 text-[11px] leading-[1.45] font-medium text-clay">
+      {`⚠ ${text}`}
     </div>
   );
 }
