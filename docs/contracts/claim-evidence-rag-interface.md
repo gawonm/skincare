@@ -2,6 +2,9 @@
 
 > **상태: PARTIALLY_IMPLEMENTED.**
 >
+> **Evidence 상태 계약 업데이트: 2026-09-22.** `document_status`를 답변 가능 여부로
+> 사용하지 않는 방향과 질문 축별 출처 lane은 `backend-to-agent.md` 13절을 따른다.
+>
 > **P3 경로 업데이트: 2026-09-21 02:19 KST.** 피부 고민형 기본 경로는 offline
 > `ClaimRetriever`가 아니라 NIA Case Top-3의 exact quote 기반 런타임 Claim 추출을 사용한다.
 > 이 문서의 `ClaimHit`/`ClaimRetriever` 계약은 기존 구현과 후속 offline index 비교를 위해
@@ -294,8 +297,9 @@ Citation은 LLM이 만들지 않는다. Backend 어댑터가 검색된 DB 행에
 
 현재 DTO에는 publisher, page, DOI, PMID를 각각 담는 전용 필드가 없다. 별도
 `EvidenceCitation`/`EvidenceChunkHit` DTO는 **미구현**이며, 화면이나 API가 구조화된 개별 필드를
-요구할 때 계약을 먼저 확장한다. `document_status`의 검수 완료 매핑도 Data 파트의 상태 계약이
-확정될 때까지 보수적으로 `UNREVIEWED`를 유지한다.
+요구할 때 계약을 먼저 확장한다. `document_status`는 원문 생명주기 메타데이터로 보존하되,
+답변 생성·Citation·`SUPPORTED` 판정의 차단 조건으로 사용하지 않는다. 구체적인 사용 가능성 및
+출처 선택 규칙은 `backend-to-agent.md` 13절을 따른다.
 
 ### 7.2 현재 repository
 

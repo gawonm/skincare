@@ -1,7 +1,7 @@
 # Backend → Agent 호출 계약
 
-> 최종 업데이트: 2026-09-21 02:19 KST
-> 최신 변경 의도: Case Top-3에서 런타임 LLM이 원문 구속 Claim을 추출하는 P3 계약 확정
+> 최종 업데이트: 2026-09-22 KST
+> 최신 변경 의도: Evidence 사용 가능성·출처 lane·사용자 응답 계약 확정
 >
 > 상태: **2-Layer 읽기 전용 어댑터 계약 확정 — 읽기 전용 smoke 검증 완료**
 >
@@ -495,11 +495,9 @@ DB 컬럼 설명에 따라 Claim 통과 조건은 다음 결정적 규칙으로 
 Citation의 제목, URL, PMID, DOI는 DB 메타데이터만 사용한다. LLM 출력으로 출처 식별자를 만들거나
 보완하지 않는다.
 
-`document_status=NULL`은 `EvidenceReviewStatus.UNREVIEWED`로 변환한다. 검색 결과에는 남기되
-Citation과 `SUPPORTED` 판정에는 사용하지 않는다. 해당 Claim은 `INSUFFICIENT`가 되고,
-성분은 `CLAIM_ONLY` 상품 후보로 유지한다. 현재 저장 계약에는 `verified` 값이 없으므로
-`VERIFIED` 승격 조건은 보류 상태다. Data 파트와 검수 상태 계약을 확정하기 전에는
-`final`/`amended_final` 또는 `peer_reviewed_study`를 임의로 검수 완료로 해석하지 않는다.
+이 절의 기존 `document_status=NULL → UNREVIEWED → 답변 제외` 규칙은 2026-09-22 합의에 따라
+13.1절의 초안으로 대체한다. `document_status`는 문서 생명주기 메타데이터로만 보존하고 답변
+가능 여부를 결정하지 않는다.
 
 ### 9.4 Ingredient와 Product 조회
 
@@ -923,3 +921,90 @@ Case Step 3 규칙 추출
 → RoutineDraftGenerator
 → 최종 일정 결정적 검증
 ```
+
+## 13. Evidence 사용 가능성·출처 lane·사용자 응답 계약 — 2026-09-22
+
+> 상태: **2026-09-22 사용자 확인 완료 / 구현 기준 계약**
+>
+> Agent와 Backend 양쪽 구현은 이 절을 기준으로 변경한다.
+
+### 13.1 `document_status`의 의미
+
+`evidence_document.document_status`는 원문 문서의 생명주기 메타데이터다. Evidence를 답변에
+사용할 수 있는지 판정하는 검수 상태로 사용하지 않는다.
+
+- Backend는 저장값을 삭제하거나 `verified`로 바꿔 쓰지 않는다.
+- Agent는 `document_status`에서 파생된 `EvidenceReviewStatus`를 답변 생성 차단 조건이나
+  사용자 경고 조건으로 사용하지 않는다.
+- 답변 가능성은 허용 출처, 질문 축 관련성, 적용 조건, non-demo 여부, 인용문 검증으로 판정한다.
+- `document_status`가 `NULL`, `final`, `amended_final` 등 어떤 값이어도 검색 순위와 Citation
+  포함 여부에는 영향을 주지 않는다.
+- 데이터베이스 스키마와 마이그레이션은 변경하지 않는다.
+
+### 13.2 질문 축별 Evidence 출처 lane
+
+출처 선택 타입은 Agent가 소유하고 Backend는 요청받은 lane을 SQL에서 적용한다.
+
+```python
+class EvidenceSourceLane(StrEnum):
+    EFFICACY = "efficacy"
+    SAFETY = "safety"
+    REGULATION = "regulation"
+
+
+class EvidenceSourcePlan(RagModel):
+    lane: EvidenceSourceLane
+    primary_source_types: list[EvidenceSourceType] = Field(min_length=1)
+    fallback_source_types: list[EvidenceSourceType] = Field(default_factory=list)
+
+
+class EvidenceSearchRequest(RagModel):
+    known_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions)
+    query: str = Field(min_length=1)
+    target_ids: list[str] = Field(default_factory=list)
+    limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
+    combination_target_ids: list[str] = Field(default_factory=list)
+    source_plan: EvidenceSourcePlan | None = None
+```
+
+Agent의 결정적 질문 축 분류 결과를 다음 검색 계획으로 변환한다.
+
+| 질문 축 | primary | fallback |
+| --- | --- | --- |
+| 효능·피부 고민·추천 근거 | PubMed(`PAPER`), CIR | 없음 |
+| 주의사항·안전성 | CIR, PubMed(`PAPER`) | 없음 |
+| 사용제한·규제 | MFDS | CIR, PubMed(`PAPER`) |
+
+- 효능과 주의가 함께 있으면 두 출처 집합이 같으므로 CIR·PubMed를 모두 허용한다.
+- 규제·한도·금지·허용·사용제한 신호가 있으면 `REGULATION` lane을 우선한다.
+- Backend Repository는 lane별 `source_type` 조건을 정렬과 `LIMIT` 전에 적용한다.
+- primary 검색 결과를 먼저 사용하고, 요청 상한이 남을 때만 fallback 결과로 채운다.
+- fallback 자료는 MFDS 규제 사실처럼 표현하지 않고 실제 출처 유형을 Citation에 보존한다.
+- NIA Case는 성분 후보 탐색 자료이며 Evidence 출처 lane에 포함하지 않는다.
+
+### 13.3 미지원 상품 조건과 고민 기반 RAG
+
+- `unsupported_product_conditions`가 있어도 Case → Evidence 성분 탐색을 중단하지 않는다.
+- 나이, 성별, 계절, 피부 고민은 상품 SQL 필터가 아니라 사용자 문맥으로 보존한다.
+- DB에서 검증할 수 없는 명시적 상품 조건은 `unresolved`로 알리고 해당 조건을 만족한다고
+  단정한 상품 후보는 만들지 않는다.
+- 미지원 조건 하나 때문에 근거 기반 성분·주의사항 답변 전체를 단일 오류 문구로 대체하지 않는다.
+- `모공`, `피지`, `여드름`, `건조`, `홍조`, `칙칙함`처럼 지원하는 고민 표현은 LLM 출력이
+  누락돼도 결정적 정책에서 `skin_concerns`로 보완한다.
+
+### 13.4 사용자 응답과 내부 식별자
+
+- `statement_id`, `case-claim:<UUID>`, `evidence_id`, ingredient UUID는 사용자 본문에 출력하지 않는다.
+- 근거 부족 결과는 표준 성분명 기준으로 중복 제거해 한 문단으로 요약한다.
+- 내부 식별자는 구조화 artifact, trace, 로그에서만 유지한다.
+- `citation_validation_failed`는 내부 사유로 보존하되 사용자에게는 어떤 출처·조건이 부족했는지
+  설명 가능한 문장으로 변환한다.
+- 일부 성분만 검증되면 검증된 답변을 먼저 제공하고 나머지 성분의 한계를 별도로 알린다.
+
+### 13.5 실패 계약
+
+- 허용된 primary·fallback 출처 모두 무결과: `NO_RESULTS`
+- DB 또는 DTO 변환 실패: 원인을 포함한 `ERROR`
+- 지원하지 않는 source type: 조용히 무시하지 않고 `UNSUPPORTED`
+- 인용문 검증 실패: 해당 생성 문장만 제외하고, 검증된 문장이 하나도 없을 때만
+  `CITATION_VALIDATION_FAILED`
