@@ -2,9 +2,9 @@
 
 2026-09-19 backend가 수정한 초안이다. 처음 front가 쓴 초안은 "비로그인 일회성, 서버 저장 없음"
 이었으나, Agent 담당자 확인(사용자당 방 1개, 화면을 벗어났다 돌아오면 화면은 빈 상태지만
-Agent는 이전 대화를 기억)에 따라 서버 저장형으로 바꿨다. 확정 전이며, 아래 "아직 안 정한
-것"은 front·agent 담당과 합의한 뒤 채운다. 합의 전에는 이 형태로 구현하지 않는다
-(CLAUDE.md 규칙 16).
+Agent는 이전 대화를 기억)에 따라 서버 저장형으로 바꿨다. 응답 형태는 Agent 구조를 따라 단일
+JSON으로 정했다(2026-09-21). 확정 전이며, 아래 "아직 안 정한 것"은 front·agent 담당과 합의한 뒤
+채운다. 합의 전에는 이 형태로 구현하지 않는다(CLAUDE.md 규칙 16).
 
 ## 범위
 
@@ -21,7 +21,7 @@ Agent는 이전 대화를 기억)에 따라 서버 저장형으로 바꿨다. �
 
 - `POST /chat`
   - 인증: **필수**. 세션 쿠키가 없거나 만료면 `401`. 401을 받은 프론트 화면 처리는 미정이다.
-  - 응답 형태: 미정(아래 "아직 안 정한 것" 1번).
+  - 응답: 단일 JSON(`application/json`). 아래 "출력" 절 참고.
 
 ## 입력
 
@@ -42,8 +42,7 @@ class ChatRequest(BaseModel):
 
 - 이전 버전 초안의 `messages: list[ChatMessage]`(전체 대화 배열)는 폐기했다. 서버가 대화를
   저장하므로 프론트가 매번 전체를 보낼 필요가 없다.
-- 현재 `backend/schemas/chat.py`의 `ChatSendMessageRequest`에는 `chat_room_id`가 아직 남아
-  있다. 이 문서가 확정되면 그 필드를 빼도록 코드를 고친다(지금은 고치지 않았다).
+- `backend/schemas/chat.py`의 `ChatSendMessageRequest`가 위 형태와 같다(방 식별자 없음).
 
 ### 예시
 
@@ -56,22 +55,23 @@ class ChatRequest(BaseModel):
 
 ## 출력
 
-응답 형태는 미정이다. 후보는 두 가지다.
+Agent는 한 턴이 끝나면 완성된 응답(`ChatTurnOutput`)을 한 번에 돌려주므로, 응답도 그대로 단일
+JSON으로 내려준다. 토큰을 조금씩 내보내는 스트리밍 응답은 없다. 타입은 `backend/schemas/chat.py`의
+`ChatTurnResponse`가 소유하고, 필드 구성은 Agent의 `ChatTurnOutput`과 같다.
 
-- **(A) 단일 JSON**: `backend/schemas/chat.py`의 `ChatTurnResponse`(agent의 `ChatTurnOutput`과
-  같은 구성: `status`, `message`, `intents`, `artifacts`, `citations`, `unresolved`,
-  `error_code`, `retryable`, `save_handoff` 등).
-- **(B) SSE 스트림**(`text/event-stream`, 처음 front 초안): 시안 04B(대화 중)·04C(응답 중)
-  기준으로 front가 제안한 이벤트는 아래와 같고, 각 `data`의 정확한 형태는 미정이다.
-
-```
-event: stage    data: {"label": "입력하신 요청을 확인하고 있어요"}
-event: token    data: {"text": "같이 "}
-event: warning  data: {"text": "동시에 바르면 자극이 커질 수 있어요."}
-event: sources  data: {"items": [{"label": "성분 DB", "count": 1}, {"label": "피부과 임상 가이드", "count": 2}]}
-event: done     data: {}
-event: error    data: {"detail": "..."}
-```
+| 필드 | 설명 |
+| --- | --- |
+| `chat_room_id`, `request_id` | 어느 방의 어느 요청에 대한 응답인지 |
+| `assistant_message_id` | 저장된 어시스턴트 메시지 ID |
+| `status` | `completed` / `needs_input` / `partial` / `error` |
+| `message` | 답변 본문 |
+| `intents` | Agent가 해석한 요청 의도 목록 |
+| `follow_up_question` | `needs_input`일 때 되묻는 질문 |
+| `artifacts` | 후보 상품 목록, 루틴, 근거 답변 등 |
+| `citations` | 답변의 근거 인용 |
+| `unresolved` | 확정하지 못한 성분·상품 등 |
+| `error_code`, `retryable` | 오류일 때 코드와 재시도 가능 여부 |
+| `save_handoff` | 루틴 저장 안내 |
 
 ## 실패했을 때 (규칙 7)
 
@@ -80,23 +80,21 @@ event: error    data: {"detail": "..."}
 - 같은 `request_id`로 다른 입력을 다시 보내거나, 같은 요청이 아직 처리 중일 때의 응답은
   Agent 실패 계약(`docs/contracts/backend-to-agent.md` 6절)을 따른다. HTTP로 어떻게 옮길지는
   미정이다.
-- 에이전트 타임아웃·오류: 응답 형태(A/B)에 따라 `error_code`/`retryable` 또는 `event: error`로
-  알린다. 프론트 UI 처리는 미정이다.
+- 에이전트 타임아웃·오류: 응답의 `status`가 `error`이고 `error_code`/`retryable`로 알린다.
+  프론트 UI 처리는 미정이다.
 
 ## 아직 안 정한 것
 
 임의로 채우지 않는다 (규칙 3). front·agent 담당과 합의 후 기록한다.
 
-1. **응답 형태**: 단일 JSON(A)인지 SSE 스트림(B)인지. 스트리밍이 필요하면 Agent가 토큰 단위로
-   내보낼 수 있는지부터 확인해야 한다.
-2. **비로그인 사용자가 채팅 화면에 들어왔을 때**: 로그인 유도 화면 등 프론트 처리. 시안 없음.
-3. `sources` 객체 형태: 라벨 + 건수로 충분한지, 성분노트 링크나 id 가 필요한지 (SSE 채택 시).
-4. 경고 전달 방식: 별도 `warning` 이벤트로 줄지, 본문에 섞을지 (SSE 채택 시).
-5. 에러가 났을 때 프론트 화면 상태: 재시도 버튼, 부분 답변 유지 여부 등. 시안 없음.
-6. `candidate_set_id`/`routine_version`을 프론트가 언제 어떻게 채우는지.
-7. "대화 초기화"(에이전트 기억만 새로 시작) 기능이 필요한지. 필요하면 별도 엔드포인트가 필요하다.
-8. 화면은 비어 있는데 Agent가 이전 대화를 언급할 때의 사용자 경험(안내 문구 등)은 front·기획이 판단한다.
-9. 대화가 길어질 때 자르기: 토큰 예산을 아는 에이전트가 프롬프트 조립 단계에서 처리하는 쪽이 유력.
+1. **비로그인 사용자가 채팅 화면에 들어왔을 때**: 로그인 유도 화면 등 프론트 처리. 시안 없음.
+2. 에러가 났을 때 프론트 화면 상태: 재시도 버튼 등. 시안 없음.
+3. 같은 `request_id` 충돌·처리 중(`REQUEST_CONFLICT`/`REQUEST_IN_PROGRESS`)을 HTTP 상태 코드로
+   어떻게 옮길지.
+4. `candidate_set_id`/`routine_version`을 프론트가 언제 어떻게 채우는지.
+5. "대화 초기화"(에이전트 기억만 새로 시작) 기능이 필요한지. 필요하면 별도 엔드포인트가 필요하다.
+6. 화면은 비어 있는데 Agent가 이전 대화를 언급할 때의 사용자 경험(안내 문구 등)은 front·기획이 판단한다.
+7. 대화가 길어질 때 자르기: 토큰 예산을 아는 에이전트가 프롬프트 조립 단계에서 처리하는 쪽이 유력.
 
 ## 다음 작업 (이번 범위 밖)
 
@@ -105,7 +103,7 @@ event: error    data: {"detail": "..."}
 
 ## 절차 (규칙 16)
 
-1. (폐기) front 가 처음 초안을 작성했다 — 비로그인·무상태 전제.
+1. (폐기) front 가 처음 초안을 작성했다 — 비로그인·무상태 전제, SSE 스트리밍 응답.
 2. (완료) backend 가 서버 저장형·사용자당 방 1개 기준으로 이 문서를 수정한다.
 3. front·agent 담당에게 변경 내용을 설명하고 "아직 안 정한 것"을 논의해 확정한다.
 4. 확정 후 구현한다. 불리는 쪽이 `backend/schemas/chat.py` 와 stub 엔드포인트를 먼저 만들고,
