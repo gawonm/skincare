@@ -7,6 +7,11 @@
 
 ## 1. DB 기준본 (source of truth)
 
+> **2026-09-21 갱신**: 팀 공용 canonical dump는 Agent 쪽에서 생성한 `skincare_reference_2026-09-21_v4.dump`
+> (SHA-256 `8c3eb724f86f706614dbf2c37d6fb156591e9dbb85166cee423ac213abe30111`, Alembic head `9f4c2a7d8e61`)로
+> 통일한다. 아래 v2 표는 이 절이 작성된 시점의 기록이라 아직 고치지 않았다. v4 기준 Evidence 구성과 source 역할은
+> [EVIDENCE_RAG_DESIGN.md](EVIDENCE_RAG_DESIGN.md) H절 참고.
+
 현재 기준본은 **`skincare_reference_2026-09-20_v2.dump`** 이다(Product taxonomy backfill까지 반영된 최종본).
 
 | 항목 | 값 |

@@ -520,8 +520,81 @@ class ClaimEvidenceLink(BaseModel):
 
 ---
 
+## H. Corpus 구성과 source 역할 분리 (2026-09-21)
+
+> 전체 Evidence chunk 수는 scientific evidence coverage를 의미하지 않는다.
+> 현재 corpus의 대부분은 MFDS regulatory record이며,
+> 효능/추천 근거 coverage는 PubMed와 CIR을 별도로 봐야 한다.
+
+```
+Evidence
+├─ Scientific / efficacy
+│  ├─ PubMed
+│  └─ CIR
+└─ Regulatory / restriction
+   └─ MFDS
+```
+
+MFDS 사용제한 원료정보는 사용제한·배합제한·규제 조건·jurisdiction별 regulatory/safety 확인용이다.
+성분 효능이나 피부 고민에 대한 scientific evidence가 아니므로, A절 표의 "MFDS 8,288건 적재"를
+"효능 근거 8,288건"으로 읽으면 안 된다. 효능·추천 이유·안전성의 scientific evidence는 PubMed/CIR이 맡는다.
+
+### H.1 [CURRENT] 현재 DB 구조와 규모
+
+- 기준 dump: `skincare_reference_2026-09-21_v4.dump` (Agent 쪽에서 생성, 팀 공용 canonical)
+  - SHA-256: `8c3eb724f86f706614dbf2c37d6fb156591e9dbb85166cee423ac213abe30111`
+  - Alembic head: `9f4c2a7d8e61`
+- `evidence_document`/`evidence_chunk`에 `source_type`이 이미 보존돼 있다. **스키마·데이터 구조 변경은 없다.**
+  MFDS를 삭제하거나 별도 테이블로 옮기지 않는다.
+
+| 테이블 | 합계 | MFDS | CIR | PubMed |
+| --- | ---: | ---: | ---: | ---: |
+| `evidence_document` | 46 | 11 | 10 | 25 |
+| `evidence_chunk` | 8,369 | 8,288 | 56 | 25 |
+| `evidence_chunk_ingredient` | 8,377 | - | - | - |
+
+(`evidence_chunk_ingredient`는 청크-성분 연결 행이라 source별 분해는 이 문서에 기록하지 않았다.)
+scientific evidence 청크는 CIR 56 + PubMed 25 = 81건뿐이다.
+
+### H.2 [PROPOSED / AGREEMENT NEEDED] source별 retrieval lane
+
+**아직 Agent/Backend 코드에 반영되지 않았다.** 저장 구조가 아니라 retrieval policy(`EvidenceQueryAnchor.source_types`
+채우는 규칙) 수준의 제안이며, Agent/Backend 담당자와 합의가 필요하다(계약 변경이므로 규칙 16 대상).
+
+| 검색 목적(`claim_topic`) | 제안 lane |
+| --- | --- |
+| efficacy / 피부 고민 / 추천 근거 | PubMed + CIR |
+| precaution / safety | CIR + PubMed. 규제·사용제한이 관련될 때 MFDS 추가 |
+| regulation / restriction | MFDS 우선 |
+| concentration | scientific 농도 근거는 CIR/PubMed, 법적·규제 농도 제한은 MFDS |
+
+함께 합의가 필요한 항목:
+
+- Agent/Backend의 source filter 적용 방식(anchor의 `source_types` 필터를 lane에 맞춰 채울지, 별도 정책 객체를 둘지)
+- MFDS를 efficacy 검색 후보에서 기본 제외하는 정책
+
+### H.3 [DATA NEXT] PubMed/CIR coverage gap 보강
+
+corpus를 무작정 늘리지 않고 coverage gap을 메운다. 우선순위:
+
+1. PubMed/CIR 근거가 0건인 성분
+2. NIA에서 자주 언급되는 성분
+3. confirmed 제품 연결이 많은 성분
+4. efficacy / safety / usage 등 핵심 claim topic이 비어 있는 성분
+
+원칙:
+
+- 성분당 논문 수 quota를 채우지 않는다. 동일 claim의 중복 논문을 여러 편 넣지 않고, 대표성이 충분한 1~3편을 우선한다.
+- CIR은 최신 final/amended report 중심으로 쓴다.
+- full paper 전체를 embedding하지 않는다.
+- PubMed는 abstract 기반 compact evidence, CIR은 relevant section/page 단위 chunk 원칙을 유지한다
+  ([COMPACT_EVIDENCE_COLLECTOR.md](COMPACT_EVIDENCE_COLLECTOR.md)).
+
+---
+
 ## 확정 안 된 것 (다음 단계 시작 전 결정 필요)
 
+- H.2의 source별 retrieval lane과 MFDS의 efficacy 검색 기본 제외 정책(Agent/Backend 합의 필요, 미반영)
 - 기존 `rag_chunk` 테이블을 확장할지, `evidence_chunk`를 새 테이블로 분리할지
 - CIR 이용약관 — 벌크 스크래핑 가능 여부, 저작권 조건
 - `evidence_level`과 기존 `RagConfidenceTier`를 통합할지 별도로 둘지(개념은 겹치지만 소스 구성이 다름)
