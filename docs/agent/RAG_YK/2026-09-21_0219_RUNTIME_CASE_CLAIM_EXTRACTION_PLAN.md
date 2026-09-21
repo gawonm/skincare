@@ -363,12 +363,23 @@ Agent 전체 테스트: 154 passed, 1 xfailed
 Ruff: passed
 ```
 
-`xfail`은 고민형 문장을 개발용 해석기가 `clarification`으로 반환했을 때 결정 규칙이
-`product_discovery`를 추가하면서 기존 `clarification`을 제거하지 않는 결함이다. 이 경우 정보
-확인 단계가 먼저 실행되어 Case RAG가 중단된다. 실제 OpenAI E2E에서는 해당 질의가
-`product_discovery`로 정상 분류됐지만, LLM 오분류를 방어하려면 `RagRoutePolicy`가 정규화 시
-상충하는 `clarification`을 제거해야 한다. 이번 점검에서는 운영 코드를 변경하지 않고 알려진
-실패로 고정했다.
+초기 `xfail`은 고민형 문장을 개발용 해석기가 `clarification`으로 반환했을 때 결정 규칙이
+`product_discovery`를 추가하면서 기존 `clarification`을 제거하지 않는 결함이었다. 이 경우 정보
+확인 단계가 먼저 실행되어 Case RAG가 중단됐다. 실제 OpenAI E2E에서는 해당 질의가
+`product_discovery`로 정상 분류됐지만 LLM 오분류 방어가 필요했다.
+
+## 10.2 고민형 상품 탐색 Intent 방어 보강 — 2026-09-21 13:44 KST
+
+`RagRoutePolicy`가 고민형 상품 탐색을 결정적으로 확정하면 상충하는 `clarification`과
+`evidence_qa`를 제거한 뒤 `product_discovery`만 남기도록 수정했다. 이에 따라 기존 `xfail`을
+정상 기대값으로 전환했다.
+
+```text
+대상 시나리오: product-concern-case-rag
+결과: 1 passed, 9 deselected
+```
+
+이번 수정에서는 요청에 따라 전체 테스트를 다시 실행하지 않았다.
 
 ## 11. 완료 조건
 
