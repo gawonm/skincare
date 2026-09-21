@@ -3,7 +3,7 @@
 `config.yaml`의 `database.url` 대상 DB(`app`)의 전체 테이블. 모델 정의는 `models/*.py`,
 공통 컬럼(`id`/`created_at`/`updated_at`)은 `core/database.py`의 `EntityBase`.
 
-작성 기준: 2026-09-20, 현재 Alembic head `9f4c2a7d8e61`. main의 Chat schema
+작성 기준: 2026-09-21, 현재 Alembic head `9f4c2a7d8e61`. main의 Chat schema
 `2063ce3feae3`와 NIA Case schema `a7d3c91e5f42`를 merge revision으로 합친 상태다.
 
 **2026-09-15 갱신(1차)** — `evidence_document`/`evidence_chunk` ERD·컬럼 설계 추가(Evidence RAG,
@@ -24,7 +24,7 @@
 섞지 않고 Case 전용 BGE-M3 1,024차원 벡터를 저장하며, 아래 설계대로 ORM과 migration을
 구현하고 실제 3,581건 적재까지 검증했다.
 
-**2026-09-20 상태 동기화 — Evidence 저장소는 구현·적재까지 완료됐다.** (당시 "models/migration 미작성,
+**2026-09-21 상태 동기화 — Evidence 저장소는 구현·확장 적재까지 완료됐다.** (당시 "models/migration 미작성,
 마이그레이션 전 제안 설계"라고 적었던 문구를 실제 상태로 바꿨다. 설계 결정 자체는 바꾸지 않았다.)
 
 - `models/evidence_document.py`, `models/evidence_chunk.py`(조인 테이블 `evidence_chunk_ingredient` 포함)가
@@ -32,10 +32,10 @@
   적용돼 있다. 아래 컬럼 표는 실제 스키마와 대조했다.
 - `evidence_chunk.embedding`은 `vector(1024)`, 임베딩 모델은 `BAAI/bge-m3`다.
 - MFDS는 legacy `evidence` 8,288건을 `evidence_document` 11건(관할별)과 `evidence_chunk` 8,288건,
-  `evidence_chunk_ingredient` 8,288건으로 **전량 적재**했다(재수집이 아니라 재투영). PubMed는 smoke 3건만
-  있고(`evidence_document` 3 / `evidence_chunk` 3 / 링크 3), CIR은 적재된 것이 없다.
-  합계는 `evidence_document` 14 / `evidence_chunk` 8,291 / `evidence_chunk_ingredient` 8,291이다.
-- `rag_chunk`에는 MFDS를 재적재하지 않았고(기준 dump `skincare_reference_2026-09-20_v2.dump`에서 0건), 신규 Evidence
+  `evidence_chunk_ingredient` 8,288건으로 **전량 적재**했다(재수집이 아니라 재투영). CIR은 10문서/56청크,
+  PubMed는 25문서/25청크다. 합계는 `evidence_document` 46 / `evidence_chunk` 8,369 /
+  `evidence_chunk_ingredient` 8,377이며, 복합 근거 청크 8개가 성분 2개와 연결된다.
+- `rag_chunk`에는 MFDS를 재적재하지 않았고(기준 dump `skincare_reference_2026-09-21_v4.dump`에서 0건), 신규 Evidence
   검색 저장소는 `evidence_chunk`다. `ingredient_knowledge_fact`는 공식 Evidence corpus/citation source가 아니다.
 - **저장·적재 완료와 runtime RAG 완료는 다르다.** 검색 어댑터·Agent 연결·citation 표시가 어디까지 구현됐는지는
   Backend/Agent 문서(`docs/backend/README.md`, `docs/agent/README.md`,
@@ -48,8 +48,8 @@
 결정 사항으로 분리됐고(단기: 프론트 `sessionStorage`, 장기: Redis 세션 — 둘 다 이 ERD 밖),
 합의되면 후속 갱신으로 다룬다. 사용자가 2026-09-19에 이 ERD를 승인했다(규칙 14).
 **`models`/migration은 2026-09-20 기준 작성·적용됐다** — `models/chat_room.py`, `chat_message.py`,
-`chat_turn_state.py`와 migration `2063ce3feae3`(PR #46). 기준 dump에는 세 테이블이 행 0건(schema only)으로
-들어 있다. [backend-to-data.md](../contracts/backend-to-data.md) 요청에 따라 data 파트가 작성했다. LangGraph
+`chat_turn_state.py`와 migration `2063ce3feae3`(PR #46). 기준 dump에는 `app_user`와 세 채팅 테이블이
+모두 행 0건(schema only)으로 들어 있다. [backend-to-data.md](../contracts/backend-to-data.md) 요청에 따라 data 파트가 작성했다. LangGraph
 체크포인터 저장소는 이 ERD 범위 밖이다(Agent가 이전 대화를 기억하는 근거는 `chat_room`의
 `SessionSnapshot`이며, 체크포인터 전용 테이블은 만들지 않는다).
 
@@ -521,9 +521,9 @@ erDiagram
 
 **2026-09-20 상태 동기화**: 이 확장안의 스키마는 이미 구현·적용돼 있다 — `models/product.py`에 두 컬럼과
 Enum(`ProductTypeNormalized` 27개 값, `ProductServiceCategory` 8개 값)이 있고, migration `2d1f4b6a8c90`
-(`add product taxonomy`)이 두 컬럼만 추가했으며 기준 dump(Alembic `2063ce3feae3`)에도 존재한다(둘 다
+(`add product taxonomy`)이 두 컬럼만 추가했으며 기준 dump(Alembic `9f4c2a7d8e61`)에도 존재한다(둘 다
 `varchar`, nullable). 새 테이블·FK·유니크·인덱스는 추가되지 않았고 `product`의 제약은 PK와
-`uq_product_source_product_id`뿐이다. **분류 값 백필도 완료됐다** — 기준 dump(`skincare_reference_2026-09-20_v2.dump`)의
+`uq_product_source_product_id`뿐이다. **분류 값 백필도 완료됐다** — 기준 dump(`skincare_reference_2026-09-21_v4.dump`)의
 `product` 2,262건 중 2,108건이 두 컬럼 모두 채워졌고 154건은 NULL이다(한쪽만 NULL인 행 0건, 유형↔서비스 그룹 매핑
 불일치 0건). 154건은 상품명과 원본 `category3`로 형태를 자동 확정할 근거가 부족해 **의도적으로 NULL로 유지**한 것이며
 오류가 아니다. 서비스 그룹 분포는 클렌저 549 / 크림·로션 461 / 에센스·세럼 355 / 기타 203 / 토너·패드 194 / 앰플 180 /
@@ -674,6 +674,9 @@ AI Hub Q-CoT-A의 한 사례 전체를 검색 단위 한 건으로 저장한다.
 - `ix_nia_case_document_embedding_hnsw` — HNSW, cosine, m=16, ef_construction=64
 - `ix_nia_case_document_retrieval_scope` — `(dataset_split, text_version, embedding_model)`
 - `ix_nia_case_document_case_id` — Case → Claim 논리 연결 조회
+
+기준 dump `skincare_reference_2026-09-21_v4.dump`에는 3,581건(training 3,177 / validation 404)이
+들어 있다. 모든 행의 embedding은 `BAAI/bge-m3` 1,024차원이며 NULL/차원 오류는 0건이다.
 
 ### claim_document — 2026-09-17 live 적용 완료
 

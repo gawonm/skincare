@@ -13,9 +13,10 @@
 > 최초 승인 당시(`text-embedding-3-small`/`vector(1536)`)에서 `BAAI/bge-m3`(local)/
 > `vector(1024)`로 변경 확정됐다 — 아래 설계는 이 최신 상태와 일치한다.
 >
-> **2026-09-20 갱신**: MFDS 전량 적재를 완료했다 — legacy `evidence` 8,288건 → `evidence_document` 11 /
-> `evidence_chunk` 8,288 / `evidence_chunk_ingredient` 8,288(PubMed smoke 3건 포함 합계 14 / 8,291 / 8,291,
-> 기준 dump `skincare_reference_2026-09-20.dump`). `rag_chunk`는 0건이며 MFDS를 재적재하지 않았다. 설계에
+> **2026-09-21 갱신**: MFDS 전량 적재(11문서/8,288청크), CIR 10문서/56청크, PubMed 25문서/25청크를
+> 합쳤다. 최종 합계는 `evidence_document` 46 / `evidence_chunk` 8,369 /
+> `evidence_chunk_ingredient` 8,377이며 기준 dump는 `skincare_reference_2026-09-21_v4.dump`다.
+> `rag_chunk`는 0건이며 MFDS를 재적재하지 않았다. 설계에
 > 있던 `ix_evidence_chunk_content_bm25`는 실제 DB에 만들어지지 않았다(`docs/erd/app.md` 참고). 저장·적재 완료와
 > runtime RAG(검색·Agent 연결·citation 표시) 완료는 별개이며, 후자는 Backend/Agent 문서를 따른다.
 
