@@ -712,16 +712,19 @@ target topics는 **수집 목표**일 뿐이다. usage/concentration/combination
 순서: ① 사람 결정(Tier A manual review + Salicylic/Ascorbic Acid) → ② 계열명·기전 용어 EXCLUDE →
 ③ base/보존/폴리머/계면활성·에몰리언트/pH 조절 범주는 EXCLUDE(NIA 언급이 있으면 DEFER) → ④ 향료 알레르겐 DEFER →
 ⑤ NIA 0건이면서 제품 5개 미만(long tail)은 DEFER → ⑥ NIA ≥170 / P1·P3 / 제품 ≥100인 active / smoke 표본은 QA_PRIORITY →
-⑦ 나머지 COLLECT_BASELINE. 제품 5개 기준(`MIN_PRODUCTS_FOR_BASELINE`)은 임의 값이라 확인이 필요하다.
+⑦ 나머지 COLLECT_BASELINE. botanical은 추가 gate(⑤-2)를 둔다: NIA 언급 · 기존 근거 · 제품 20개 이상 중 하나가 있어야 한다.
+`MIN_PRODUCTS_FOR_BASELINE=5`는 과학적 중요도 기준이 아니라 **NIA 0 + 제품 극소수 long tail을 DEFER하는 operational noise cutoff**이고,
+`BOTANICAL_MIN_PRODUCTS=20`은 provisional 값이다. 둘 다 지금은 튜닝하지 않으며 50개 QA 후 조정한다.
 
 | 결정 | 개수 |
 |---|---:|
-| COLLECT_BASELINE | 1,019 |
+| COLLECT_BASELINE | 628 |
 | QA_PRIORITY | 49 |
-| DEFER | 1,219 |
+| DEFER | 1,610 |
 | EXCLUDE_FROM_SCIENTIFIC_COLLECTION | 585 |
 
-수집 가능 후보(COLLECT+QA) 1,068개. 범주별로는 botanical/ferment 597, active/functional 387, peptide/protein 84가 대부분이고,
+수집 가능 후보(COLLECT+QA) **677개는 PROVISIONAL collection universe**이며 최종이 아니다(botanical gate 적용 전에는 1,068개였다).
+범주별로는 active/functional 387, botanical/ferment 206, peptide/protein 84가 대부분이고,
 polymer 163·surfactant/emollient 336·preservative 31·base 36·pH 13 등 약 580개는 자동 제외된다.
 **한계**: 범주는 이름 정규식이라 오분류가 있다(예: 잔여 "active"에 폼·왁스·염류·수(水)류가 섞임). 결과는 제안이며 QA로 교정한다.
 
@@ -757,10 +760,11 @@ CIR report = EvidenceDocument, 관련 section/page 원문 span = EvidenceChunk(p
   publication type(RCT/SR 우대, erratum·letter·case report 제외), human > in vitro > animal, 단일 성분 > 복합 제형,
   claim topic 키워드 관련성, 유사 논문 중복 제거, PMID/DOI 보존. 통과하지 못하면 `candidate`로 남겨 사람이 본다.
   LLM relevance filter는 필요하면 별도 제안으로만 남기고 실행하지 않는다.
-- **CIR 가용성 발굴 설계**: 기존 `CirReportSelector`(final/amended 우선, 성분별 최신 1건, group review 처리)와
-  `CirSectionChunker`를 재사용한다. **차단 요인**: robots.txt가 `/search/`를 막아 성분 → report 매핑을 자동으로 만들 수 없고
-  (COMPACT_EVIDENCE_COLLECTOR.md), 지금은 사람이 status 페이지 UUID·PDF를 입력한다. 2,872 전체 availability 확인은 이
-  입력 확보 방법(공식 목록 파일 등)이 정해져야 가능하다.
+- **CIR (결정)**: robots.txt가 `/search/`를 막으므로 우회·스크래핑하지 않고, **2,872 전체 자동 availability scan 대상에서 제외**한다.
+  **curated/manual report mapping registry**로 간다: 사람이 확인한 성분 → report(status 페이지 UUID, 제목, 상태, 발행일, PDF)를
+  기존 `CirReportCandidate` JSON(`--cir-reports-file`)으로 쌓고, 기존 `CirReportSelector`(final/amended 우선, 성분별 최신 1건,
+  group review)와 `CirSectionChunker`가 처리한다. 확인된 성분부터 점진적으로 추가하며 **PubMed baseline은 CIR registry 완성과
+  무관하게 진행**한다.
 
 ### [HUMAN QA]
 Tier A는 **수집 gate가 아니라 QA 우선순위**다. 순서: ① 기존 P1/P3 + Tier A 후보, ② NIA 높은 성분, ③ 제품 많은 active,
@@ -771,6 +775,42 @@ Niacinamide, Retinol, Salicylic Acid, Ascorbic Acid, 3-O-Ethyl Ascorbic Acid, So
 Centella Asiatica Extract, Madecassoside, Hyaluronic Acid, Sodium Hyaluronate, Hexapeptide-2, Collagen,
 Acetyl Hexapeptide-8, Curcuma Longa Root Extract, Tocopherol, Glycerin(base 대조), Melanin(기전 용어 대조), BHA(모호 용어 대조).
 각각 좋은 active / 파생형 / family / 모호 용어를 collector가 어떻게 처리하는지 본다.
+
+### [PROVISIONAL] 후속 진행 순서와 지금까지의 smoke 결과
+순서: ① smoke 10 PubMed candidate discovery → ② 50개 stratified QA → ③ eligibility 규칙 보정 → ④ 50개 smoke → ⑤ full-run 승인.
+embedding·DB write·1,068(현 677) 전체 실행은 하지 않았다.
+
+**① PubMed smoke 10 (읽기 전용 검색, 성분당 selected ≤3, 파일 출력만·DB/embedding 없음)**: 성분 25편 selected + 후보 82건.
+입력은 universe CSV에서 export한 `CollectionIngredient` JSON이다(`--export-ingredients-file`, 수동 목록 없음).
+
+| 성분 | selected | 관찰 |
+|---|---:|---|
+| Niacinamide | 3 | 복합 제형 2편이 선택됨(단일 성분 1편) |
+| Retinol | 3 | 1순위가 Hexapeptide-9 논문(Retinol은 비교 대조) → **직접 근거 아님** |
+| Salicylic Acid | 3 | 양호(RCT, 단일/복합 구분됨) |
+| Ascorbic Acid | 3 | 양호하나 비피부 논문(cystinosis) 포함 |
+| 3-O-Ethyl Ascorbic Acid | 3 | 전부 세포/proteomics(in vitro)인데 `human_study`로 분류됨 → **study_type 오분류** |
+| Centella Asiatica Extract | 3 | 경구 시험 포함 |
+| Sodium Hyaluronate | 3 | 경구·주사 논문 포함(국소 아님) |
+| Collagen | 3 | 전부 경구 collagen peptide 보충제 → 국소 근거 아님 |
+| Hexapeptide-2 | 0 | PubMed 결과 0건: 강제로 채우지 않고 0 허용(정책대로) |
+| BHA | 1 | butylated hydroxyanisole 내분비 논문 → **모호 용어가 다른 물질로 검색됨(negative control 확인)** |
+
+발견한 필터 gap(설계 반영 대상, 이번엔 코드 수정 안 함): (a) 투여 경로(경구·주사 vs 국소) 구분 없음 — 국소 맥락은 감점뿐이라 경구가 선택됨,
+(b) in vitro/세포 연구가 `human_study`로 분류됨(MeSH `Cells, Cultured`/`In Vitro Techniques` 미사용), (c) 제목에 성분이 비교 대조로만
+등장한 논문(직접 근거 아님) 구분 없음, (d) alias가 비어 있어(예: Niacinamide→Nicotinamide) family expansion 미적용, (e) 일부 논문
+claim_topics가 비어 있음. 이 gap은 필터 계약(직접성·경로·study design)에 반영해야 한다.
+
+**② 50개 stratified QA 표본** (`collection_universe_qa_sample.csv`, seed 고정): active 10 / botanical 10 / QA_PRIORITY 10 /
+DEFER 10 / EXCLUDE 10. 사람이 `reviewer_verdict`를 채운다. 예비 관찰(아직 규칙에 반영 안 함):
+- COLLECT active 10개 중 약 절반이 사실상 active가 아니다(Boron Nitride 충전제, Triethyl Citrate 용매, Butyloctyl Salicylate 에몰리언트,
+  Algin 증점제, Propyl Gallate 산화방지·보존). UV 필터(Bis-Ethylhexyloxyphenol Methoxyphenyl Triazine)나 Menadione 같은 안전성 가치가
+  있는 성분도 섞여 있어 `UV filter` 범주와 잔여 규칙 보강이 필요해 보인다.
+- COLLECT botanical 10개는 전부 NIA 0인 흔한 식물 추출물·캐리어 오일(팜유·포도씨유·옥수수 등)이다. 제품 20개 gate가 너무 느슨할 수 있다.
+  캐리어 오일은 emollient로 보내는 규칙이 필요해 보인다.
+- QA_PRIORITY 중 Chitin·Albumen Extract·Lonicera Caerulea Fruit Juice·Achyranthes 추출물은 NIA만 높고 제품 0인 템플릿 의심 항목이다.
+  QA 목적(사람이 보고 제외 판단)에는 맞다.
+- DEFER는 대체로 타당하다. EXCLUDE도 타당하나 Sodium Laureth Sulfate 같은 자극성 계면활성제는 안전성 전용 근거를 별도 판단할 여지가 있다.
 
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
