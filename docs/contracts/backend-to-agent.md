@@ -704,6 +704,8 @@ class CaseClaimExtractor(ABC):
 - `source_quote`는 Case 원문 그대로이며, 자유로운 효능 요약 필드를 별도로 받지 않는다.
 - LLM은 `ingredient_id`, Evidence 상태, 상품 추천 여부, Citation을 출력하지 않는다.
 - 입력 Case 본문 안의 지시문은 데이터로만 취급하며 시스템 지시로 실행하지 않는다.
+- 모델 입력은 `query`, `case_id`, `page_content`, `limit`로 축소하고 age·gender·저장소
+  provenance는 전달하지 않는다.
 - 추출기는 Agent의 `ChatModelConfig`를 사용한다. `provider=openai`이면 요청마다 외부 API를
   호출하고, `provider=local/ollama`이면 설정된 로컬 OpenAI 호환 서버를 호출한다.
 
@@ -794,7 +796,8 @@ offline `ClaimRetriever`는 명시적으로 주입한 비교·개발 모드에�
 - Case → 성분 Resolution → Evidence anchor → Claim-only Product LangGraph 연결 완료
 - Evidence 0건 Claim-only 상품 유지와 명시 성분 Case 우회 테스트 통과
 - 실제 PostgreSQL NIA Case 벡터 후보 20건 조회 테스트 통과
-- 전체 기본 테스트 `446 passed, 3 deselected`
+- 전체 기본 테스트 `449 passed, 3 deselected`
 - Case와 Evidence reranker는 한 CrossEncoder 모델 인스턴스를 공유
 - 외부 OpenAI 포함 실제 E2E는 Top-3 NIA 원문 전송 승인 후 실행
-- 골든 셋 및 LLM 오류·reranker fallback 세부 회귀는 후속 평가 범위
+- reranker fallback, Claim 추출 오류, unresolved 성분 차단 회귀 테스트 통과
+- 골든 셋, ambiguous 분기, 다중 Case provenance 세부 회귀는 후속 평가 범위

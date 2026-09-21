@@ -583,8 +583,10 @@ production 완료 건수는 계속 0건이다. 런타임 방식의 비용·지�
 - 일부만 매칭된 조합 Claim은 단일 성분 Evidence로 축소되지 않는다.
 - 명시 성분 질의는 Case 경로를 호출하지 않는다.
 - 실제 PostgreSQL에서 NIA Case 후보 20건 조회와 DTO 변환이 통과했다.
-- 전체 기본 테스트 결과: `446 passed, 3 deselected`.
+- reranker 실패는 벡터 Top-3로 fallback하며, Claim 추출 오류와 unresolved 성분은 하위 단계를
+  중단하는 회귀 테스트를 통과했다.
+- 전체 기본 테스트 결과: `449 passed, 3 deselected`.
 
 실제 OpenAI E2E는 Top-3 NIA 원문 외부 전송 승인이 없어 실행하지 않았다. 명시 승인 후
-`tests.agent.interactive_two_layer_rag_cli`로 확인한다. 남은 품질 작업은 골든 셋, LLM 오류·reranker
-fallback, ambiguous/unresolved 및 다중 Case provenance 회귀 테스트다.
+`tests.agent.interactive_two_layer_rag_cli`로 확인한다. 남은 품질 작업은 골든 셋, ambiguous 분기,
+다중 Case provenance 회귀 테스트다.

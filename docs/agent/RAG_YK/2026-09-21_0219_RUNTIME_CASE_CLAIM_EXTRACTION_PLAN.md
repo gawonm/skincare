@@ -275,9 +275,9 @@ Backend는 런타임 Claim을 생성하거나 검증하지 않는다. 기존 Cla
 11. LLM 오류·Case 없음·reranker fallback
 12. 실제 통합 DB Case → 런타임 Claim → Evidence → Product smoke
 
-현재 1, 2, 3, 5, 6, 9, 10의 결정적 테스트를 구현했다. 실제 DB Case 벡터 조회도 별도 통합
-테스트로 통과했다. 4, 7, 8의 Case provenance 세부 회귀, 11의 LLM 오류·reranker fallback,
-12의 외부 LLM 포함 E2E는 후속 테스트로 남아 있다.
+현재 1, 2, 3, 5, 6, 9, 10, 11과 unresolved 성분 차단의 결정적 테스트를 구현했다. 실제 DB
+Case 벡터 조회도 별도 통합 테스트로 통과했다. 4, ambiguous 분기, 8의 다중 Case provenance
+세부 회귀, 12의 외부 LLM 포함 E2E는 후속 테스트로 남아 있다.
 
 ## 8. Offline annotation 경로 처리
 
@@ -316,6 +316,8 @@ Backend는 런타임 Claim을 생성하거나 검증하지 않는다. 기존 Cla
 - Case 검색: 기존 `nia_case_document`에서 BGE-M3 1,024차원 cosine 후보 20건 조회
 - Case rerank: `BAAI/bge-reranker-v2-m3`로 Top-3 선정
 - 런타임 추출: `case_id`, raw 성분명, exact quote, 단일/조합 유형만 구조화 출력
+- 모델 입력 최소화: `query`, `case_id`, `page_content`, `limit`만 전송하고 메타데이터·원본 파일
+  provenance는 제외
 - 규칙 검증: Top-3 Case ID, exact quote, quote 내 성분명, 중복 차단
 - 성분 연결: 기존 `IngredientRepository`와 alias fallback 사용
 - 조합 방어: 모든 성분이 매칭된 조합만 `MULTI + ALL` Evidence anchor로 변환
@@ -327,8 +329,8 @@ Backend는 런타임 Claim을 생성하거나 검증하지 않는다. 기존 Cla
 검증 결과:
 
 ```text
-전체 기본 테스트: 446 passed, 3 deselected
-Agent + Case 검색 단위 테스트: 146 passed
+전체 기본 테스트: 449 passed, 3 deselected
+Agent + Case 검색 단위 테스트: 149 passed
 실제 PostgreSQL NIA Case 벡터 검색: 1 passed
 ```
 
