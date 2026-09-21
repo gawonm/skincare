@@ -33,6 +33,16 @@ class AgentProductTaxonomyRow(BaseModel):
     product_count: int = Field(ge=1)
 
 
+class AgentProductSearchRequest(BaseModel):
+    """Agent 상품 필터를 SQL의 정렬·제한 전에 적용하기 위한 조회 입력."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ingredient_ids: list[UUID] = Field(min_length=1)
+    service_category: str | None = Field(default=None, min_length=1)
+    limit: int = Field(ge=1)
+
+
 class AgentProductReadRepository:
     """확정된 전성분 연결만 사용해 상품을 조회하고 product ID로 중복을 제거한다."""
 
@@ -51,6 +61,10 @@ class AgentProductReadRepository:
              AND matched_token.match_acceptance = :confirmed_acceptance
              AND matched_token.ingredient_id IS NOT NULL
             WHERE matched_token.ingredient_id = ANY(:ingredient_ids)
+              AND (
+                  CAST(:service_category AS text) IS NULL
+                  OR product.service_category::text = CAST(:service_category AS text)
+              )
             GROUP BY product.id
             ORDER BY matched_ingredient_count DESC, product.id
             LIMIT :limit
@@ -126,18 +140,17 @@ class AgentProductReadRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def search_by_ingredients(
-        self, ingredient_ids: list[UUID], limit: int
-    ) -> list[AgentProductRow]:
+    async def search(self, request: AgentProductSearchRequest) -> list[AgentProductRow]:
         statement = text(self._SEARCH_SQL).bindparams(
             bindparam("ingredient_ids", type_=ARRAY(Uuid(as_uuid=True)))
         )
         result = await self._session.execute(
             statement,
             {
-                "ingredient_ids": ingredient_ids,
+                "ingredient_ids": request.ingredient_ids,
+                "service_category": request.service_category,
                 "confirmed_acceptance": self.CONFIRMED_ACCEPTANCE,
-                "limit": limit,
+                "limit": request.limit,
             },
         )
         return [AgentProductRow.model_validate(row) for row in result.mappings().all()]

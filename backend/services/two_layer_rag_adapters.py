@@ -65,6 +65,7 @@ from backend.repositories.agent_ingredient_repository import (
 from backend.repositories.agent_product_repository import (
     AgentProductReadRepository,
     AgentProductRow,
+    AgentProductSearchRequest,
     AgentProductTaxonomyRow,
 )
 from backend.repositories.claim_search_repository import (
@@ -554,9 +555,16 @@ class TwoLayerProductRepository(ProductRepository):
             )
         try:
             async with self._session_factory() as session:
-                rows = await AgentProductReadRepository(session).search_by_ingredients(
-                    ingredient_ids,
-                    request.limit,
+                rows = await AgentProductReadRepository(session).search(
+                    AgentProductSearchRequest(
+                        ingredient_ids=ingredient_ids,
+                        service_category=(
+                            request.filters.category.code
+                            if request.filters.category is not None
+                            else None
+                        ),
+                        limit=request.limit,
+                    )
                 )
             products = [self._to_record(row) for row in rows]
         except (SQLAlchemyError, RuntimeError, ValueError, ValidationError) as error:
