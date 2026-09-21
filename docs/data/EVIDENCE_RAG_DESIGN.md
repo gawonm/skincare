@@ -594,6 +594,48 @@ corpus를 무작정 늘리지 않고 coverage gap을 메운다. 우선순위:
 
 ---
 
+## Audit result: scientific evidence coverage (2026-09-21)
+
+`data/scripts/evidence_coverage_audit.py`(읽기 전용)로 산출. 이 audit은 **수집 우선순위 후보표까지**이며
+신규 수집·API 호출·embedding·DB write는 하지 않았다. **다음 단계는 "수집"이고 아직 수행하지 않았다.**
+
+- **기준**: canonical v4 (`skincare_reference_2026-09-21_v4.dump` 복원 DB, revision `9f4c2a7d8e61`) +
+  기존 NIA relevance 산출물 `nia_ingredient_relevance_summary.csv`(102개 성분, 재계산 안 함).
+- **MFDS 제외**: 규제/사용제한 근거라 효능·안전성 scientific evidence가 아니다(H절). 집계 SQL이
+  `cir`/`pubmed_abstract`만 조회하므로 MFDS는 섞일 수 없다.
+- **coverage 정의**: 성분에 연결된(`evidence_chunk_ingredient`) DISTINCT 문서 수. topic은 문서에
+  **저장된 `claim_topics`만** 사용(추론 안 함). 과학 근거 문서에는 `efficacy`/`precaution`(=safety)만
+  실제 저장돼 있어 gap 판정은 이 둘만 한다. usage/concentration/combination은 전 성분 0건이라
+  "없음"이 아니라 "산출 불가"이며 gap으로 해석하지 않는다. 저장 topic 중 enum 밖 값
+  (`pigmentation`/`sebum_control`/`barrier`, PubMed 3건)은 gap 계산에 쓰지 않았다.
+- **교차**: NIA는 `case_count`(=nia_case_count)/`answer_case_count`/`target_concern_unique_count`,
+  product는 `product_ingredient.match_acceptance='confirmed'` 기준 DISTINCT product 수
+  (`ProductBackedIngredientReader` 재사용). needs_review/unmatched는 제외. 대상 성분 = confirmed 제품 연결
+  ∪ NIA 언급 ∪ 근거 연결 = 2,872개(IngredientMaster 전체가 아님).
+- **status**: `NO_SCIENTIFIC_EVIDENCE`(CIR 0·PubMed 0) / `SINGLE_SOURCE_ONLY`(한쪽만) /
+  `HAS_SCIENTIFIC_EVIDENCE`(둘 다).
+- **priority rule**(점수식 없음): NIA 높음 = `nia_case_count >= 170`(NIA 성분 상위 25%),
+  제품 높음 = `confirmed_product_count >= 100`. P1 = 근거 0 ∧ NIA 높음 ∧ 제품 ≥1, P2 = 근거 0 ∧ NIA 높음 ∧
+  제품 0, P3 = 근거 있으나 efficacy/safety 공백 ∧ (NIA 높음 ∨ 제품 높음), 나머지 P4.
+  정렬: tier → nia_case_count↓ → confirmed_product_count↓ → scientific_document_count↑.
+  두 임계값은 임의 기준이라 팀 확인이 필요하다.
+- **결과**: 근거 0건 2,858 / 단일 source 8 / 둘 다 6. P1 12, P2 15, P3 5.
+  - P1(근거 0·NIA 높음·제품 연결): Mineral Salts, Melanin, Hexapeptide-2, Momordica Charantia Fruit
+    Extract, Sulfur, Collagen(제품 67), BHA, Aloe Barbadensis Leaf Juice Powder, Carapa Guianensis Seed
+    Oil, Elastin, Arctium Lappa Root Extract, 3-O-Ethyl Ascorbic Acid(제품 110).
+  - P2(제품 연결 없음): Aloesin, Tyrosinase, Sodium Thiosulfate, Anthocyanins 외 11개.
+  - P3(efficacy 공백): Centella Asiatica Extract, Squalane, Sodium Hyaluronate, Tocopherol, Beta-Glucan.
+- **해석 주의**: (1) NIA 언급이 1,000건 이상인 Melanin·Tyrosinase·Sulfur 등은 템플릿성 문구일 수 있고
+  (`nia_product_backed_relevance.HIGH_NIA_CASE_MIN`), 제품 1~4개뿐이라 Tier A 자동 후보가 아니라 사람 검토
+  대상이다. (2) 이미 근거가 있는 Niacinamide(CIR 1·PubMed 6), Retinol(NIA 167로 임계 바로 아래)은 P4다.
+  (3) P3의 Sodium Hyaluronate·Tocopherol은 NIA 0이고 제품 수만으로 올라온 기본 성분이라 Notion의
+  "단순 보조성분" 구분이 필요하다. (4) 근거 0·NIA 낮음·제품 ≥100인 성분 133개는 P4로 남긴다(글리세린 등).
+- 산출물(`data/outputs/evidence_coverage/`, `/data/*` gitignore라 커밋되지 않으며 스크립트로 재생성):
+  `ingredient_scientific_evidence_coverage.csv`, `evidence_collection_priority.csv`,
+  `ingredient_topic_source_coverage.csv`(ingredient × topic × source).
+
+---
+
 ## 확정 안 된 것 (다음 단계 시작 전 결정 필요)
 
 - H.2의 source별 retrieval lane과 MFDS의 efficacy 검색 기본 제외 정책(Agent/Backend 합의 필요, 미반영)
