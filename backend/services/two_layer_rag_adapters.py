@@ -9,6 +9,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agent.ports import IngredientRepository, ProductRepository
+from agent.rag.case_schemas import (
+    CaseDatasetSplit,
+    CaseMetadata,
+    CaseProvenance,
+    CaseSearchHit,
+    CaseSearchRequest,
+    CaseSearchResult,
+)
 from agent.rag.claim_schemas import (
     ClaimHit,
     ClaimIngestionDecision,
@@ -19,7 +27,7 @@ from agent.rag.claim_schemas import (
     ClaimStatementType,
     ClaimSupportStatus,
 )
-from agent.rag.ports import ClaimRetriever, HybridSearchBackend, TextEmbedder
+from agent.rag.ports import CaseRetriever, ClaimRetriever, HybridSearchBackend, TextEmbedder
 from agent.rag.schemas import (
     BGE_M3_EMBEDDING_DIMENSIONS,
     EmbeddingRequest,
@@ -68,6 +76,81 @@ from backend.repositories.evidence_search_repository import (
     EvidenceTextSearchRequest,
     EvidenceVectorSearchRequest,
 )
+from backend.repositories.nia_case_document_repository import (
+    NiaCaseDocumentRepository,
+    NiaCaseSearchRow,
+    NiaCaseVectorSearchRequest,
+)
+
+
+class BackendNiaCaseRetriever(CaseRetriever):
+    """저장소의 NIA Case 벡터 검색 결과를 Agent 계약으로 변환한다."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def search(self, request: CaseSearchRequest) -> CaseSearchResult:
+        unsupported = self._unsupported_reason(request)
+        if unsupported is not None:
+            return CaseSearchResult(
+                status=LookupStatus.UNSUPPORTED,
+                error_message=unsupported,
+            )
+        try:
+            async with self._session_factory() as session:
+                rows = await NiaCaseDocumentRepository(session).search_by_vector(
+                    NiaCaseVectorSearchRequest(
+                        query_vector=request.query_embedding.values,
+                        text_version=request.text_version,
+                        embedding_model=request.embedding_model,
+                        limit=request.candidate_limit,
+                    )
+                )
+            hits = [self._to_hit(row) for row in rows]
+        except (SQLAlchemyError, RuntimeError, ValueError, ValidationError) as error:
+            return CaseSearchResult(
+                status=LookupStatus.ERROR,
+                error_message=f"NIA Case 검색 또는 DTO 변환에 실패했습니다: {error}",
+            )
+        if not hits:
+            return CaseSearchResult(status=LookupStatus.NO_RESULTS)
+        return CaseSearchResult(status=LookupStatus.SUCCESS, hits=hits)
+
+    def _unsupported_reason(self, request: CaseSearchRequest) -> str | None:
+        if request.embedding_model != LocalEmbeddingModel.BGE_M3.value:
+            return (
+                "NIA Case 저장 벡터와 질의 임베딩 모델이 다릅니다: "
+                f"expected={LocalEmbeddingModel.BGE_M3.value}, "
+                f"actual={request.embedding_model}"
+            )
+        if len(request.query_embedding.values) != BGE_M3_EMBEDDING_DIMENSIONS:
+            return (
+                "NIA Case 저장 벡터와 질의 임베딩 차원이 다릅니다: "
+                f"expected={BGE_M3_EMBEDDING_DIMENSIONS}, "
+                f"actual={len(request.query_embedding.values)}"
+            )
+        return None
+
+    def _to_hit(self, row: NiaCaseSearchRow) -> CaseSearchHit:
+        return CaseSearchHit(
+            case_id=row.case_id,
+            page_content=row.page_content,
+            text_version=row.text_version,
+            dataset_split=CaseDatasetSplit(row.dataset_split.value),
+            metadata=CaseMetadata(
+                target_concern=row.target_concern,
+                gender=row.gender,
+                age=row.age,
+                skin_type=row.skin_type,
+                skin_concerns=row.skin_concerns,
+            ),
+            provenance=CaseProvenance(
+                archive_name=row.source_archive_name,
+                member_name=row.source_member_name,
+                line_number=row.source_line_number,
+            ),
+            vector_similarity=row.vector_similarity,
+        )
 
 
 class TwoLayerClaimRetriever(ClaimRetriever):

@@ -52,6 +52,36 @@ class NiaCaseDocumentUpsert(NiaCaseRepositoryModel):
     embedding_model: str = Field(min_length=1)
 
 
+class NiaCaseVectorSearchRequest(NiaCaseRepositoryModel):
+    """NIA Case 벡터 검색 입력."""
+
+    query_vector: list[FiniteFloat] = Field(
+        min_length=NIA_CASE_EMBEDDING_DIMENSION,
+        max_length=NIA_CASE_EMBEDDING_DIMENSION,
+    )
+    text_version: str = Field(min_length=1)
+    embedding_model: str = Field(min_length=1)
+    limit: int = Field(ge=3)
+
+
+class NiaCaseSearchRow(NiaCaseRepositoryModel):
+    """NIA Case 검색 SQL 결과. Agent 의미 변환은 service가 담당한다."""
+
+    case_id: str = Field(min_length=1)
+    dataset_split: NiaCaseDatasetSplit
+    source_archive_name: str = Field(min_length=1)
+    source_member_name: str | None = Field(default=None, min_length=1)
+    source_line_number: int = Field(ge=1)
+    page_content: str = Field(min_length=1)
+    text_version: str = Field(min_length=1)
+    target_concern: str = Field(min_length=1)
+    gender: str = Field(min_length=1)
+    age: int = Field(ge=10, le=39)
+    skin_type: str = Field(min_length=1)
+    skin_concerns: list[str]
+    vector_similarity: FiniteFloat
+
+
 class NiaCaseDocumentRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -101,6 +131,45 @@ class NiaCaseDocumentRepository:
         )
         await self._session.execute(statement)
         return len(records)
+
+    async def search_by_vector(
+        self,
+        request: NiaCaseVectorSearchRequest,
+    ) -> list[NiaCaseSearchRow]:
+        # 저장 벡터와 다른 차원의 질의는 DB 연산 전에 원인을 명확하게 드러낸다.
+        if len(request.query_vector) != NIA_CASE_EMBEDDING_DIMENSION:
+            raise ValueError(
+                "NIA Case 질의 벡터 차원이 저장 벡터와 다릅니다: "
+                f"expected={NIA_CASE_EMBEDDING_DIMENSION}, "
+                f"actual={len(request.query_vector)}"
+            )
+
+        cosine_distance = NiaCaseDocument.embedding.cosine_distance(request.query_vector)
+        statement = (
+            select(
+                NiaCaseDocument.case_id,
+                NiaCaseDocument.dataset_split,
+                NiaCaseDocument.source_archive_name,
+                NiaCaseDocument.source_member_name,
+                NiaCaseDocument.source_line_number,
+                NiaCaseDocument.page_content,
+                NiaCaseDocument.text_version,
+                NiaCaseDocument.target_concern,
+                NiaCaseDocument.gender,
+                NiaCaseDocument.age,
+                NiaCaseDocument.skin_type,
+                NiaCaseDocument.skin_concerns,
+                (1 - cosine_distance).label("vector_similarity"),
+            )
+            .where(
+                NiaCaseDocument.text_version == request.text_version,
+                NiaCaseDocument.embedding_model == request.embedding_model,
+            )
+            .order_by(cosine_distance, NiaCaseDocument.case_id)
+            .limit(request.limit)
+        )
+        result = await self._session.execute(statement)
+        return [NiaCaseSearchRow.model_validate(row) for row in result.mappings().all()]
 
     def _to_values(self, record: NiaCaseDocumentUpsert) -> dict[str, Any]:
         return {
