@@ -44,13 +44,39 @@ _TERMINAL_SECTION_KEYWORD = "REFERENCES"
 
 _HEADING_PATTERN = re.compile(r"[A-Z][A-Z ,&/\-]{3,49}")
 _NON_HEADING_PREFIXES = ("TABLE", "FIGURE")
+# 2009년 이후 서식은 heading 이 대문자가 아니라 Title Case 다(실측: Discussion, Conclusion,
+# Clinical Assessment of Safety). 표 셀·문장과 구분이 안 되므로 임의의 Title Case 줄이 아니라
+# 아래 알려진 heading 과 정확히 일치하는 줄만 인정한다. 단수 "Reference"는 표 라벨로도 쓰여 제외한다.
+_TITLE_CASE_HEADINGS = frozenset(
+    {
+        "introduction",
+        "summary",
+        "discussion",
+        "conclusion",
+        "conclusions",
+        "references",
+        "clinical studies",
+        "clinical assessment of safety",
+        "safety assessment",
+    }
+)
 _DIGIT_PATTERN = re.compile(r"\d+")
+# 최신 서식은 Conclusion 뒤에 표를 몰아 붙이고 캡션이 "Table 1. ..." 형태다. 옛 서식의 본문 중간
+# 표 캡션("TABLE 2")은 마침표가 없어 걸리지 않는다. 표 이후는 검색 대상이 아니라 본문을 끝낸다.
+_TABLE_CAPTION_PATTERN = re.compile(r"(?:Table|TABLE)\s+\d+\.\s|TABLES$")
+_END_OF_BODY_SECTION = "TABLES"
+# References heading 이 컬럼 섞임으로 감지되지 않는 경우(Panthenol 2022, Ceramides 2020)를 위한 보조 규칙:
+# "12. Smith AB ..." 형태의 번호 인용이 한 페이지에 이만큼 있으면 인용 목록 페이지로 본다.
+_NUMBERED_CITATION_PATTERN = re.compile(r"\d{1,3}\.\s+[A-Z]")
+_REFERENCE_PAGE_MIN_CITATIONS = 5
+_TRAILING_CITATION_MIN_LINES = 2
 _RUNNING_HEADER_MIN_PAGES = 3
 _RUNNING_HEADER_MAX_LENGTH = 100
 
 # pdfplumber 기본값(3)은 이 보고서에서 단어 사이 공백을 잃는다(실측). 1 이 공백을 복원한다.
 _WORD_X_TOLERANCE = 1
-_TWO_COLUMN_MAX_CROSSING_RATIO = 0.02
+# 실측: 2단 페이지는 0~2.5%, 단일 컬럼 본문은 4% 이상이라 그 사이에서 자른다
+_TWO_COLUMN_MAX_CROSSING_RATIO = 0.03
 
 # 한 (page, section) 조각이 이보다 길 때만 문단 경계에서 나눈다. bge-m3 입력 한도(8192 토큰)
 # 안에 넉넉히 들어오는 크기다.
@@ -111,21 +137,29 @@ class CirSectionChunker:
         detected: list[str] = []
         current: str | None = None
         for page_number, text in enumerate(page_texts, start=1):
+            if current is not None and self._is_reference_page(text):
+                return segments, detected
             buffer: list[str] = []
             for raw_line in text.splitlines():
                 line = raw_line.strip()
                 if not line or self._normalize_line(line) in running_headers:
+                    continue
+                if _TABLE_CAPTION_PATTERN.match(line) and current is not None:
+                    self._flush(segments, page_number, current, buffer)
+                    buffer = []
+                    current = _END_OF_BODY_SECTION
                     continue
                 if self._is_heading(line):
                     self._flush(segments, page_number, current, buffer)
                     buffer = []
                     current = line
                     detected.append(line)
+                    # References 이후는 인용 목록이다. 페이지 끝까지 기다리지 않고 바로 끝낸다
+                    if _TERMINAL_SECTION_KEYWORD in line.upper():
+                        return segments, detected
                     continue
                 buffer.append(line)
             self._flush(segments, page_number, current, buffer)
-            if current is not None and _TERMINAL_SECTION_KEYWORD in current:
-                break
         return segments, detected
 
     def _flush(
@@ -135,14 +169,32 @@ class CirSectionChunker:
         section: str | None,
         buffer: list[str],
     ) -> None:
+        # heading 이 컬럼 섞임으로 뒤로 밀리면 인용 목록이 본문 조각 끝에 붙는다(Panthenol 2022).
+        # 번호 인용이 2줄 이상이면 첫 인용 줄부터 잘라낸다
+        citation_indexes = [
+            index for index, line in enumerate(buffer) if _NUMBERED_CITATION_PATTERN.match(line)
+        ]
+        if len(citation_indexes) >= _TRAILING_CITATION_MIN_LINES:
+            buffer = buffer[: citation_indexes[0]]
         if buffer:
             segments.append((page, section, "\n".join(buffer)))
 
+    def _is_reference_page(self, text: str) -> bool:
+        lines = [line.strip() for line in text.splitlines()]
+        # heading 이 있는 페이지는 heading 규칙이 경계를 정하므로(Conclusion 뒤 References) 건드리지 않는다
+        if any(self._is_heading(line) for line in lines):
+            return False
+        citations = sum(1 for line in lines if _NUMBERED_CITATION_PATTERN.match(line))
+        return citations >= _REFERENCE_PAGE_MIN_CITATIONS
+
     def _is_heading(self, line: str) -> bool:
+        if line.lower() in _TITLE_CASE_HEADINGS:
+            return True
         return bool(_HEADING_PATTERN.fullmatch(line)) and not line.startswith(_NON_HEADING_PREFIXES)
 
     def _is_target(self, section: str) -> bool:
-        return any(keyword in section for keyword in _TARGET_SECTION_KEYWORDS)
+        upper = section.upper()
+        return any(keyword in upper for keyword in _TARGET_SECTION_KEYWORDS)
 
     def _split_long(self, text: str) -> list[str]:
         if len(text) <= MAX_CHUNK_CHARS:

@@ -209,6 +209,34 @@ class TestChunker:
         assert all(c.content.endswith(".") for c in result.chunks)
         assert all(len(c.content) < MAX_CHUNK_CHARS + len(sentence) + 1 for c in result.chunks)
 
+    def test_title_case_headings_and_references_cutoff(self) -> None:
+        # 2009년 이후 서식: heading 이 Title Case. References 이후는 chunk 에 섞이면 안 된다
+        pages = [
+            "Summary\nsummary text",
+            "Clinical Assessment of Safety\nclinical text\nDiscussion\ndiscussion text",
+            "Conclusion\nconclusion text\nReferences\n1. Smith 2001 citation",
+            "2. Jones 2002 more citations",
+        ]
+        result = _chunk(pages)
+        assert [(c.page, c.section) for c in result.chunks] == [
+            (2, "Clinical Assessment of Safety"),
+            (2, "Discussion"),
+            (3, "Conclusion"),
+        ]
+        assert not any("citation" in c.content for c in result.chunks)
+
+    def test_singular_reference_label_is_not_a_heading(self) -> None:
+        result = _chunk(["Conclusion\nReference\nstill conclusion body"])
+        assert "Reference" in result.chunks[0].content
+
+    def test_table_caption_ends_body_and_numbered_citation_page_is_dropped(self) -> None:
+        # 최신 서식: Conclusion 뒤에 "Table 1." 표가 붙는다. References heading 이 없어도
+        # 번호 인용이 빽빽한 페이지는 인용 목록으로 보고 제외한다
+        citations = "\n".join(f"{n}. Author AB. Title {n}." for n in range(1, 8))
+        pages = ["Conclusion\nsafe.\nTABLES\nTable 1. Definitions\nrow", citations]
+        result = _chunk(pages)
+        assert [c.content for c in result.chunks] == ["safe."]
+
     def test_no_headings_yields_warning_and_no_chunks(self) -> None:
         result = _chunk(["plain paragraph without headings.", "another page."])
         assert result.chunks == []
