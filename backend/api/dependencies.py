@@ -11,12 +11,19 @@ from fastapi import Depends, HTTPException, Request, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent.service import ChatService
 from backend.repositories.session import SessionRepository
 from backend.repositories.user import UserRepository
 from backend.services.auth import AuthService
+from backend.services.chat_room import ChatRoomService
+from backend.services.chat_turn import ChatTurnService
 from backend.services.security import PasswordHasher
 from core.config import settings
 from models import User
+
+# lifespan이 Agent `ChatService`를 `app.state`에 올려 둘 때 쓰는 이름. 엔드포인트와 조립 코드가
+# 같은 문자열을 각자 적다가 어긋나지 않게 한곳에 둔다.
+AGENT_CHAT_SERVICE_STATE_NAME = "agent_chat_service"
 
 # argon2 파라미터만 들고 있어 상태가 없다. 요청마다 새로 만들 이유가 없어 한 번만 만든다.
 _password_hasher = PasswordHasher()
@@ -77,3 +84,26 @@ async def get_current_user(request: Request, auth_service: AuthServiceDep) -> Us
 
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
+
+def get_agent_chat_service(request: Request) -> ChatService:
+    """앱 시작 때 조립된 Agent `ChatService`. 아직 조립되지 않았으면 503을 던진다."""
+    service = getattr(request.app.state, AGENT_CHAT_SERVICE_STATE_NAME, None)
+    if service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI 채팅이 아직 준비되지 않았습니다.",
+        )
+    return service
+
+
+AgentChatServiceDep = Annotated[ChatService, Depends(get_agent_chat_service)]
+
+
+def get_chat_turn_service(request: Request, agent: AgentChatServiceDep) -> ChatTurnService:
+    """방 준비 서비스와 Agent를 묶어 채팅 한 턴을 처리하는 서비스를 만든다."""
+    database = request.app.state.database
+    return ChatTurnService(rooms=ChatRoomService(database.session_factory), agent=agent)
+
+
+ChatTurnServiceDep = Annotated[ChatTurnService, Depends(get_chat_turn_service)]
