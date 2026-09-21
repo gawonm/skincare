@@ -26,6 +26,137 @@ export enum ChatRole {
 }
 
 /**
+ * `ChatTurnResponse.status` 미러(`agent/schemas.py` 의 `ChatStatus`).
+ * 훅이 쓰는 화면 상태(`ChatStatus`)와 이름이 겹치지 않게 `ChatTurnStatus` 로 둔다.
+ */
+export enum ChatTurnStatus {
+  Completed = "completed",
+  NeedsInput = "needs_input",
+  Partial = "partial",
+  Error = "error",
+}
+
+/**
+ * `ChatTurnResponse.error_code` 미러(`agent/schemas.py` 의 `ErrorCode`).
+ * 의미는 `docs/contracts/backend-to-agent.md` 6절을 따른다.
+ */
+export enum ChatErrorCode {
+  RoomNotFound = "room_not_found",
+  RoomForbidden = "room_forbidden",
+  RequestConflict = "request_conflict",
+  RequestInProgress = "request_in_progress",
+  GraphExecutionFailed = "graph_execution_failed",
+  ResponseSaveFailed = "response_save_failed",
+  ExecutionLimitReached = "execution_limit_reached",
+  ToolFailed = "tool_failed",
+}
+
+/** `POST /chat` 이 쓰는 HTTP 상태코드(계약서 "실패했을 때"). */
+export enum ChatHttpStatus {
+  Unauthorized = 401,
+  UnprocessableEntity = 422,
+  ServiceUnavailable = 503,
+}
+
+/** `agent/schemas.py` 의 `Intent` 미러. */
+export enum ChatIntent {
+  ProductDiscovery = "product_discovery",
+  RoutinePlanning = "routine_planning",
+  EvidenceQa = "evidence_qa",
+  GeneralChat = "general_chat",
+  OutOfScope = "out_of_scope",
+  Clarification = "clarification",
+  RoutineSave = "routine_save",
+}
+
+/** `agent/schemas.py` 의 `UnresolvedKind` 미러. */
+export enum UnresolvedKind {
+  MissingInformation = "missing_information",
+  UnsupportedCondition = "unsupported_condition",
+  NoEvidence = "no_evidence",
+  ToolFailure = "tool_failure",
+  Conflict = "conflict",
+}
+
+// ---------------------------------------------------------------------------
+// artifacts / citations 안쪽 값. 원본은 `agent/rag/schemas.py` 이고 여기서는 미러링만 한다.
+// ---------------------------------------------------------------------------
+
+export enum EvidenceSourceType {
+  Unknown = "unknown",
+  Demo = "demo",
+  IngredientKnowledge = "ingredient_knowledge",
+  MfdsRestrictedIngredient = "mfds_restricted_ingredient",
+  Cir = "cir",
+  Paper = "paper",
+  Hetionet = "hetionet",
+}
+
+export enum EvidenceTextKind {
+  Excerpt = "excerpt",
+  Summary = "summary",
+}
+
+export enum EvidenceScope {
+  Ingredient = "ingredient",
+  Product = "product",
+  Pair = "pair",
+  Association = "association",
+}
+
+export enum EvidenceReviewStatus {
+  Verified = "verified",
+  Unreviewed = "unreviewed",
+  Demo = "demo",
+}
+
+export enum RegulatoryConfidence {
+  Verified = "verified",
+  Unverified = "unverified",
+}
+
+export enum RegulateType {
+  Prohibited = "prohibited",
+  Limited = "limited",
+}
+
+export enum ApplicabilityStatus {
+  Applicable = "applicable",
+  Limited = "limited",
+  NotApplicable = "not_applicable",
+  Unknown = "unknown",
+}
+
+export enum UnverifiableReason {
+  NoEvidenceFound = "no_evidence_found",
+  UnreviewedEvidence = "unreviewed_evidence",
+  NotRelevantToQuestion = "not_relevant_to_question",
+  MissingCombinationEvidence = "missing_combination_evidence",
+  CitationValidationFailed = "citation_validation_failed",
+}
+
+export enum ConstraintSource {
+  ProductDirections = "product_directions",
+  User = "user",
+  ServicePolicy = "service_policy",
+}
+
+export enum Weekday {
+  Monday = "monday",
+  Tuesday = "tuesday",
+  Wednesday = "wednesday",
+  Thursday = "thursday",
+  Friday = "friday",
+  Saturday = "saturday",
+  Sunday = "sunday",
+}
+
+export enum DayPeriod {
+  Morning = "morning",
+  Evening = "evening",
+}
+
+/**
  * 계약서 "출력 — SSE 이벤트"의 event 이름.
  * 각 event 의 data 형태는 아직 미정이라 `schemas/chat.ts` 에서 초안 형태로만 미러링한다.
  */
