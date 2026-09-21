@@ -25,7 +25,7 @@ interface ChatComposerProps {
 export function ChatComposer({ status, hasMessages, onSend, onStop }: ChatComposerProps) {
   const [value, setValue] = useState("");
 
-  const streaming = status === ChatStatus.Streaming;
+  const streaming = status === ChatStatus.Sending;
   // 대화 시작 전이면서 응답 중도 아닐 때만 알약형(시안 04A).
   const pill = !hasMessages && !streaming;
   const isEmpty = value.trim().length === 0;
