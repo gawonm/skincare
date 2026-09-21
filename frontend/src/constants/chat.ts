@@ -211,8 +211,7 @@ export const CHAT_EMPTY_STATE = {
 export enum NavTabKey {
   Home = "home",
   Chat = "chat",
-  Schedule = "schedule",
-  Profile = "profile",
+  My = "my",
 }
 
 export interface NavTabItem {
@@ -222,10 +221,18 @@ export interface NavTabItem {
   enabled: boolean;
 }
 
-/** 하단 탭 바 구성. 시안 순서(홈 · AI 채팅 · 스케줄 · 프로필) 그대로. */
+/** 하단 탭 바 구성. 시안(109:39 등) 순서 그대로 홈 · AI 채팅 · MY. */
 export const NAV_TABS: NavTabItem[] = [
   { key: NavTabKey.Home, label: "홈", enabled: false },
   { key: NavTabKey.Chat, label: "AI 채팅", enabled: true },
-  { key: NavTabKey.Schedule, label: "스케줄", enabled: false },
-  { key: NavTabKey.Profile, label: "프로필", enabled: false },
+  { key: NavTabKey.My, label: "MY", enabled: false },
 ];
+
+/**
+ * 하단 탭의 글리프 아이콘. 시안이 아이콘 이미지가 아니라 문자(⌂, ✦)로 그려서 그대로 쓴다.
+ * MY 는 사용자 아이콘 이미지라 여기에 없다.
+ */
+export const NAV_TAB_GLYPH: Partial<Record<NavTabKey, string>> = {
+  [NavTabKey.Home]: "⌂",
+  [NavTabKey.Chat]: "✦",
+};
