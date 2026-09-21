@@ -9,8 +9,12 @@ from agent.rag.schemas import (
     ProductGetResult,
     ProductSearchRequest,
     ProductSearchResult,
+    RoutineDraftGenerationRequest,
+    RoutineDraftModelOutput,
     RoutinePlan,
     RoutinePlanRequest,
+    RoutineRuleGenerationRequest,
+    RoutineRuleModelOutput,
     RoutineValidationRequest,
     RoutineValidationResult,
 )
@@ -70,6 +74,18 @@ class RoutinePlanner(ABC):
 
     @abstractmethod
     async def validate(self, request: RoutineValidationRequest) -> RoutineValidationResult:
+        raise NotImplementedError
+
+
+class RoutineRuleGenerator(ABC):
+    @abstractmethod
+    async def generate(self, request: RoutineRuleGenerationRequest) -> RoutineRuleModelOutput:
+        raise NotImplementedError
+
+
+class RoutineDraftGenerator(ABC):
+    @abstractmethod
+    async def generate(self, request: RoutineDraftGenerationRequest) -> RoutineDraftModelOutput:
         raise NotImplementedError
 
 

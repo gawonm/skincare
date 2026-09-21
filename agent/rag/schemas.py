@@ -15,6 +15,8 @@ from pydantic import (
 
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_ROUTINE_FREQUENCY = 2
+MAX_ROUTINE_RULES = 32
+MAX_ROUTINE_PLACEMENTS = 64
 DEFAULT_EMBEDDING_BATCH_SIZE = 16
 DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE = 100
 DEFAULT_OPENAI_EMBEDDING_DIMENSIONS = 1536
@@ -233,8 +235,28 @@ class Weekday(StrEnum):
 
 class ConstraintSource(StrEnum):
     PRODUCT_DIRECTIONS = "product_directions"
+    EVIDENCE = "evidence"
     USER = "user"
     SERVICE_POLICY = "service_policy"
+
+
+class RoutineRuleSourceKind(StrEnum):
+    PRODUCT_DIRECTIONS = "product_directions"
+    VERIFIED_EVIDENCE = "verified_evidence"
+    UNREVIEWED_EVIDENCE = "unreviewed_evidence"
+
+
+class RoutineRuleType(StrEnum):
+    ALLOWED_PERIOD = "allowed_period"
+    MAX_FREQUENCY_PER_WEEK = "max_frequency_per_week"
+    AVOID_SAME_PERIOD = "avoid_same_period"
+    ORDER_BEFORE = "order_before"
+    WARNING = "warning"
+
+
+class RoutineRuleEnforcement(StrEnum):
+    REQUIRED = "required"
+    WARNING = "warning"
 
 
 class IngredientResolveRequest(RagModel):
@@ -666,6 +688,69 @@ class RoutineConstraint(RagModel):
     source_id: str | None = None
 
 
+class RoutineRuleSource(RagModel):
+    source_id: str = Field(min_length=1)
+    source_kind: RoutineRuleSourceKind
+    text: str = Field(min_length=1)
+    applicable_product_ids: list[str] = Field(min_length=1)
+
+
+class RoutineRuleCandidate(RagModel):
+    rule_type: RoutineRuleType
+    product_ids: list[str] = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+    source_quote: str = Field(min_length=1)
+    rationale: str = Field(min_length=1)
+    allowed_periods: list[DayPeriod] = Field(default_factory=list)
+    max_frequency_per_week: int | None = Field(default=None, ge=1, le=7)
+    related_product_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_rule_payload(self) -> Self:
+        if self.rule_type is RoutineRuleType.ALLOWED_PERIOD and not self.allowed_periods:
+            raise ValueError("allowed_period 규칙에는 허용 시간대가 필요합니다.")
+        if (
+            self.rule_type is RoutineRuleType.MAX_FREQUENCY_PER_WEEK
+            and self.max_frequency_per_week is None
+        ):
+            raise ValueError("max_frequency_per_week 규칙에는 주당 횟수가 필요합니다.")
+        if self.rule_type in {
+            RoutineRuleType.AVOID_SAME_PERIOD,
+            RoutineRuleType.ORDER_BEFORE,
+        } and not self.related_product_ids:
+            raise ValueError(f"{self.rule_type.value} 규칙에는 상대 제품이 필요합니다.")
+        return self
+
+
+class RoutineRule(RoutineRuleCandidate):
+    source_kind: RoutineRuleSourceKind
+    enforcement: RoutineRuleEnforcement
+
+
+class RoutineRuleModelOutput(RagModel):
+    rules: list[RoutineRuleCandidate] = Field(
+        default_factory=list,
+        max_length=MAX_ROUTINE_RULES,
+    )
+
+
+class RoutineRuleGenerationRequest(RagModel):
+    user_request: str = Field(min_length=1)
+    products: list[ProductRecord] = Field(min_length=1)
+    sources: list[RoutineRuleSource] = Field(default_factory=list)
+
+
+class RoutineRuleCompilationRequest(RagModel):
+    products: list[ProductRecord] = Field(min_length=1)
+    sources: list[RoutineRuleSource] = Field(default_factory=list)
+    candidates: list[RoutineRuleCandidate] = Field(default_factory=list)
+
+
+class RoutineRuleCompilationResult(RagModel):
+    rules: list[RoutineRule] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RoutinePlacement(RagModel):
     weekday: Weekday
     period: DayPeriod
@@ -680,24 +765,55 @@ class RoutinePlan(RagModel):
     version: int = Field(ge=1)
     placements: list[RoutinePlacement] = Field(default_factory=list)
     constraints: list[RoutineConstraint] = Field(default_factory=list)
+    rules: list[RoutineRule] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     changes: list[str] = Field(default_factory=list)
     is_demo: bool = True
+
+
+class RoutineDraftPlacement(RagModel):
+    product_id: str = Field(min_length=1)
+    weekday: Weekday
+    period: DayPeriod
+    order: int = Field(ge=1)
+    reason: str = Field(min_length=1)
+
+
+class RoutineDraftModelOutput(RagModel):
+    placements: list[RoutineDraftPlacement] = Field(
+        default_factory=list,
+        max_length=MAX_ROUTINE_PLACEMENTS,
+    )
+
+
+class RoutineDraftGenerationRequest(RagModel):
+    user_request: str = Field(min_length=1)
+    products: list[ProductRecord] = Field(min_length=1)
+    excluded_weekdays: list[Weekday] = Field(default_factory=list)
+    frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
+    rules: list[RoutineRule] = Field(default_factory=list)
+    current_plan: RoutinePlan | None = None
 
 
 class RoutinePlanRequest(RagModel):
     chat_room_id: str = Field(min_length=1)
     request_id: str = Field(min_length=1)
     products: list[ProductRecord] = Field(min_length=1)
+    user_request: str = Field(min_length=1)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
     frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
+    evidence_records: list[EvidenceRecord] = Field(default_factory=list)
     current_plan: RoutinePlan | None = None
 
 
 class RoutineValidationRequest(RagModel):
     plan: RoutinePlan
+    products: list[ProductRecord] = Field(min_length=1)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
+    frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
 
 
 class RoutineValidationResult(RagModel):
     valid: bool
     violations: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
