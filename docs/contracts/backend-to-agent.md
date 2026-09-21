@@ -530,7 +530,7 @@ BGE-M3 자유 질의 임계값은 현재 데이터 5건만으로 확정하지 �
 
 ## 10. NIA Case 검색 및 런타임 Claim 추출 계약 — 2026-09-21 02:19 KST
 
-> 상태: **방향 확정, 구현 전**
+> 상태: **핵심 구현 완료, 2026-09-21 10:20 KST 검증 갱신**
 
 피부 고민형 질의는 유사 NIA Case를 먼저 찾고, rerank Top-3의 원문에서 현재 질문과 직접 관련된
 성분 Claim만 런타임 LLM 구조화 출력으로 추출한다. 전체 Case의 offline Claim annotation과
@@ -566,7 +566,7 @@ class CaseProvenance(RagModel):
 class CaseMetadata(RagModel):
     target_concern: str = Field(min_length=1)
     gender: str = Field(min_length=1)
-    age: int = Field(ge=0)
+    age: int = Field(ge=10, le=39)
     skin_type: str = Field(min_length=1)
     skin_concerns: list[str] = Field(default_factory=list)
 
@@ -739,7 +739,8 @@ LLM 결과는 Evidence 검색 전에 Agent 규칙 계층이 전부 검증한다.
 - 피부 고민형:
   `embed_case_query → search_cases → rerank_cases → extract_case_claims → validate_case_claims → resolve_claim_ingredients → verify_claims → product`
 - 명시 성분형: 기존 `ingredient resolution → evidence → product` 경로를 유지한다.
-- 기존 `RagRoute.CLAIM_THEN_EVIDENCE`는 구현 시 `CASE_THEN_EVIDENCE`로 바꾼다.
+- 기존 호출 호환을 위해 `RagRoute.CLAIM_THEN_EVIDENCE` 이름은 유지하고, 운영 기본 연결을
+  `search_cases`로 바꾼다.
 - 기존 DB `ClaimRetriever`는 P3 피부 고민형 기본 경로에 주입하지 않는다.
 - Case 본문이나 LLM 출력은 공식 Citation으로 렌더링하지 않는다.
 - Evidence `NO_RESULTS`/`UNREVIEWED`여도 매칭된 성분의 Claim-only 상품 후보는 유지한다.
@@ -775,6 +776,9 @@ Repository와 어댑터는 그대로 사용한다.
 기존 Claim 모델·Repository·적재 코드는 삭제하지 않는다. 후속 offline 최적화와 비교 평가에
 사용할 수 있으며 이번 방향 변경에는 모델·마이그레이션이 필요하지 않다.
 
+offline `ClaimRetriever`는 명시적으로 주입한 비교·개발 모드에서만 기존 `search_claims` 경로를
+사용한다. 운영 기본 Case 경로는 Claim `annotation_version` 없이도 조립할 수 있다.
+
 ### 10.8 데이터 및 평가 기준
 
 - Case 3,581건과 BGE-M3 Case 임베딩은 준비돼 있다.
@@ -783,3 +787,14 @@ Repository와 어댑터는 그대로 사용한다.
 - Case 검색 적합도, Claim exact-quote 통과율, 성분 매칭률, Evidence/Product 도달률을 분리해 측정한다.
 - 골든 셋에는 사용자 질의, 기대 Top-3 Case, 기대 성분 raw name/ID, 제외해야 할 성분을 기록한다.
 - 런타임 추출 결과의 모델명과 `prompt_version`을 보존해 재현성과 회귀를 비교한다.
+
+### 10.9 구현 검증 결과 — 2026-09-21 10:20 KST
+
+- Agent DTO·포트, Backend Case Retriever, 런타임 extractor·validator 구현 완료
+- Case → 성분 Resolution → Evidence anchor → Claim-only Product LangGraph 연결 완료
+- Evidence 0건 Claim-only 상품 유지와 명시 성분 Case 우회 테스트 통과
+- 실제 PostgreSQL NIA Case 벡터 후보 20건 조회 테스트 통과
+- 전체 기본 테스트 `446 passed, 3 deselected`
+- Case와 Evidence reranker는 한 CrossEncoder 모델 인스턴스를 공유
+- 외부 OpenAI 포함 실제 E2E는 Top-3 NIA 원문 전송 승인 후 실행
+- 골든 셋 및 LLM 오류·reranker fallback 세부 회귀는 후속 평가 범위

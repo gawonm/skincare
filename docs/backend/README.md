@@ -232,3 +232,18 @@ uv run python -m backend.services.claim_ingestion_service
 
 입력 계약과 실패 규칙은 [data-to-backend.md](../contracts/data-to-backend.md)의
 `NIA Claim production 산출물 적재 계약` 절을 따른다.
+
+## NIA Case 런타임 검색 연결 (2026-09-21 10:20 KST)
+
+피부 고민형 Agent 기본 경로를 위해 기존 `nia_case_document`를 읽는
+`BackendNiaCaseRetriever`를 연결했다. 새 모델·마이그레이션은 없다.
+
+- Repository가 `text_version`과 `embedding_model`을 정확히 일치시켜 cosine 후보를 조회한다.
+- BGE-M3 1,024차원이 아니면 DB 조회 전에 `UNSUPPORTED`로 반환한다.
+- training/validation 3,581건 전체를 검색 대상으로 사용하고 `dataset_split`은 provenance로만
+  Agent에 반환한다.
+- NIA `evidence_sources`는 공식 Citation으로 오인되지 않도록 Agent Case DTO에서 제외한다.
+- Backend는 Case Claim을 생성·검증하지 않으며, 이 책임은 Agent에 있다.
+- Case 기본 경로에서는 offline Claim `annotation_version`이 없어도 운영 설정을 조립할 수 있다.
+
+읽기 전용 실제 DB 통합 테스트에서 후보 20건, 중복 Case ID 0건, 본문·버전 DTO 변환을 확인했다.
