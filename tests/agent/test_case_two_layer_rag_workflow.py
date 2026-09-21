@@ -107,6 +107,15 @@ class TrackingCaseReranker(CaseReranker):
         return await self._delegate.rerank(request)
 
 
+class FailingCaseReranker(CaseReranker):
+    def __init__(self, calls: list[CaseWorkflowCall]) -> None:
+        self._calls = calls
+
+    async def rerank(self, request: CaseRerankRequest) -> CaseRerankResult:
+        self._calls.append(CaseWorkflowCall.CASE_RERANK)
+        raise RuntimeError("reranker fallback 테스트")
+
+
 class TrackingCaseClaimExtractor(CaseClaimExtractor):
     def __init__(self, calls: list[CaseWorkflowCall], invalid_quote: bool = False) -> None:
         self._calls = calls
@@ -136,6 +145,22 @@ class TrackingCaseClaimExtractor(CaseClaimExtractor):
         )
 
 
+class FailingCaseClaimExtractor(CaseClaimExtractor):
+    def __init__(self, calls: list[CaseWorkflowCall]) -> None:
+        self._calls = calls
+
+    async def extract(
+        self,
+        request: CaseClaimExtractionRequest,
+    ) -> CaseClaimExtractionResult:
+        self._calls.append(CaseWorkflowCall.CLAIM_EXTRACTION)
+        return CaseClaimExtractionResult(
+            status=LookupStatus.ERROR,
+            model="failing-claim-extractor",
+            error_message="Claim 추출 실패 테스트",
+        )
+
+
 class TrackingCaseIngredientRepository(IngredientRepository):
     def __init__(self, calls: list[CaseWorkflowCall]) -> None:
         self._calls = calls
@@ -144,6 +169,15 @@ class TrackingCaseIngredientRepository(IngredientRepository):
     async def resolve(self, request: IngredientResolveRequest) -> IngredientResolveResult:
         self._calls.append(CaseWorkflowCall.INGREDIENT)
         return await self._delegate.resolve(request)
+
+
+class UnresolvedCaseIngredientRepository(IngredientRepository):
+    def __init__(self, calls: list[CaseWorkflowCall]) -> None:
+        self._calls = calls
+
+    async def resolve(self, request: IngredientResolveRequest) -> IngredientResolveResult:
+        self._calls.append(CaseWorkflowCall.INGREDIENT)
+        return IngredientResolveResult(status=LookupStatus.NO_RESULTS)
 
 
 class TrackingNoResultEvidenceRetriever(EvidenceRetriever):
@@ -176,6 +210,9 @@ class CaseWorkflowHarness:
         invalid_quote: bool = False,
         llm: LlmClient | None = None,
         evidence_retriever: EvidenceRetriever | None = None,
+        case_reranker: CaseReranker | None = None,
+        case_claim_extractor: CaseClaimExtractor | None = None,
+        ingredient_repository: IngredientRepository | None = None,
     ) -> DevelopmentAgentApplication:
         effective_llm = llm or FixedCaseWorkflowLlm(
             ParsedRequest(
@@ -189,9 +226,14 @@ class CaseWorkflowHarness:
             llm=effective_llm,
             case_embedder=TrackingCaseEmbedder(calls),
             case_retriever=TrackingCaseRetriever(calls),
-            case_reranker=TrackingCaseReranker(calls),
-            case_claim_extractor=TrackingCaseClaimExtractor(calls, invalid_quote),
-            ingredient_repository=TrackingCaseIngredientRepository(calls),
+            case_reranker=case_reranker or TrackingCaseReranker(calls),
+            case_claim_extractor=(
+                case_claim_extractor
+                or TrackingCaseClaimExtractor(calls, invalid_quote)
+            ),
+            ingredient_repository=(
+                ingredient_repository or TrackingCaseIngredientRepository(calls)
+            ),
             evidence_retriever=(
                 evidence_retriever or TrackingNoResultEvidenceRetriever(calls)
             ),
@@ -282,3 +324,63 @@ class TestCaseTwoLayerRagWorkflow:
         )
 
         assert calls == [CaseWorkflowCall.INGREDIENT]
+
+    async def test_reranker_실패는_벡터_Top3로_fallback한다(self) -> None:
+        calls: list[CaseWorkflowCall] = []
+        harness = CaseWorkflowHarness()
+        app = harness.create(calls, case_reranker=FailingCaseReranker(calls))
+
+        output = await app.service.handle_turn(
+            harness.request("case-rerank-fallback-1", "피지가 많고 좁쌀이 나는데 뭘 써야 해?")
+        )
+
+        assert CaseWorkflowCall.CLAIM_EXTRACTION in calls
+        assert CaseWorkflowCall.EVIDENCE in calls
+        assert CaseWorkflowCall.PRODUCT in calls
+        assert output.status is ChatStatus.PARTIAL
+        assert "벡터 검색 순위 Top-3" in output.message
+        assert output.retryable is True
+
+    async def test_Claim_추출_ERROR는_성분_Evidence_상품을_중단한다(self) -> None:
+        calls: list[CaseWorkflowCall] = []
+        harness = CaseWorkflowHarness()
+        app = harness.create(
+            calls,
+            case_claim_extractor=FailingCaseClaimExtractor(calls),
+        )
+
+        output = await app.service.handle_turn(
+            harness.request("case-claim-error-1", "피지가 많고 좁쌀이 나는데 뭘 써야 해?")
+        )
+
+        assert calls == [
+            CaseWorkflowCall.EMBEDDING,
+            CaseWorkflowCall.CASE_SEARCH,
+            CaseWorkflowCall.CASE_RERANK,
+            CaseWorkflowCall.CLAIM_EXTRACTION,
+        ]
+        assert output.status is ChatStatus.PARTIAL
+        assert output.retryable is True
+        assert "Claim 추출 오류" in output.message
+
+    async def test_unresolved_성분은_Evidence와_상품으로_넘기지_않는다(self) -> None:
+        calls: list[CaseWorkflowCall] = []
+        harness = CaseWorkflowHarness()
+        app = harness.create(
+            calls,
+            ingredient_repository=UnresolvedCaseIngredientRepository(calls),
+        )
+
+        output = await app.service.handle_turn(
+            harness.request("case-unresolved-1", "피지가 많고 좁쌀이 나는데 뭘 써야 해?")
+        )
+
+        assert calls == [
+            CaseWorkflowCall.EMBEDDING,
+            CaseWorkflowCall.CASE_SEARCH,
+            CaseWorkflowCall.CASE_RERANK,
+            CaseWorkflowCall.CLAIM_EXTRACTION,
+            CaseWorkflowCall.INGREDIENT,
+        ]
+        assert output.status is ChatStatus.PARTIAL
+        assert "표준 성분을 확정하지 못한 Case Claim 성분" in output.message

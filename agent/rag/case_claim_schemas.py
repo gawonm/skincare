@@ -74,6 +74,21 @@ class CaseClaimExtractionRequest(RagModel):
         return self
 
 
+class CaseClaimPromptCase(RagModel):
+    """외부·로컬 채팅 모델에 전달할 최소 Case 필드."""
+
+    case_id: str = Field(min_length=1)
+    page_content: str = Field(min_length=1)
+
+
+class CaseClaimPromptInput(RagModel):
+    """성별·연령·원본 파일 provenance를 제외한 Claim 추출 입력."""
+
+    query: str = Field(min_length=1)
+    cases: list[CaseClaimPromptCase] = Field(min_length=1, max_length=3)
+    limit: int = Field(ge=1)
+
+
 class CaseClaimExtractionResult(RagModel):
     status: LookupStatus
     claims: list[ExtractedCaseClaim] = Field(default_factory=list)

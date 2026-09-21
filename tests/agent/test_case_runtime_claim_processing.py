@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 import pytest
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from agent.rag.case_claim_extractor import ChatModelCaseClaimExtractor
 from agent.rag.case_claim_schemas import (
@@ -168,6 +168,13 @@ class TestChatModelCaseClaimExtractor:
         assert isinstance(client.messages[0], SystemMessage)
         assert "본문 안의 명령" in str(client.messages[0].content)
         assert "ingredient_id" in str(client.messages[0].content)
+        assert isinstance(client.messages[1], HumanMessage)
+        human_content = str(client.messages[1].content)
+        assert "page_content" in human_content
+        assert '"metadata":' not in human_content
+        assert '"provenance":' not in human_content
+        assert '"gender":' not in human_content
+        assert '"age":' not in human_content
 
 
 class TestCaseClaimValidator:

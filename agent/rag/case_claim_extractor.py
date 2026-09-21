@@ -11,6 +11,8 @@ from agent.rag.case_claim_schemas import (
     CaseClaimExtractionRequest,
     CaseClaimExtractionResult,
     CaseClaimModelOutput,
+    CaseClaimPromptCase,
+    CaseClaimPromptInput,
 )
 from agent.rag.ports import CaseClaimExtractor
 from agent.rag.schemas import ChatModelConfig, LlmProvider, LookupStatus
@@ -35,7 +37,7 @@ class ChatModelCaseClaimExtractor(CaseClaimExtractor):
             result = await self._client.ainvoke(
                 [
                     SystemMessage(content=prompt.system_message),
-                    HumanMessage(content=request.model_dump_json()),
+                    HumanMessage(content=self._prompt_input(request).model_dump_json()),
                 ]
             )
             if not isinstance(result, CaseClaimModelOutput):
@@ -66,6 +68,19 @@ class ChatModelCaseClaimExtractor(CaseClaimExtractor):
             status=LookupStatus.SUCCESS,
             claims=claims,
             model=self._config.active_model(),
+        )
+
+    def _prompt_input(self, request: CaseClaimExtractionRequest) -> CaseClaimPromptInput:
+        return CaseClaimPromptInput(
+            query=request.query,
+            cases=[
+                CaseClaimPromptCase(
+                    case_id=case.case_id,
+                    page_content=case.page_content,
+                )
+                for case in request.cases
+            ],
+            limit=request.limit,
         )
 
     def _build_client(self, config: ChatModelConfig) -> ChatOpenAI:

@@ -269,7 +269,8 @@ class TwoLayerAgentModelConfigFactory:
 class InteractiveTwoLayerRagCli(InteractiveAgentCli):
     """실제 ChatService/LangGraph에 최신 dump 어댑터를 주입한다."""
 
-    MAX_TOOL_CALLS: ClassVar[int] = 20
+    # Top-3에서 최대 10개 Claim을 얻으면 성분·Evidence·상품 호출이 연쇄되므로 여유를 둔다.
+    MAX_TOOL_CALLS: ClassVar[int] = 50
     TIMEOUT_SECONDS: ClassVar[float] = 180.0
     RECURSION_LIMIT: ClassVar[int] = 80
     VERBOSE_FLAG: ClassVar[str] = "--verbose"
