@@ -135,3 +135,47 @@ Ruff passed
 - `티트리 오일`은 단일 `티트리잎오일`로 강제 매핑하지 않는다.
 - E2E의 도구 실패 2건: verbose 실행을 통해 살리실산 식약처 근거의 `section=NULL` 역직렬화 실패로 규명되었으며, Antigravity에 의해 수정 및 검증 완료됨 (참조: `2026-09-21_1530_EVIDENCE_NULLABLE_SECTION_FIX.md`)
 - Evidence 저장·검수 상태 문제는 별도 보류 문서에 따라 이후 작업으로 유지한다.
+
+## 8. 런타임 성분 선별·Case 사용법 연결 갱신 — 2026-09-21 16:21 KST
+
+이 절이 런타임 LLM 역할에 대해서는 위 3~4절의 조합 Claim 추출 정책을 대체한다. 기존
+`ExtractedCaseClaim` 타입과 조합 검증기는 호환·회귀 검증용으로 남기지만, 운영 Case 경로의 LLM은
+더 이상 Claim 유형, 효능 문장 또는 조합 관계를 만들지 않는다.
+
+현재 흐름은 다음과 같다.
+
+```text
+사용자 질문
+→ NIA Case 벡터 검색
+→ BGE 리랭커 Top-3
+→ LLM이 '성분 선택 및 근거 제시' 구간에서 관련 성분명만 선별
+→ Agent 규칙 검증·별칭 처리·표준 ingredient_id 확정
+→ 표준 성분명 + 사용자 질문으로 Evidence 검색
+→ 상품 검색
+```
+
+추가로 Top-3 원문의 `사용법 및 관리방안` 구간은 LLM이 자르지 않고 번호·제목 규칙으로 추출한다.
+선별되어 표준 ID가 확정된 성분명이 해당 구간에 실제로 있고, 그 성분을 포함한 최종 상품이 있을
+때만 루틴 Rule 출처로 전달한다. 이 정보는 사용자 사례이므로 항상 `WARNING`이며 제품 공식
+directions 또는 검수 Evidence의 강제 규칙을 덮어쓰지 않는다.
+
+- LLM 출력 버전: `nia-case-ingredient-selection/v1`
+- Case 사용법 출처: `RoutineRuleSourceKind.CASE_USAGE_GUIDANCE`
+- 새 상품 탐색을 시작하면 이전 Case 사용법은 초기화한다.
+- 후속 루틴 요청에서는 같은 대화의 `TaskContext`에 저장된 Case 사용법을 재사용한다.
+- 여러 Case에서 같은 표준 성분이 선별되면 Case provenance는 보존하되 Evidence 조회는 성분별 1회로 합친다.
+- `BHA(살리실산)` 역순 표기도 `살리실릭애씨드` 확정 동의어로 처리한다.
+- LLM은 긴 원문 인용을 반환하지 않는다. Agent가 `raw_name`의 Case 원문 존재 여부를 검증하고
+  내부 exact quote는 성분명 자체로 만든다.
+- DB·마이그레이션 변경은 없다.
+
+검증은 변경 범위에 한정해 수행했고 `Ruff passed`, 대상 테스트 `61 passed`를 확인했다.
+
+최신 통합 DB와 실제 OpenAI 경로로 동일 질의 1건을 최종 확인했다.
+
+- NIA Case 20건 검색 후 BGE 리랭커 Top-3 선정
+- LLM은 성분명만 구조화 출력하고 Agent가 Case 원문 존재 여부 검증
+- `살리실산(BHA)`와 `BHA(살리실산)` 모두 `살리실릭애씨드` ID로 확정
+- Evidence 검색은 `살리실릭애씨드`, `나이아신아마이드` 각각 1회만 실행
+- 실제 DB 상품은 두 성분 기준 총 10건 반환
+- `티트리 오일`은 기존 정책대로 모호 성분군으로 보류

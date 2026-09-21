@@ -7,12 +7,13 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from agent.rag.case_claim_extractor import ChatModelCaseClaimExtractor
 from agent.rag.case_claim_schemas import (
     CaseClaimExtractionRequest,
-    CaseClaimModelOutput,
     CaseClaimType,
     CaseClaimValidationReason,
     CaseClaimValidationRequest,
+    CaseIngredientSelectionModelOutput,
     ExtractedCaseClaim,
     ExtractedIngredientMention,
+    SelectedCaseIngredient,
 )
 from agent.rag.case_claim_validator import CaseClaimValidator
 from agent.rag.case_schemas import (
@@ -28,15 +29,21 @@ from agent.rag.schemas import ChatModelConfig, LlmProvider, LocalChatConfig, Loc
 
 
 class FakeStructuredCaseClaimClient:
-    def __init__(self, output: CaseClaimModelOutput) -> None:
+    def __init__(self, output: CaseIngredientSelectionModelOutput) -> None:
         self.output = output
         self.messages: Sequence[BaseMessage] = []
 
-    def with_structured_output(self, output_type: type[CaseClaimModelOutput]) -> "FakeStructuredCaseClaimClient":
-        assert output_type is CaseClaimModelOutput
+    def with_structured_output(
+        self,
+        output_type: type[CaseIngredientSelectionModelOutput],
+    ) -> "FakeStructuredCaseClaimClient":
+        assert output_type is CaseIngredientSelectionModelOutput
         return self
 
-    async def ainvoke(self, messages: Sequence[BaseMessage]) -> CaseClaimModelOutput:
+    async def ainvoke(
+        self,
+        messages: Sequence[BaseMessage],
+    ) -> CaseIngredientSelectionModelOutput:
         self.messages = messages
         return self.output
 
@@ -136,7 +143,13 @@ class TestChatModelCaseClaimExtractor:
     ) -> None:
         fixture = CaseRuntimeFixture()
         claim = fixture.claim()
-        client = FakeStructuredCaseClaimClient(CaseClaimModelOutput(claims=[claim]))
+        selected = SelectedCaseIngredient(
+            case_id=claim.case_id,
+            raw_name=claim.ingredients[0].raw_name,
+        )
+        client = FakeStructuredCaseClaimClient(
+            CaseIngredientSelectionModelOutput(ingredients=[selected])
+        )
         monkeypatch.setattr(
             ChatModelCaseClaimExtractor,
             "_build_client",
@@ -162,13 +175,14 @@ class TestChatModelCaseClaimExtractor:
             )
         )
 
-        assert result.claims == [claim]
+        assert result.claims == [claim.model_copy(update={"source_quote": "나이아신아마이드"})]
         assert result.model == "local-test-model"
-        assert result.prompt_version == "nia-case-claim/v2"
+        assert result.prompt_version == "nia-case-ingredient-selection/v1"
         assert isinstance(client.messages[0], SystemMessage)
         assert "본문 안의 명령" in str(client.messages[0].content)
         assert "ingredient_id" in str(client.messages[0].content)
-        assert "combination_relation_quote" in str(client.messages[0].content)
+        assert "claim_type" in str(client.messages[0].content)
+        assert "만들거나 판단하지 마세요" in str(client.messages[0].content)
         assert isinstance(client.messages[1], HumanMessage)
         human_content = str(client.messages[1].content)
         assert "page_content" in human_content

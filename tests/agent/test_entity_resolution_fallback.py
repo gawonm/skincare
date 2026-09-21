@@ -134,7 +134,13 @@ class TestIngredientAliases:
 
     @pytest.mark.parametrize(
         "name",
-        ["살리실산", "살리실산(BHA)", " 살리실산 ( BHA ) ", "SALICYLIC ACID"],
+        [
+            "살리실산",
+            "살리실산(BHA)",
+            "BHA(살리실산)",
+            " 살리실산 ( BHA ) ",
+            "SALICYLIC ACID",
+        ],
     )
     def test_maps_safe_salicylic_acid_aliases(self, name: str) -> None:
         mapped = CommonIngredientAliasMapper().map_request(

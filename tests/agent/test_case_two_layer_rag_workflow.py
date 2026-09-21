@@ -284,7 +284,7 @@ class TestCaseTwoLayerRagWorkflow:
         ]
         assert output.status is ChatStatus.PARTIAL
         assert candidates.candidates
-        assert "유사한 사용자 사례의 탐색적 주장" in output.message
+        assert "유사 사례에서 질문과 관련해 언급된 성분" in output.message
         assert "유사 사용자 사례에서 발굴된 탐색 제품 후보" in output.message
 
     async def test_exact_quote_검증_실패_Claim은_성분과_상품으로_넘기지_않는다(self) -> None:
@@ -303,7 +303,7 @@ class TestCaseTwoLayerRagWorkflow:
             CaseWorkflowCall.CLAIM_EXTRACTION,
         ]
         assert output.status is ChatStatus.PARTIAL
-        assert "탐색용 성분 주장을 찾지 못했습니다" in output.message
+        assert "사례 기반 성분을 찾지 못했습니다" in output.message
 
     async def test_명시적_성분_질의는_Case_경로를_건너뛴다(self) -> None:
         calls: list[CaseWorkflowCall] = []
@@ -361,7 +361,7 @@ class TestCaseTwoLayerRagWorkflow:
         ]
         assert output.status is ChatStatus.PARTIAL
         assert output.retryable is True
-        assert "Claim 추출 오류" in output.message
+        assert "관련 성분 선별 오류" in output.message
 
     async def test_unresolved_성분은_Evidence와_상품으로_넘기지_않는다(self) -> None:
         calls: list[CaseWorkflowCall] = []
@@ -383,4 +383,4 @@ class TestCaseTwoLayerRagWorkflow:
             CaseWorkflowCall.INGREDIENT,
         ]
         assert output.status is ChatStatus.PARTIAL
-        assert "표준 성분을 확정하지 못한 Case Claim 성분" in output.message
+        assert "표준 성분을 확정하지 못한 Case 관련 성분" in output.message

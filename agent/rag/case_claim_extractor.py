@@ -1,4 +1,4 @@
-"""Top-3 NIA Case에서 질문 관련 성분 Claim을 구조화 출력으로 추출한다."""
+"""Top-3 NIA Case에서 사용자 질문과 관련된 성분만 선별한다."""
 
 from httpx import HTTPError
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -10,21 +10,26 @@ from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.rag.case_claim_schemas import (
     CaseClaimExtractionRequest,
     CaseClaimExtractionResult,
-    CaseClaimModelOutput,
     CaseClaimPromptCase,
     CaseClaimPromptInput,
+    CaseClaimType,
+    CaseIngredientSelectionModelOutput,
+    ExtractedCaseClaim,
+    ExtractedIngredientMention,
 )
 from agent.rag.ports import CaseClaimExtractor
 from agent.rag.schemas import ChatModelConfig, LlmProvider, LookupStatus
 
 
 class ChatModelCaseClaimExtractor(CaseClaimExtractor):
-    """OpenAI 또는 로컬 OpenAI 호환 모델로 Case Claim을 한 번만 추출한다."""
+    """모델은 관련 성분만 고르고 기존 단일 성분 경로용 DTO는 코드가 만든다."""
 
     def __init__(self, config: ChatModelConfig, prompt_catalog: PromptCatalog | None = None) -> None:
         self._config = config
         self._prompt_catalog = prompt_catalog or PromptCatalog()
-        self._client = self._build_client(config).with_structured_output(CaseClaimModelOutput)
+        self._client = self._build_client(config).with_structured_output(
+            CaseIngredientSelectionModelOutput
+        )
 
     async def extract(
         self,
@@ -40,8 +45,8 @@ class ChatModelCaseClaimExtractor(CaseClaimExtractor):
                     HumanMessage(content=self._prompt_input(request).model_dump_json()),
                 ]
             )
-            if not isinstance(result, CaseClaimModelOutput):
-                raise TypeError("Case Claim 추출기가 계약된 구조화 응답을 반환하지 않았습니다.")
+            if not isinstance(result, CaseIngredientSelectionModelOutput):
+                raise TypeError("Case 성분 선별기가 계약된 구조화 응답을 반환하지 않았습니다.")
         except (
             HTTPError,
             OpenAIError,
@@ -55,10 +60,20 @@ class ChatModelCaseClaimExtractor(CaseClaimExtractor):
             return CaseClaimExtractionResult(
                 status=LookupStatus.ERROR,
                 model=self._config.active_model(),
-                error_message=f"NIA Case Claim 추출에 실패했습니다: {error}",
+                error_message=f"NIA Case 관련 성분 선별에 실패했습니다: {error}",
             )
 
-        claims = result.claims[: request.limit]
+        claims = [
+            ExtractedCaseClaim(
+                case_id=ingredient.case_id,
+                claim_type=CaseClaimType.INGREDIENT_EFFECT,
+                ingredients=[ExtractedIngredientMention(raw_name=ingredient.raw_name)],
+                # LLM에게 긴 인용을 복사시키면 말줄임표·개행 변형으로 유효 성분까지 버려질 수 있다.
+                # 성분명이 Case 원문에 존재하는지는 기존 결정적 validator가 다음 단계에서 확인한다.
+                source_quote=ingredient.raw_name,
+            )
+            for ingredient in result.ingredients[: request.limit]
+        ]
         if not claims:
             return CaseClaimExtractionResult(
                 status=LookupStatus.NO_RESULTS,
@@ -103,7 +118,7 @@ class ChatModelCaseClaimExtractor(CaseClaimExtractor):
 
 
 class CaseClaimExtractorFactory:
-    """채팅 모델 설정으로 런타임 Case Claim 추출기를 만든다."""
+    """채팅 모델 설정으로 런타임 Case 관련 성분 선별기를 만든다."""
 
     def create(self, config: ChatModelConfig) -> CaseClaimExtractor:
         return ChatModelCaseClaimExtractor(config)

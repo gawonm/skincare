@@ -112,6 +112,7 @@ class CommonIngredientAliasMapper:
                 for term in (
                     "살리실산",
                     "살리실산(BHA)",
+                    "BHA(살리실산)",
                     "살리실릭 애씨드",
                     "salicylic acid",
                 )

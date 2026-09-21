@@ -20,7 +20,7 @@ from agent.schemas import (
     UnresolvedKind,
 )
 
-NO_CLAIM_MESSAGE = "현재 고민과 연결되는 탐색용 성분 주장을 찾지 못했습니다."
+NO_CLAIM_MESSAGE = "현재 고민과 연결되는 사례 기반 성분을 찾지 못했습니다."
 NO_EVIDENCE_MESSAGE = "현재 연결된 검색 자료에서 관련 공인 근거를 찾지 못했습니다."
 
 
@@ -89,7 +89,7 @@ class RagResponseAssembler:
             )
             if names:
                 state.status = ChatStatus.PARTIAL
-                detail = "표준 성분을 확정하지 못한 Case Claim 성분: " + ", ".join(names)
+                detail = "표준 성분을 확정하지 못한 Case 관련 성분: " + ", ".join(names)
                 state.unresolved.append(
                     UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=detail)
                 )
@@ -160,13 +160,24 @@ class RagResponseAssembler:
             and case_claim.validation is not None
             and case_claim.validation.valid_claims
         ):
-            descriptions = list(
-                dict.fromkeys(
-                    claim.source_quote for claim in case_claim.validation.valid_claims
+            if case_claim.resolved_claims:
+                names = list(
+                    dict.fromkeys(
+                        ingredient.canonical_name or ingredient.raw_name
+                        for claim in case_claim.resolved_claims
+                        for ingredient in claim.ingredients
+                    )
                 )
-            )
+            else:
+                names = list(
+                    dict.fromkeys(
+                        ingredient.raw_name
+                        for claim in case_claim.validation.valid_claims
+                        for ingredient in claim.ingredients
+                    )
+                )
             state.response_parts.append(
-                "유사한 사용자 사례의 탐색적 주장: " + " / ".join(descriptions)
+                "유사 사례에서 질문과 관련해 언급된 성분: " + ", ".join(names)
             )
             if state.case_bundle is not None and state.case_bundle.rerank_fallback_used:
                 state.response_parts.append(
@@ -205,7 +216,9 @@ class RagResponseAssembler:
                 state.response_parts.append(NO_CLAIM_MESSAGE)
                 return
             if case_claim is not None and case_claim.extraction.status is LookupStatus.ERROR:
-                state.response_parts.append("NIA Case Claim 추출 오류로 성분 검증을 진행하지 못했습니다.")
+                state.response_parts.append(
+                    "NIA Case 관련 성분 선별 오류로 성분 검증을 진행하지 못했습니다."
+                )
                 return
             if (
                 case_claim is None

@@ -23,6 +23,7 @@ from agent.rag.case_schemas import (
     CaseSearchRequest,
     CaseSearchResult,
 )
+from agent.rag.case_usage_guidance import CaseUsageGuidanceExtractor
 from agent.rag.claim_anchor_adapter import ClaimHitToEvidenceQueryAnchorAdapter
 from agent.rag.claim_schemas import (
     ClaimBundle,
@@ -90,6 +91,7 @@ class RagWorkflowNodes:
         self._ingredient_repository = ingredient_repository
         self._case_claim_validator = CaseClaimValidator()
         self._case_claim_anchor_adapter = CaseClaimToEvidenceQueryAnchorAdapter()
+        self._case_usage_guidance = CaseUsageGuidanceExtractor()
         self._ingredient_aliases = CommonIngredientAliasMapper()
         self._claim_retriever = claim_retriever
         self._claim_annotation_version = claim_annotation_version
@@ -210,7 +212,7 @@ class RagWorkflowNodes:
         self._runtime.record_node(
             state,
             GraphNode.EXTRACT_CASE_CLAIMS,
-            "NIA Case 원문에서 질문 관련 Claim 추출을 마쳤습니다.",
+            "NIA Case 원문에서 질문 관련 성분 선별을 마쳤습니다.",
         )
         return state
 
@@ -241,14 +243,16 @@ class RagWorkflowNodes:
             self._runtime.record_node(
                 state,
                 GraphNode.RESOLVE_CASE_CLAIM_INGREDIENTS,
-                "식별할 Case Claim 성분이 없어 건너뛰었습니다.",
+                "식별할 Case 관련 성분이 없어 건너뛰었습니다.",
             )
             return state
 
         resolved_claims: list[ResolvedCaseClaim] = []
         evidence_anchors: list[EvidenceQueryAnchor] = []
+        evidence_anchor_keys: set[tuple[tuple[str, ...], str]] = set()
         target_ids: list[str] = []
         request_id = self._runtime.require_turn(state).request_id
+        parsed = self._runtime.require_parsed(state)
         for claim in bundle.validation.valid_claims:
             ingredients = [
                 await self._resolve_case_ingredient(state, ingredient.raw_name)
@@ -260,12 +264,28 @@ class RagWorkflowNodes:
                 ingredients=ingredients,
             )
             resolved_claims.append(resolved)
-            anchor = self._case_claim_anchor_adapter.adapt(resolved, request_id=request_id)
+            anchor = self._case_claim_anchor_adapter.adapt(
+                resolved,
+                request_id=request_id,
+                user_query=parsed.query,
+            )
             if anchor is not None:
-                evidence_anchors.append(anchor)
-                target_ids.extend(anchor.ingredient_refs)
+                anchor_key = (
+                    tuple(sorted(anchor.ingredient_refs)),
+                    anchor.claim_topic.value,
+                )
+                # 같은 성분이 여러 Case에 반복돼도 Evidence는 같은 사용자 질문으로 한 번만 조회한다.
+                if anchor_key not in evidence_anchor_keys:
+                    evidence_anchor_keys.add(anchor_key)
+                    evidence_anchors.append(anchor)
+                    target_ids.extend(anchor.ingredient_refs)
 
         unique_target_ids = list(dict.fromkeys(target_ids))
+        selected_cases = state.case_bundle.selected_hits() if state.case_bundle is not None else []
+        state.task_context.case_usage_guidance = self._case_usage_guidance.extract(
+            selected_cases,
+            resolved_claims,
+        )
         state.case_claim_bundle = bundle.model_copy(
             deep=True,
             update={
@@ -284,7 +304,7 @@ class RagWorkflowNodes:
         self._runtime.record_node(
             state,
             GraphNode.RESOLVE_CASE_CLAIM_INGREDIENTS,
-            "Case Claim의 성분 표준 ID 식별을 마쳤습니다.",
+            "Case 관련 성분의 표준 ID 식별과 사용법 구간 연결을 마쳤습니다.",
         )
         return state
 
@@ -588,7 +608,7 @@ class RagWorkflowNodes:
             self._runtime.add_tool_failure(
                 state,
                 result.error_message
-                or f"Case Claim 성분을 조회하지 못했습니다: {raw_name}",
+                or f"Case 관련 성분을 조회하지 못했습니다: {raw_name}",
             )
             return ResolvedCaseClaimIngredient(
                 raw_name=raw_name,
@@ -603,6 +623,7 @@ class RagWorkflowNodes:
             return ResolvedCaseClaimIngredient(
                 raw_name=raw_name,
                 ingredient_id=result.ingredient.ingredient_id,
+                canonical_name=result.ingredient.canonical_name,
                 status=CaseClaimIngredientResolutionStatus.MATCHED,
             )
         return ResolvedCaseClaimIngredient(

@@ -20,6 +20,7 @@ class CaseClaimToEvidenceQueryAnchorAdapter:
         claim: ResolvedCaseClaim,
         *,
         request_id: str,
+        user_query: str,
     ) -> EvidenceQueryAnchor | None:
         if not claim.is_fully_resolved():
             return None
@@ -30,7 +31,10 @@ class CaseClaimToEvidenceQueryAnchorAdapter:
         ):
             return None
         scope = IngredientScope.SINGLE if len(ingredient_ids) == 1 else IngredientScope.MULTI
-        names = [ingredient.raw_name for ingredient in claim.ingredients]
+        names = [
+            ingredient.canonical_name or ingredient.raw_name
+            for ingredient in claim.ingredients
+        ]
         return EvidenceQueryAnchor(
             anchor_id=str(
                 uuid5(
@@ -51,6 +55,8 @@ class CaseClaimToEvidenceQueryAnchorAdapter:
                 if claim.claim.claim_type is CaseClaimType.COMBINATION_EFFECT
                 else EvidenceClaimTopic.EFFICACY
             ),
-            query_text=f"{' + '.join(names)}: {claim.claim.source_quote}",
+            # Case의 효능 문장을 검색문으로 재사용하면 질문과 무관한 설명이 Evidence 검색을
+            # 지배할 수 있으므로 표준 성분명과 실제 사용자 질문만 사용한다.
+            query_text=f"{' + '.join(names)}: {user_query}",
             query_terms=names,
         )

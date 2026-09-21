@@ -235,6 +235,8 @@ class AgentNodes:
             else:
                 state.task_context.search_filters = ProductSearchFilters()
                 state.task_context.rejected_product_ids = []
+                # 새 상품 탐색에 이전 Case의 사용법이 섞이면 다른 성분의 일정 근거가 될 수 있다.
+                state.task_context.case_usage_guidance = []
         validated_filters = self._product_filters.normalize(
             ProductSearchFilters(
                 category=parsed.category, texture=parsed.texture, skin_feel=parsed.skin_feel
@@ -935,6 +937,7 @@ class AgentNodes:
                 user_request=parsed.query,
                 excluded_weekdays=excluded_weekdays,
                 evidence_records=state.evidence,
+                case_usage_guidance=state.task_context.case_usage_guidance,
                 current_plan=state.routine,
             )
         )

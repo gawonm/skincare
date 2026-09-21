@@ -3,6 +3,8 @@
 from agent.ports import RoutineDraftGenerator, RoutineRuleGenerator
 from agent.rag.routine_planner import SourceBoundRoutinePlanner
 from agent.rag.schemas import (
+    CaseUsageGuidance,
+    ConstraintSource,
     DayPeriod,
     EvidenceConditions,
     EvidenceRecord,
@@ -18,6 +20,7 @@ from agent.rag.schemas import (
     RoutineRuleEnforcement,
     RoutineRuleGenerationRequest,
     RoutineRuleModelOutput,
+    RoutineRuleSourceKind,
     RoutineRuleType,
     RoutineValidationRequest,
     Weekday,
@@ -99,6 +102,7 @@ class RoutinePlannerHarness:
         self,
         product: ProductRecord,
         evidence: list[EvidenceRecord] | None = None,
+        case_usage_guidance: list[CaseUsageGuidance] | None = None,
     ) -> RoutinePlanRequest:
         return RoutinePlanRequest(
             chat_room_id="routine-room",
@@ -106,6 +110,7 @@ class RoutinePlannerHarness:
             products=[product],
             user_request="레티놀 제품으로 저녁 루틴을 짜줘",
             evidence_records=evidence or [],
+            case_usage_guidance=case_usage_guidance or [],
         )
 
     def evidence(self) -> EvidenceRecord:
@@ -193,6 +198,42 @@ class TestSourceBoundRoutinePlanner:
 
         assert validation.valid is True
         assert plan.rules[0].enforcement is RoutineRuleEnforcement.WARNING
+        assert "레티놀 제품은 저녁에만 배치" in validation.warnings
+
+    async def test_Case_사용법은_성분이_겹치는_상품에만_경고로_전달한다(self) -> None:
+        harness = RoutinePlannerHarness()
+        product = harness.product(directions=None)
+        guidance = CaseUsageGuidance(
+            source_id="nia-case-usage:CASE-1",
+            case_id="CASE-1",
+            text="3. 사용법 및 관리방안\n레티놀은 저녁에 사용합니다.",
+            ingredient_ids=["ingredient:retinol"],
+        )
+        planner = SourceBoundRoutinePlanner(
+            FixedRoutineRuleGenerator(
+                RoutineRuleModelOutput(
+                    rules=[
+                        harness.rule(
+                            source_id=guidance.source_id,
+                            source_quote="레티놀은 저녁에 사용합니다.",
+                        )
+                    ]
+                )
+            ),
+            FixedRoutineDraftGenerator(harness.draft(period=DayPeriod.MORNING)),
+        )
+
+        plan = await planner.plan(
+            harness.request(product, case_usage_guidance=[guidance])
+        )
+        validation = await planner.validate(
+            RoutineValidationRequest(plan=plan, products=[product])
+        )
+
+        assert validation.valid is True
+        assert plan.rules[0].source_kind is RoutineRuleSourceKind.CASE_USAGE_GUIDANCE
+        assert plan.rules[0].enforcement is RoutineRuleEnforcement.WARNING
+        assert plan.constraints[0].source is ConstraintSource.CASE_USAGE_GUIDANCE
         assert "레티놀 제품은 저녁에만 배치" in validation.warnings
 
     async def test_LLM이_입력에_없는_제품을_배치하면_확정하지_않는다(self) -> None:

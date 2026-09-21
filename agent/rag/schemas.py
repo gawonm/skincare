@@ -236,6 +236,7 @@ class Weekday(StrEnum):
 class ConstraintSource(StrEnum):
     PRODUCT_DIRECTIONS = "product_directions"
     EVIDENCE = "evidence"
+    CASE_USAGE_GUIDANCE = "case_usage_guidance"
     USER = "user"
     SERVICE_POLICY = "service_policy"
 
@@ -244,6 +245,7 @@ class RoutineRuleSourceKind(StrEnum):
     PRODUCT_DIRECTIONS = "product_directions"
     VERIFIED_EVIDENCE = "verified_evidence"
     UNREVIEWED_EVIDENCE = "unreviewed_evidence"
+    CASE_USAGE_GUIDANCE = "case_usage_guidance"
 
 
 class RoutineRuleType(StrEnum):
@@ -688,6 +690,21 @@ class RoutineConstraint(RagModel):
     source_id: str | None = None
 
 
+class CaseUsageGuidance(RagModel):
+    """NIA Case의 사용법 구간 중 표준 성분과 연결된 참고 정보."""
+
+    source_id: str = Field(min_length=1)
+    case_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    ingredient_ids: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_ingredient_ids(self) -> Self:
+        if len(self.ingredient_ids) != len(set(self.ingredient_ids)):
+            raise ValueError("Case 사용법의 성분 ID는 중복될 수 없습니다.")
+        return self
+
+
 class RoutineRuleSource(RagModel):
     source_id: str = Field(min_length=1)
     source_kind: RoutineRuleSourceKind
@@ -803,6 +820,7 @@ class RoutinePlanRequest(RagModel):
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
     frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
     evidence_records: list[EvidenceRecord] = Field(default_factory=list)
+    case_usage_guidance: list[CaseUsageGuidance] = Field(default_factory=list)
     current_plan: RoutinePlan | None = None
 
 

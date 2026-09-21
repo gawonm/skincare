@@ -58,6 +58,7 @@ class TestCaseClaimToEvidenceQueryAnchorAdapter:
         anchor = CaseClaimToEvidenceQueryAnchorAdapter().adapt(
             fixture.claim(),
             request_id="request-1",
+            user_query="피지가 많아요",
         )
 
         assert anchor is not None
@@ -66,6 +67,7 @@ class TestCaseClaimToEvidenceQueryAnchorAdapter:
         assert anchor.ingredient_scope is IngredientScope.SINGLE
         assert anchor.ingredient_refs == ["ingredient:1"]
         assert anchor.claim_topic is EvidenceClaimTopic.EFFICACY
+        assert anchor.query_text == "나이아신아마이드: 피지가 많아요"
 
     def test_완전히_매칭된_조합은_ALL_anchor로_변환한다(self) -> None:
         fixture = CaseClaimAnchorFixture()
@@ -73,6 +75,7 @@ class TestCaseClaimToEvidenceQueryAnchorAdapter:
         anchor = CaseClaimToEvidenceQueryAnchorAdapter().adapt(
             fixture.claim(combination=True),
             request_id="request-1",
+            user_query="피지가 많아요",
         )
 
         assert anchor is not None
@@ -86,6 +89,7 @@ class TestCaseClaimToEvidenceQueryAnchorAdapter:
         anchor = CaseClaimToEvidenceQueryAnchorAdapter().adapt(
             fixture.claim(combination=True, fully_resolved=False),
             request_id="request-1",
+            user_query="피지가 많아요",
         )
 
         assert anchor is None

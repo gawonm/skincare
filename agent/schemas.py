@@ -16,6 +16,7 @@ from agent.rag.claim_schemas import (
 )
 from agent.rag.schemas import (
     ApplicabilityAssessment,
+    CaseUsageGuidance,
     EvidenceBundle,
     EvidenceConditions,
     EvidenceRecord,
@@ -239,6 +240,7 @@ class TaskContext(AgentModel):
     evidence_target_ids: list[str] = Field(default_factory=list)
     evidence_combination_target_ids: list[str] = Field(default_factory=list)
     evidence_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions)
+    case_usage_guidance: list[CaseUsageGuidance] = Field(default_factory=list)
 
 
 class ResolvedEntities(AgentModel):

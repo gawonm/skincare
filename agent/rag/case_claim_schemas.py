@@ -9,7 +9,7 @@ from agent.rag.case_schemas import CaseSearchHit
 from agent.rag.schemas import EvidenceQueryAnchor, LookupStatus, RagModel
 
 DEFAULT_CASE_CLAIM_LIMIT = 10
-CASE_CLAIM_PROMPT_VERSION = "nia-case-claim/v2"
+CASE_CLAIM_PROMPT_VERSION = "nia-case-ingredient-selection/v1"
 
 
 class CaseClaimType(StrEnum):
@@ -26,6 +26,21 @@ class ExtractedIngredientMention(RagModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("추출 성분명은 공백일 수 없습니다.")
+        return normalized
+
+
+class SelectedCaseIngredient(RagModel):
+    """LLM이 Top-3 Case에서 고른 질문 관련 성분 후보."""
+
+    case_id: str = Field(min_length=1)
+    raw_name: str = Field(min_length=1)
+
+    @field_validator("raw_name")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Case 성분 후보 문자열은 공백일 수 없습니다.")
         return normalized
 
 
@@ -66,10 +81,10 @@ class ExtractedCaseClaim(RagModel):
         return self
 
 
-class CaseClaimModelOutput(RagModel):
-    """LLM 구조화 출력. 검색 상태와 모델 정보는 코드가 덧붙인다."""
+class CaseIngredientSelectionModelOutput(RagModel):
+    """LLM은 효능 문장이나 ID를 만들지 않고 질문 관련 성분명만 고른다."""
 
-    claims: list[ExtractedCaseClaim] = Field(default_factory=list)
+    ingredients: list[SelectedCaseIngredient] = Field(default_factory=list)
 
 
 class CaseClaimExtractionRequest(RagModel):
@@ -157,6 +172,7 @@ class CaseClaimIngredientResolutionStatus(StrEnum):
 class ResolvedCaseClaimIngredient(RagModel):
     raw_name: str = Field(min_length=1)
     ingredient_id: str | None = Field(default=None, min_length=1)
+    canonical_name: str | None = Field(default=None, min_length=1)
     status: CaseClaimIngredientResolutionStatus
 
     @model_validator(mode="after")
@@ -168,9 +184,9 @@ class ResolvedCaseClaimIngredient(RagModel):
             raise ValueError("MATCHED Case Claim 성분에는 ingredient_id가 필요합니다.")
         if (
             self.status is not CaseClaimIngredientResolutionStatus.MATCHED
-            and self.ingredient_id is not None
+            and (self.ingredient_id is not None or self.canonical_name is not None)
         ):
-            raise ValueError("미확정 Case Claim 성분에는 ingredient_id를 넣을 수 없습니다.")
+            raise ValueError("미확정 Case Claim 성분에는 표준 성분 정보를 넣을 수 없습니다.")
         return self
 
 

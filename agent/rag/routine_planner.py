@@ -141,7 +141,7 @@ class ChatModelRoutineDraftGenerator(RoutineDraftGenerator):
 
 
 class RoutineRuleSourceBuilder:
-    """Planner가 접근할 수 있는 제품과 Evidence만 Rule 출처로 제한한다."""
+    """Planner가 접근할 수 있는 제품·Evidence·Case 사용법을 제품 범위에 묶는다."""
 
     def build(self, request: RoutinePlanRequest) -> list[RoutineRuleSource]:
         sources = [
@@ -172,6 +172,22 @@ class RoutineRuleSourceBuilder:
                     source_id=f"evidence:{evidence.evidence_id}",
                     source_kind=source_kind,
                     text=evidence.text,
+                    applicable_product_ids=applicable_product_ids,
+                )
+            )
+        for guidance in request.case_usage_guidance:
+            applicable_product_ids = [
+                product.product_id
+                for product in request.products
+                if set(product.ingredient_ids).intersection(guidance.ingredient_ids)
+            ]
+            if not applicable_product_ids:
+                continue
+            sources.append(
+                RoutineRuleSource(
+                    source_id=guidance.source_id,
+                    source_kind=RoutineRuleSourceKind.CASE_USAGE_GUIDANCE,
+                    text=guidance.text,
                     applicable_product_ids=applicable_product_ids,
                 )
             )
@@ -323,7 +339,11 @@ class DeterministicRoutineValidator:
         source: RoutineRuleSource,
     ) -> RoutineRuleEnforcement:
         if (
-            source.source_kind is RoutineRuleSourceKind.UNREVIEWED_EVIDENCE
+            source.source_kind
+            in {
+                RoutineRuleSourceKind.UNREVIEWED_EVIDENCE,
+                RoutineRuleSourceKind.CASE_USAGE_GUIDANCE,
+            }
             or candidate.rule_type is RoutineRuleType.WARNING
         ):
             return RoutineRuleEnforcement.WARNING
@@ -473,11 +493,12 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
             for weekday in excluded_weekdays
         ]
         for rule in rules:
-            source = (
-                ConstraintSource.PRODUCT_DIRECTIONS
-                if rule.source_kind is RoutineRuleSourceKind.PRODUCT_DIRECTIONS
-                else ConstraintSource.EVIDENCE
-            )
+            if rule.source_kind is RoutineRuleSourceKind.PRODUCT_DIRECTIONS:
+                source = ConstraintSource.PRODUCT_DIRECTIONS
+            elif rule.source_kind is RoutineRuleSourceKind.CASE_USAGE_GUIDANCE:
+                source = ConstraintSource.CASE_USAGE_GUIDANCE
+            else:
+                source = ConstraintSource.EVIDENCE
             constraints.append(
                 RoutineConstraint(
                     description=rule.rationale,
