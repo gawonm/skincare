@@ -812,6 +812,20 @@ DEFER 10 / EXCLUDE 10. 사람이 `reviewer_verdict`를 채운다. 예비 관찰(
   QA 목적(사람이 보고 제외 판단)에는 맞다.
 - DEFER는 대체로 타당하다. EXCLUDE도 타당하나 Sodium Laureth Sulfate 같은 자극성 계면활성제는 안전성 전용 근거를 별도 판단할 여지가 있다.
 
+**② 50개 QA 결과 (사람 검수 완료, 규칙은 아직 수정하지 않음)** — verdict: KEEP 13 / DEFER 22 / EXCLUDE 12 / UNCERTAIN 3.
+
+| 층(현재 결정) | KEEP | DEFER | EXCLUDE | UNCERTAIN | 판단 |
+|---|---:|---:|---:|---:|---|
+| COLLECT active(10) | 4 | 2 | 3 | 1 | 잔여 "active" 범주 오분류(분체·증점제·용제·에몰리언트) |
+| COLLECT botanical(10) | 1 | 8 | 1 | 0 | 제품 20개 gate 단독은 부적절 |
+| QA_PRIORITY(10) | 6 | 0 | 2 | 2 | 의도대로 NIA-only·제품 0 항목을 걸러냄 |
+| DEFER(10) | 0 | 10 | 0 | 0 | 전부 타당(false DEFER 0) |
+| EXCLUDE(10) | 2 | 2 | 6 | 0 | 자극성 계면활성제·아미노산/당류 일괄 제외는 과함 |
+
+COLLECT_BASELINE 20개 중 KEEP 5(precision 25%), false INCLUDE 14. false EXCLUDE 4(Histidine·Sodium Laureth Sulfate는 KEEP,
+Sorbitol·Lysine은 DEFER). `MIN_PRODUCTS_FOR_BASELINE=5`는 false DEFER가 0이라 유지한다. 오류의 원인은 제품 수가 아니라 범주다.
+원본: `data/outputs/evidence_coverage/collection_universe_qa_sample_reviewed.csv`(gitignore).
+
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
 ④ candidate 필터·대표 선택 ⑤ document/chunk 생성 ⑥ BGE-M3 embedding ⑦ DB ingest ⑧ audit 재실행 ⑨ Tier A QA ⑩ retrieval 평가.
