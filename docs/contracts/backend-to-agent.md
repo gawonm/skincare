@@ -510,6 +510,12 @@ Citation과 `SUPPORTED` 판정에는 사용하지 않는다. 해당 Claim은 `IN
 - Product 검색은 `product_ingredient.match_acceptance=confirmed`와 non-null `ingredient_id`만 사용한다.
 - 요청한 성분 ID 중 하나 이상을 포함한 상품을 반환하되, 같은 상품이 여러 성분에서 검색돼도
   `product.id` 기준으로 한 번만 반환한다.
+- `ProductSearchFilters.category`가 있으면 `ProductCategory.code`를
+  `product.service_category`와 정확히 비교한다. 성분과 카테고리 조건은 SQL에서 함께 적용하고,
+  그 뒤에 정렬과 `ProductSearchRequest.limit`을 적용한다. 먼저 제한된 상품을 Agent가 사후
+  필터링하는 방식은 실제 후보를 누락하므로 사용하지 않는다.
+- 카테고리가 없으면 기존처럼 confirmed 성분 연결만으로 검색한다. Agent의 결과 재검증은
+  Backend 필터를 대신하지 않으며 방어적 계약 확인으로만 유지한다.
 - `ProductRecord.ingredient_ids`에는 해당 상품의 confirmed 성분 ID만 중복 없이 넣는다.
 - 상품의 이름·분류·source·관찰 시각은 저장값만 매핑하고, 제형·사용감·사용법을 추론하지 않는다.
 
