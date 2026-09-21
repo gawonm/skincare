@@ -95,10 +95,10 @@ main의 동기식 구형 `OpenAiEmbedder` 구현은 제거했고, 같은 경로�
 unresolved 처리와 세 가지 지원 Claim 타입을 맞췄다. 2026-09-20 최신 main, NIA Case와 v2 DB
 통합 기준은 [현재 작업 합본](RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md)에 누적한다.
 
-2026-09-21 P3 방향은 전체 offline Claim index를 선행 구축하지 않고, 유사 Case rerank Top-3에서
+2026-09-21 P3는 전체 offline Claim index를 선행 구축하지 않고, 유사 Case rerank Top-3에서
 런타임 LLM이 exact quote 기반 Claim을 추출한 뒤 룰 검증·성분 Resolution·Evidence 검색으로
-연결하는 방식으로 변경했다. 현재 코드는 아직 기존 `ClaimRetriever` 경로이며, 새 계획과 계약을
-기준으로 후속 구현한다. 기존 offline annotation/Claim 적재 코드는 후속 최적화용으로 보존한다.
+연결하도록 구현했다. 운영 기본은 Case 경로이고, 기존 `ClaimRetriever`는 명시적으로 주입한
+비교·개발 경로와 후속 최적화용으로만 보존한다.
 
 ## Backend 담당자 확인 항목
 
@@ -111,8 +111,8 @@ main 반영 전에 최소한 다음 항목은 완료해야 한다. 세부 근거
 - 2-Layer 경로는 `TwoLayerEvidenceSearchBackend`가 BGE-M3 1,024차원
   `evidence_chunk`를 조회하고 실제 DB 통합 테스트도 통과했다. 구형 `rag_chunk` 경로의
   OpenAI 1,536차원 검증과 섞지 않는다.
-- Claim 검색은 active `annotation_version`을 설정에서 주입하고 SQL에서 정확히 일치하는
-  문서만 조회한다. 여러 버전을 자동 선택하거나 섞지 않는다.
+- 운영 기본 Case 경로에는 Claim `annotation_version`이 필요하지 않다. offline Claim 비교 경로를
+  사용할 때만 active 버전을 명시하고 SQL에서 정확히 일치하는 문서만 조회한다.
 - 애플리케이션 설정은 `config.yaml`만 사용한다. Backend가 OpenAI API 키와
   `gpt-4o-mini` 모델 설정을 읽어 `ProductionAgentConfig`에 주입하고, agent는 `.env`나
   환경변수를 직접 읽지 않는다. `.env`는 Docker Compose 변수에만 사용한다.

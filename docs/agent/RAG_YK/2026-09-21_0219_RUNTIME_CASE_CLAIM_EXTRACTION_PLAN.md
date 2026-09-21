@@ -2,7 +2,9 @@
 
 > 작성: 2026-09-21 02:19 KST
 >
-> 상태: 방향·Backend ↔ Agent 계약 확정, 코드 구현 준비
+> 상태: 핵심 코드·LangGraph·DB 검색 구현 완료, 골든 셋·외부 LLM E2E 확인 대기
+>
+> 구현 갱신: 2026-09-21 10:20 KST
 >
 > 범위: NIA Case 검색 → 런타임 Claim 추출 → 룰 검증 → Ingredient/Evidence/Product 연결
 
@@ -149,7 +151,8 @@ embed_case_query
   → assemble_rag_response
 ```
 
-- 기존 `RagRoute.CLAIM_THEN_EVIDENCE`는 `CASE_THEN_EVIDENCE`로 변경한다.
+- 기존 호출 호환을 위해 `RagRoute.CLAIM_THEN_EVIDENCE` Enum 값은 유지하되, 운영 기본 연결은
+  `search_cases`에서 시작하는 Case 경로로 변경한다.
 - Case, 런타임 Claim, Evidence는 각각 별도 Bundle/State로 유지한다.
 - LLM 추출 실패를 Evidence 부족으로 바꾸지 않는다.
 - NIA Claim은 체감·탐색 정보로 표시하고 공식 Citation으로 렌더링하지 않는다.
@@ -165,6 +168,8 @@ embed_case_query
 
 ### P3-2. Agent Case 검색 DTO·포트
 
+상태: **완료**
+
 예상 파일:
 
 - `agent/rag/case_schemas.py` 신규
@@ -178,6 +183,8 @@ embed_case_query
 - SUCCESS/NO_RESULTS/UNSUPPORTED/ERROR 불변조건
 
 ### P3-3. Agent 런타임 Claim 추출
+
+상태: **완료**
 
 예상 파일:
 
@@ -198,6 +205,8 @@ embed_case_query
 
 ### P3-4. Ingredient/Evidence 연결
 
+상태: **완료**
+
 예상 파일:
 
 - `agent/rag/case_claim_anchor_adapter.py` 신규
@@ -215,6 +224,8 @@ embed_case_query
 
 ### P3-5. Backend Case 검색
 
+상태: **완료**
+
 예상 파일:
 
 - `backend/repositories/nia_case_document_repository.py`
@@ -231,6 +242,8 @@ Backend는 런타임 Claim을 생성하거나 검증하지 않는다. 기존 Cla
 호출하지 않는다.
 
 ### P3-6. LangGraph 라우팅
+
+상태: **완료**
 
 예상 파일:
 
@@ -262,6 +275,10 @@ Backend는 런타임 Claim을 생성하거나 검증하지 않는다. 기존 Cla
 11. LLM 오류·Case 없음·reranker fallback
 12. 실제 통합 DB Case → 런타임 Claim → Evidence → Product smoke
 
+현재 1, 2, 3, 5, 6, 9, 10의 결정적 테스트를 구현했다. 실제 DB Case 벡터 조회도 별도 통합
+테스트로 통과했다. 4, 7, 8의 Case provenance 세부 회귀, 11의 LLM 오류·reranker fallback,
+12의 외부 LLM 포함 E2E는 후속 테스트로 남아 있다.
+
 ## 8. Offline annotation 경로 처리
 
 기존에 구현한 다음 코드는 삭제하지 않는다.
@@ -287,14 +304,39 @@ Backend는 런타임 Claim을 생성하거나 검증하지 않는다. 기존 Cla
 - [x] 실제 Case 길이 분포 확인
 - [x] Backend ↔ Agent 런타임 추출 계약 갱신
 - [x] offline annotation 경로 보존·보류 결정
-- [ ] Agent DTO·포트 구현
-- [ ] Backend Case Retriever 구현
-- [ ] 구조화 Claim extractor·validator 구현
-- [ ] LangGraph 경로 연결
-- [ ] 단위·Agent·DB 통합 테스트
+- [x] Agent DTO·포트 구현
+- [x] Backend Case Retriever 구현
+- [x] 구조화 Claim extractor·validator 구현
+- [x] LangGraph 경로 연결
+- [x] 단위·Agent·DB 검색 통합 테스트
 - [ ] 골든 셋 작성 및 prompt/version 평가
 
-## 10. 완료 조건
+## 10. 구현 및 검증 결과 — 2026-09-21 10:20 KST
+
+- Case 검색: 기존 `nia_case_document`에서 BGE-M3 1,024차원 cosine 후보 20건 조회
+- Case rerank: `BAAI/bge-reranker-v2-m3`로 Top-3 선정
+- 런타임 추출: `case_id`, raw 성분명, exact quote, 단일/조합 유형만 구조화 출력
+- 규칙 검증: Top-3 Case ID, exact quote, quote 내 성분명, 중복 차단
+- 성분 연결: 기존 `IngredientRepository`와 alias fallback 사용
+- 조합 방어: 모든 성분이 매칭된 조합만 `MULTI + ALL` Evidence anchor로 변환
+- 상품 정책: Evidence 0건이어도 `INSUFFICIENT → CLAIM_ONLY` 성분 상품 후보 유지
+- 명시 성분 정책: Case 검색·rerank·Claim 추출을 건너뛰고 Evidence 직행
+- 최적화: Case와 Evidence reranker가 하나의 CrossEncoder 모델 인스턴스를 공유
+- 호환 경로: offline `ClaimRetriever`는 명시적으로 주입한 비교·개발 실행에서만 사용
+
+검증 결과:
+
+```text
+전체 기본 테스트: 446 passed, 3 deselected
+Agent + Case 검색 단위 테스트: 146 passed
+실제 PostgreSQL NIA Case 벡터 검색: 1 passed
+```
+
+실제 OpenAI 포함 전체 CLI는 아직 실행하지 않았다. 현재 설정에서는 Top-3 NIA 원문이 외부
+모델로 전송되므로 데이터 전송에 대한 명시적 승인 후 실행한다. 로컬/결정적 테스트와 DB 조회는
+외부 전송 없이 완료했다.
+
+## 11. 완료 조건
 
 - Top-3 Case 원문 밖의 성분·Claim이 Evidence/Product 단계로 넘어가지 않는다.
 - LLM이 canonical ingredient ID나 Evidence 상태를 결정하지 않는다.
@@ -303,4 +345,3 @@ Backend는 런타임 Claim을 생성하거나 검증하지 않는다. 기존 Cla
 - Evidence가 없는 Claim-only 상품 정책을 유지한다.
 - 전체 offline annotation 없이 실제 통합 DB smoke가 동작한다.
 - 런타임 모델·prompt version과 단계별 실패 상태가 관측 가능하다.
-

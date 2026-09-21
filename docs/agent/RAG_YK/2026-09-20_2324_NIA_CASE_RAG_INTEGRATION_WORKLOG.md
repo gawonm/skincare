@@ -542,3 +542,49 @@ production 완료 건수는 계속 0건이다. 런타임 방식의 비용·지�
   `docs/agent/RAG_YK/2026-09-21_0219_RUNTIME_CASE_CLAIM_EXTRACTION_PLAN.md`
 - 최신 경계 계약: `docs/contracts/backend-to-agent.md` 10절
 - 기존 P3 Case-scoped Claim RAG 계획은 새 계획으로 교체했다.
+
+## 15. P3 Case 기반 LangGraph 구현 결과 — 2026-09-21 10:20 KST
+
+### 완료 흐름
+
+```text
+피부 고민 질의
+  → BGE-M3 Case 검색 20건
+  → 공유 BGE reranker Top-3
+  → 런타임 LLM exact-quote Claim 추출
+  → 룰 기반 Case ID·quote·성분명·중복 검증
+  → Ingredient Resolution
+  → Claim별 Evidence 검증
+  → Evidence supported / Claim-only 성분 분류
+  → confirmed 상품 검색·중복 병합
+```
+
+`RagRoute.CLAIM_THEN_EVIDENCE` 문자열은 기존 호출 호환 때문에 유지했다. 다만 운영 기본 그래프는
+더 이상 `search_claims`로 가지 않고 `search_cases`에서 시작한다. offline `ClaimRetriever`는
+명시적으로 주입한 비교 테스트에서만 과거 경로를 사용한다.
+
+### 구현 파일
+
+- Agent 계약: `agent/rag/case_schemas.py`, `agent/rag/case_claim_schemas.py`,
+  `agent/rag/ports.py`
+- Case 검색: `backend/repositories/nia_case_document_repository.py`,
+  `backend/services/two_layer_rag_adapters.py`
+- 런타임 추출·검증: `agent/rag/case_claim_extractor.py`,
+  `agent/rag/case_claim_validator.py`
+- Evidence anchor: `agent/rag/case_claim_anchor_adapter.py`
+- LangGraph: `agent/rag_workflow.py`, `agent/graph.py`, `agent/schemas.py`,
+  `agent/rag_response.py`
+- 공유 reranker: `agent/rag/retrieval/cross_encoder.py`
+
+### 확인 결과
+
+- Evidence 검색 결과가 없어도 유효 Claim 성분은 `CLAIM_ONLY`로 남아 상품 후보에 포함된다.
+- exact quote가 원문과 일치하지 않으면 Ingredient/Evidence/Product 호출 전에 제외된다.
+- 일부만 매칭된 조합 Claim은 단일 성분 Evidence로 축소되지 않는다.
+- 명시 성분 질의는 Case 경로를 호출하지 않는다.
+- 실제 PostgreSQL에서 NIA Case 후보 20건 조회와 DTO 변환이 통과했다.
+- 전체 기본 테스트 결과: `446 passed, 3 deselected`.
+
+실제 OpenAI E2E는 Top-3 NIA 원문 외부 전송 승인이 없어 실행하지 않았다. 명시 승인 후
+`tests.agent.interactive_two_layer_rag_cli`로 확인한다. 남은 품질 작업은 골든 셋, LLM 오류·reranker
+fallback, ambiguous/unresolved 및 다중 Case provenance 회귀 테스트다.
