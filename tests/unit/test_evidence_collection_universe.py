@@ -112,3 +112,47 @@ def test_smoke_set_size_and_required_members() -> None:
         "BHA",
     ):
         assert name in SMOKE_INGREDIENTS
+
+
+def test_botanical_gate() -> None:
+    from data.scripts.evidence_collection_universe import BOTANICAL_MIN_PRODUCTS
+
+    name = "Example Officinalis Leaf Extract"
+    low = _row(name, products=BOTANICAL_MIN_PRODUCTS - 1)
+    assert _E.decide(low, _E.category(name))[0] is CollectionDecision.DEFER
+    assert _E.decide(_row(name, products=BOTANICAL_MIN_PRODUCTS), _E.category(name))[0] is (
+        CollectionDecision.COLLECT_BASELINE
+    )
+    # NIA 언급이 있으면 제품이 적어도 gate 를 통과한다
+    assert _E.decide(_row(name, nia=1, products=1), _E.category(name))[0] is (
+        CollectionDecision.COLLECT_BASELINE
+    )
+
+
+def test_qa_sampler_is_stratified_and_deterministic() -> None:
+    from data.scripts.evidence_collection_universe import QA_SAMPLE_PER_STRATUM, StratifiedQaSampler
+    from data.scripts.evidence_coverage_schemas import UniverseRow
+
+    universe = [
+        UniverseRow(
+            ingredient_id=uuid4(),
+            ingredient_name=f"X{i}",
+            category=UniverseCategory.ACTIVE_OR_FUNCTIONAL,
+            decision=d,
+            decision_reason="",
+            nia_case_count=0,
+            confirmed_product_count=0,
+            scientific_document_count=0,
+            current_priority_tier=PriorityTier.P4,
+            families="",
+            in_smoke_set=False,
+        )
+        for d in CollectionDecision
+        for i in range(30)
+    ]
+    first = StratifiedQaSampler().sample(universe)
+    assert first == StratifiedQaSampler().sample(universe)
+    labels = [label for label, _ in first]
+    assert labels.count("DEFER") == QA_SAMPLE_PER_STRATUM
+    assert labels.count("collect_active") == QA_SAMPLE_PER_STRATUM
+    assert labels.count("collect_botanical") == 0  # 이 입력에는 botanical 이 없다

@@ -11,13 +11,19 @@
 
 import argparse
 import asyncio
+import csv
+import json
+import random
 import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from data.scripts.evidence_collector_schemas import CollectionIngredient
 from data.scripts.evidence_coverage_audit import CoverageAuditRunner, CoverageCsvWriter
 from data.scripts.evidence_coverage_schemas import (
     CollectionDecision,
@@ -27,16 +33,21 @@ from data.scripts.evidence_coverage_schemas import (
     UniverseCategory,
     UniverseRow,
 )
+from models.ingredient import IngredientMaster
 
 # 제품 근거가 이 수 이상이거나 NIA 언급이 있어야 baseline 수집 대상으로 본다. 제품 1~4개짜리 long tail 은
 # 수집해도 상담에서 쓰일 일이 드물어 DEFER 한다(임의 기준이며 사람 확인이 필요하다).
 MIN_PRODUCTS_FOR_BASELINE = 5
+# botanical 추가 gate: NIA 언급·기존 근거가 없으면 제품이 이 수 이상 쓰이는 것만 baseline 후보로 본다.
+# 추출물은 종류가 매우 많아 제품 5개 기준만으로는 597개가 통과한다. 임시값이며 50개 QA 후 조정한다.
+BOTANICAL_MIN_PRODUCTS = 20
 QA_NIA_MIN_CASES = 170  # coverage audit 의 NIA 높음 기준과 같은 값
 QA_ACTIVE_MIN_PRODUCTS = 100  # coverage audit 의 제품 높음 기준과 같은 값
 
 _OUTPUT_DIR = Path("data/outputs/evidence_coverage")
 _UNIVERSE_FILENAME = "collection_universe.csv"
 _FAMILY_FILENAME = "ingredient_family_candidates.csv"
+_QA_SAMPLE_FILENAME = "collection_universe_qa_sample.csv"
 
 
 class FamilyRule(BaseModel):
@@ -395,9 +406,21 @@ class CollectionEligibility:
                 CollectionDecision.DEFER,
                 f"NIA 0건, 제품 {row.confirmed_product_count}개(<{MIN_PRODUCTS_FOR_BASELINE}) long tail",
             )
+        if category is UniverseCategory.BOTANICAL_OR_FERMENT and not self._botanical_relevant(row):
+            return (
+                CollectionDecision.DEFER,
+                f"botanical: NIA 0·근거 0·제품 {row.confirmed_product_count}개(<{BOTANICAL_MIN_PRODUCTS})",
+            )
         if self._is_qa_priority(row, category):
             return CollectionDecision.QA_PRIORITY, "수집 대상 + 사람 QA 우선(NIA/제품/routing 기준)"
         return CollectionDecision.COLLECT_BASELINE, "baseline 수집 대상"
+
+    def _botanical_relevant(self, row: CoverageRow) -> bool:
+        return (
+            row.nia_case_count > 0
+            or row.scientific_document_count > 0
+            or row.confirmed_product_count >= BOTANICAL_MIN_PRODUCTS
+        )
 
     def _is_qa_priority(self, row: CoverageRow, category: UniverseCategory) -> bool:
         if row.ingredient_name in SMOKE_INGREDIENTS:
@@ -476,7 +499,108 @@ class UniverseBuilder:
         return "\n".join(lines)
 
 
-async def _run(database_url: str, nia_summary: Path, output_dir: Path) -> None:
+QA_SAMPLE_SEED = 20260921  # 같은 입력이면 같은 50개가 나오게 고정한다
+QA_SAMPLE_PER_STRATUM = 10
+_QA_ACTIVE = "collect_active"
+_QA_BOTANICAL = "collect_botanical"
+
+
+class StratifiedQaSampler:
+    """규칙 보정 전 사람이 볼 50개: active 10 / botanical 10 / QA_PRIORITY 10 / DEFER 10 / EXCLUDE 10."""
+
+    def sample(self, universe: list[UniverseRow]) -> list[tuple[str, UniverseRow]]:
+        strata: dict[str, list[UniverseRow]] = {
+            _QA_ACTIVE: [
+                u
+                for u in universe
+                if u.decision is CollectionDecision.COLLECT_BASELINE
+                and u.category is not UniverseCategory.BOTANICAL_OR_FERMENT
+            ],
+            _QA_BOTANICAL: [
+                u
+                for u in universe
+                if u.decision is CollectionDecision.COLLECT_BASELINE
+                and u.category is UniverseCategory.BOTANICAL_OR_FERMENT
+            ],
+            CollectionDecision.QA_PRIORITY.value: [
+                u for u in universe if u.decision is CollectionDecision.QA_PRIORITY
+            ],
+            CollectionDecision.DEFER.value: [
+                u for u in universe if u.decision is CollectionDecision.DEFER
+            ],
+            CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION.value: [
+                u
+                for u in universe
+                if u.decision is CollectionDecision.EXCLUDE_FROM_SCIENTIFIC_COLLECTION
+            ],
+        }
+        rng = random.Random(QA_SAMPLE_SEED)
+        picked: list[tuple[str, UniverseRow]] = []
+        for label, members in strata.items():
+            members = sorted(
+                members, key=lambda u: str(u.ingredient_id)
+            )  # 순서를 고정해야 seed 가 의미 있다
+            picked.extend(
+                (label, u) for u in rng.sample(members, min(QA_SAMPLE_PER_STRATUM, len(members)))
+            )
+        return picked
+
+
+class CollectorInputExporter:
+    """universe 결과를 기존 compact collector 입력(CollectionIngredient JSON)으로 내보낸다. 수동 목록을 따로 만들지 않는다."""
+
+    async def export(
+        self,
+        database_url: str,
+        universe: list[UniverseRow],
+        names: list[str],
+        output_path: Path,
+    ) -> list[CollectionIngredient]:
+        by_name = {u.ingredient_name: u for u in universe}
+        missing = [n for n in names if n not in by_name]
+        if missing:
+            raise ValueError(f"universe 에 없는 성분명: {missing}")
+        ids = {by_name[n].ingredient_id: n for n in names}
+        engine = create_async_engine(database_url)
+        try:
+            async with async_sessionmaker(engine)() as session:
+                await session.execute(text("SET TRANSACTION READ ONLY"))
+                result = await session.execute(
+                    select(
+                        IngredientMaster.id,
+                        IngredientMaster.standard_name_ko,
+                        IngredientMaster.old_names_en,
+                    ).where(IngredientMaster.id.in_(ids))
+                )
+                rows = {r[0]: (r[1], list(r[2] or [])) for r in result.all()}
+        finally:
+            await engine.dispose()
+        ingredients = [
+            CollectionIngredient(
+                ingredient_id=i,
+                standard_name_en=n,
+                standard_name_ko=rows[i][0],
+                aliases=rows[i][1],
+            )
+            for i, n in ids.items()
+        ]
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps(
+                [i.model_dump(mode="json") for i in ingredients], ensure_ascii=False, indent=2
+            ),
+            encoding="utf-8",
+        )
+        return ingredients
+
+
+async def _run(
+    database_url: str,
+    nia_summary: Path,
+    output_dir: Path,
+    export_file: Path | None,
+    names: list[str],
+) -> None:
     snapshot = await CoverageAuditRunner().load(database_url, nia_summary)
     builder = UniverseBuilder()
     universe = builder.build(snapshot.rows)
@@ -486,6 +610,41 @@ async def _run(database_url: str, nia_summary: Path, output_dir: Path) -> None:
         output_dir / _FAMILY_FILENAME, builder.family_members(snapshot.rows), FamilyMemberRow
     )
     print(builder.summary(universe))
+    sample = StratifiedQaSampler().sample(universe)
+    with (output_dir / _QA_SAMPLE_FILENAME).open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(
+            [
+                "stratum",
+                "ingredient_id",
+                "ingredient_name",
+                "category",
+                "decision",
+                "nia_case_count",
+                "confirmed_product_count",
+                "decision_reason",
+                "reviewer_verdict",
+                "reviewer_note",
+            ]
+        )
+        for label, u in sample:
+            w.writerow(
+                [
+                    label,
+                    u.ingredient_id,
+                    u.ingredient_name,
+                    u.category.value,
+                    u.decision.value,
+                    u.nia_case_count,
+                    u.confirmed_product_count,
+                    u.decision_reason,
+                    "",
+                    "",
+                ]
+            )
+    if export_file is not None:
+        exported = await CollectorInputExporter().export(database_url, universe, names, export_file)
+        print(f"exported={len(exported)} -> {export_file}")
     present = {u.ingredient_name for u in universe}
     missing = [n for n in (*SMOKE_INGREDIENTS, *MANUAL_DECISIONS) if n not in present]
     print(f"names_not_in_universe={missing}")
@@ -497,5 +656,18 @@ if __name__ == "__main__":
     parser.add_argument("--database-url", required=True)
     parser.add_argument("--nia-summary", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=_OUTPUT_DIR)
+    parser.add_argument("--export-ingredients-file", type=Path, default=None)
+    parser.add_argument(
+        "--names", default="", help="쉼표로 구분한 성분명(--export-ingredients-file 과 함께)"
+    )
     args = parser.parse_args()
-    asyncio.run(_run(args.database_url, args.nia_summary, args.output_dir))
+    names = [n.strip() for n in args.names.split(",") if n.strip()]
+    asyncio.run(
+        _run(
+            args.database_url,
+            args.nia_summary,
+            args.output_dir,
+            args.export_ingredients_file,
+            names,
+        )
+    )
