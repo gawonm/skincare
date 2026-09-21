@@ -132,6 +132,25 @@ class TestIngredientAliases:
         request = IngredientResolveRequest(name=name)
         assert CommonIngredientAliasMapper().map_request(request) == request
 
+    @pytest.mark.parametrize(
+        "name",
+        ["살리실산", "살리실산(BHA)", " 살리실산 ( BHA ) ", "SALICYLIC ACID"],
+    )
+    def test_maps_safe_salicylic_acid_aliases(self, name: str) -> None:
+        mapped = CommonIngredientAliasMapper().map_request(
+            IngredientResolveRequest(name=name)
+        )
+        assert mapped.name == "살리실릭애씨드"
+
+    @pytest.mark.parametrize("name", ["BHA", "티트리 오일", "티트리오일", "TEA TREE OIL"])
+    def test_preserves_ambiguous_families_without_single_id_mapping(self, name: str) -> None:
+        mapper = CommonIngredientAliasMapper()
+        request = IngredientResolveRequest(name=name)
+
+        assert mapper.map_request(request) == request
+        assert mapper.is_ambiguous_family(request)
+        assert len(mapper.family_candidates(request)) >= 2
+
     def test_custom_entries_and_empty_catalog(self) -> None:
         request = IngredientResolveRequest(name="테스트 별칭")
         mapper = CommonIngredientAliasMapper(
@@ -146,7 +165,7 @@ class TestIngredientAliases:
         assert CommonIngredientAliasMapper([]).map_request(request) == request
 
     def test_rejects_conflicting_normalized_aliases(self) -> None:
-        with pytest.raises(ValueError, match="서로 다른 표준명"):
+        with pytest.raises(ValueError, match="서로 다른 해석"):
             CommonIngredientAliasMapper(
                 [
                     IngredientAliasEntry(

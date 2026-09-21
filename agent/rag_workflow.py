@@ -562,6 +562,14 @@ class RagWorkflowNodes:
             )
         request = IngredientResolveRequest(name=raw_name)
         result = await self._ingredient_repository.resolve(request)
+        if (
+            result.status is LookupStatus.NO_RESULTS
+            and self._ingredient_aliases.is_ambiguous_family(request)
+        ):
+            return ResolvedCaseClaimIngredient(
+                raw_name=raw_name,
+                status=CaseClaimIngredientResolutionStatus.AMBIGUOUS,
+            )
         alias_request = self._ingredient_aliases.map_request(request)
         if result.status is LookupStatus.NO_RESULTS and alias_request.name != request.name:
             if not self._runtime.reserve_tool_call(

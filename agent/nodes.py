@@ -307,13 +307,17 @@ class AgentNodes:
         for mention in parsed.ingredient_mentions or fallback_mentions:
             if not self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):
                 break
-            ingredient_result = await self._ingredient_repository.resolve(
-                self._ingredient_request(mention)
+            original_request = self._ingredient_request(mention)
+            ingredient_result = await self._ingredient_repository.resolve(original_request)
+            ambiguous_family = (
+                ingredient_result.status is LookupStatus.NO_RESULTS
+                and self._ingredient_aliases.is_ambiguous_family(original_request)
             )
-            alias_request = self._ingredient_aliases.map_request(self._ingredient_request(mention))
+            alias_request = self._ingredient_aliases.map_request(original_request)
             if (
                 ingredient_result.status is LookupStatus.NO_RESULTS
-                and alias_request.name != mention
+                and not ambiguous_family
+                and alias_request.name != original_request.name
             ):
                 if not self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):
                     break
@@ -327,7 +331,7 @@ class AgentNodes:
                     ingredient_result.error_message
                     or f"성분 조회를 수행하지 못했습니다: {mention} ({ingredient_result.status.value})",
                 )
-            elif ingredient_result.ambiguous_candidates:
+            elif ambiguous_family or ingredient_result.ambiguous_candidates:
                 unresolved_names.append(mention)
             elif ingredient_result.status is LookupStatus.SUCCESS and ingredient_result.ingredient:
                 ingredient_ids.append(ingredient_result.ingredient.ingredient_id)
