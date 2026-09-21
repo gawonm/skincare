@@ -924,6 +924,33 @@ Salicylic Acid 39968706이 `route_unclear`로 보인 것은 재구성 MeSH 탓�
 **Known limitations (이번 범위 밖, 정책 설계 안 함)**: 사마귀·기저세포암 등 medical-only dermatology는 화장품 범위 밖이라 계속 버려진다.
 claim topic 재현율, 유사 논문 중복 제거, 세부 mixed 예외 규칙도 하지 않았다. 목표는 완벽한 분류기가 아니라 selected precision 이다.
 
+### PubMed 50-smoke 결과 (2026-09-21, selected ≤3, PubMed 읽기 요청 147건, embedding·DB write 없음)
+표본(`data/scripts/pubmed_smoke_runner.py`, seed 20260921, 층별 고정 무작위): 기존 smoke 10 / COLLECT active 20 / COLLECT botanical 8 /
+UV_FILTER 5 / QA_PRIORITY 7, 부족분 없음. 이번부터 query·초록·MeSH·publication type·분류·이유를 성분×PMID 행으로
+`data/outputs/evidence_coverage/pubmed_smoke50.jsonl`(gitignore)에 저장한다(463행).
+
+| 층 | 성분 | candidate | selected | selected가 있는 성분 | 0 selected |
+|---|---:|---:|---:|---:|---:|
+| 기존 smoke | 10 | 74 | 13 | 5 | 5 |
+| active | 20 | 85 | 7 | 4 | 16 |
+| botanical | 8 | 0 | 0 | 0 | 8(전부 검색 결과 0건) |
+| UV_FILTER | 5 | 37 | 2 | 1 | 4 |
+| QA_PRIORITY | 7 | 32 | 6 | 2 | 5 |
+| 합계 | 50 | 228 | **28** | 12 | 38 |
+
+**품질 점검(selected 28편 전수 확인)**: oral/injection 0, in_vitro/ex_vivo 0, 피부 무관 0, 제형 개발 논문 0, comparator-only 0(Hexapeptide-9 논문은
+이번에도 검색돼 `comparator_only` candidate로 정확히 걸렸다). 명백히 잘못된 selected는 1편이다.
+
+**결함/한계**
+- 차단(recall, 정밀도 문제 아님): **botanical INCI 명칭 검색 결과가 8/8 모두 0건**(예: "Bambusa Vulgaris Leaf Extract", 괄호가 든 "Mentha Piperita
+  (Peppermint) Leaf Extract"). 식물 추출물은 지금 질의로는 근거를 못 찾는다. 학명/통용명으로 질의를 정규화하는 별도 결정이 필요하고,
+  그 전까지 botanical은 full collection 대상에서 뺀다.
+- 비차단: (1) 성분명에 수식어가 붙은 파생 물질 오귀속 1건(Bentonite 대상에 "quaternium-18 bentonite" 논문). (2) 복합 제형 판정이 제목
+  어휘에 의존해 `-containing`, `-based`, `&`, "X-Y-containing moisturizer"는 단일로 표시된다(약 5편). (3) 국소가 분명한데 경로 단서가 없어 candidate로
+  밀린 논문(Ascorbic 25% melasma, Panthenol formulations, Dead Sea 목욕 등 3~5편). (4) `radiodermatitis`처럼 접두 결합어를 피부로 못 봄.
+  (5) 표본의 "active" 20개 중 약 12개는 실제로는 계면활성제·용제·점토·염 등이라 universe 범주 노이즈가 남아 있다(이미 known limitation).
+  (6) 검색 결과 0건인 성분이 16개(botanical 8 포함).
+
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
 ④ candidate 필터·대표 선택 ⑤ document/chunk 생성 ⑥ BGE-M3 embedding ⑦ DB ingest ⑧ audit 재실행 ⑨ Tier A QA ⑩ retrieval 평가.
