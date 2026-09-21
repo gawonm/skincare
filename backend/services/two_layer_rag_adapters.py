@@ -1,6 +1,7 @@
 """최신 2-Layer DB 조회를 기존 Agent 포트로 변환하는 읽기 전용 어댑터."""
 
 from collections.abc import Sequence
+from hashlib import sha256
 from typing import ClassVar
 from uuid import UUID
 
@@ -51,6 +52,7 @@ from agent.rag.schemas import (
     ProductRecord,
     ProductSearchRequest,
     ProductSearchResult,
+    ProductTaxonomy,
     QuestionIntent,
     RagChunkDraft,
     RagConfidenceTier,
@@ -63,6 +65,7 @@ from backend.repositories.agent_ingredient_repository import (
 from backend.repositories.agent_product_repository import (
     AgentProductReadRepository,
     AgentProductRow,
+    AgentProductTaxonomyRow,
 )
 from backend.repositories.claim_search_repository import (
     ClaimIngredientRow,
@@ -472,6 +475,62 @@ class TwoLayerIngredientRepository(IngredientRepository):
             aliases=aliases,
             is_demo=False,
         )
+
+
+class TwoLayerProductTaxonomyProvider:
+    """DB에 실제 적재된 상품 분류를 Agent의 동적 Taxonomy로 변환한다."""
+
+    VERSION_PREFIX: ClassVar[str] = "product-taxonomy/db-v1"
+    VERSION_DIGEST_LENGTH: ClassVar[int] = 12
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def load(self) -> ProductTaxonomy:
+        try:
+            async with self._session_factory() as session:
+                rows = await AgentProductReadRepository(session).list_taxonomy()
+        except (SQLAlchemyError, RuntimeError, ValueError, ValidationError) as error:
+            raise RuntimeError(f"상품 Taxonomy 조회에 실패했습니다: {error}") from error
+        if not rows:
+            raise RuntimeError("상품 Taxonomy로 사용할 DB 분류값이 없습니다.")
+
+        categories = [
+            ProductCategory(
+                code=service_category,
+                name=service_category,
+                aliases=self._aliases(rows, service_category),
+            )
+            for service_category in sorted({row.service_category for row in rows})
+        ]
+        return ProductTaxonomy(
+            version=self._version(rows),
+            categories=categories,
+            # DB의 세부 제품 유형을 제형·사용감으로 추측하지 않기 위해 두 축은 비워 둔다.
+            textures=[],
+            skin_feels=[],
+        )
+
+    def _aliases(
+        self,
+        rows: list[AgentProductTaxonomyRow],
+        service_category: str,
+    ) -> list[str]:
+        return sorted(
+            {
+                row.product_type_normalized
+                for row in rows
+                if row.service_category == service_category
+            }
+        )
+
+    def _version(self, rows: list[AgentProductTaxonomyRow]) -> str:
+        signature = "|".join(
+            f"{row.service_category}:{row.product_type_normalized}:{row.product_count}"
+            for row in rows
+        )
+        digest = sha256(signature.encode("utf-8")).hexdigest()[: self.VERSION_DIGEST_LENGTH]
+        return f"{self.VERSION_PREFIX}:{digest}"
 
 
 class TwoLayerProductRepository(ProductRepository):

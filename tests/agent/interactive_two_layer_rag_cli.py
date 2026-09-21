@@ -16,14 +16,15 @@ from typing import ClassVar
 from pydantic import BaseModel, Field
 from sqlalchemy.engine import make_url
 
-from agent.adapters import FixtureProductTaxonomy
 from agent.factory import DevelopmentAgentApplication, DevelopmentAgentFactory
 from agent.llm import LlmClientFactory
 from agent.nodes import CLAIM_ONLY_PRODUCT_LIMITATION
+from agent.ports import IngredientRepository, ProductRepository
 from agent.rag.case_claim_extractor import CaseClaimExtractorFactory
 from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.generation.evidence_statement_generator import EvidenceStatementGeneratorFactory
+from agent.rag.ports import CaseClaimExtractor, CaseReranker, CaseRetriever, EvidenceRetriever
 from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
 from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
@@ -39,6 +40,7 @@ from agent.rag.schemas import (
     LocalRerankerConfig,
     LocalRerankerModel,
     ProductCandidateSet,
+    ProductTaxonomy,
     RagRetrievalPolicy,
     TextEmbeddingConfig,
 )
@@ -49,6 +51,7 @@ from backend.services.two_layer_rag_adapters import (
     TwoLayerEvidenceSearchBackend,
     TwoLayerIngredientRepository,
     TwoLayerProductRepository,
+    TwoLayerProductTaxonomyProvider,
 )
 from core.config import settings
 from core.database import Database, DatabaseConfig
@@ -281,8 +284,10 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
 
     def __init__(
         self,
+        product_taxonomy: ProductTaxonomy,
         limit: int | None = None,
         display_mode: CliDisplayMode = CliDisplayMode.COMPACT,
+        database: Database | None = None,
     ) -> None:
         Utf8ConsoleConfigurator().configure()
         self._display_mode = display_mode
@@ -301,18 +306,21 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
         self._retrieval_policy = config.create_retrieval_policy()
         database_factory = ConfiguredDatabaseFactory()
         self._database_name = database_factory.database_name()
-        self._database = database_factory.create()
+        self._database = database or database_factory.create()
+        self._product_taxonomy = product_taxonomy.model_copy(deep=True)
 
         embedder = TextEmbedderFactory().create(self._embedding_config)
         reranker_scorer = LocalBgeCrossEncoderScorer(self._reranker_config)
         self._retriever = RecordingEvidenceRetriever(
-            HybridEvidenceRetriever(
-                backend=TwoLayerEvidenceSearchBackend(self._database.session_factory),
-                embedder=embedder,
-                policy=self._retrieval_policy,
-                reranker=LocalBgeRerankerV2M3(
-                    self._reranker_config,
-                    scorer=reranker_scorer,
+            self._configure_evidence_retriever(
+                HybridEvidenceRetriever(
+                    backend=TwoLayerEvidenceSearchBackend(self._database.session_factory),
+                    embedder=embedder,
+                    policy=self._retrieval_policy,
+                    reranker=LocalBgeRerankerV2M3(
+                        self._reranker_config,
+                        scorer=reranker_scorer,
+                    ),
                 ),
             ),
             limit=limit,
@@ -324,24 +332,30 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
                 recursion_limit=self.RECURSION_LIMIT,
             ),
             llm=LlmClientFactory().create(self._chat_config),
-            ingredient_repository=TwoLayerIngredientRepository(
-                self._database.session_factory
+            ingredient_repository=self._configure_ingredient_repository(
+                TwoLayerIngredientRepository(self._database.session_factory)
             ),
-            case_retriever=BackendNiaCaseRetriever(self._database.session_factory),
-            case_reranker=LocalBgeCaseRerankerV2M3(
-                self._reranker_config,
-                scorer=reranker_scorer,
+            case_retriever=self._configure_case_retriever(
+                BackendNiaCaseRetriever(self._database.session_factory)
             ),
-            case_claim_extractor=CaseClaimExtractorFactory().create(self._chat_config),
+            case_reranker=self._configure_case_reranker(
+                LocalBgeCaseRerankerV2M3(
+                    self._reranker_config,
+                    scorer=reranker_scorer,
+                )
+            ),
+            case_claim_extractor=self._configure_case_claim_extractor(
+                CaseClaimExtractorFactory().create(self._chat_config)
+            ),
             case_embedder=embedder,
             evidence_retriever=self._retriever,
             answer_generator=AnswerGenerator(
                 EvidenceStatementGeneratorFactory().create(self._chat_config)
             ),
-            product_repository=TwoLayerProductRepository(
-                self._database.session_factory
+            product_repository=self._configure_product_repository(
+                TwoLayerProductRepository(self._database.session_factory)
             ),
-            product_taxonomy=FixtureProductTaxonomy().create(),
+            product_taxonomy=self._product_taxonomy,
             routine_planner=RoutinePlannerFactory().create(self._chat_config),
         ).create()
         self._app.history.register_room(
@@ -351,6 +365,36 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
                 thread_id=self._thread_id,
             )
         )
+
+    def _configure_case_retriever(self, delegate: CaseRetriever) -> CaseRetriever:
+        return delegate
+
+    def _configure_case_reranker(self, delegate: CaseReranker) -> CaseReranker:
+        return delegate
+
+    def _configure_case_claim_extractor(
+        self,
+        delegate: CaseClaimExtractor,
+    ) -> CaseClaimExtractor:
+        return delegate
+
+    def _configure_ingredient_repository(
+        self,
+        delegate: IngredientRepository,
+    ) -> IngredientRepository:
+        return delegate
+
+    def _configure_evidence_retriever(
+        self,
+        delegate: EvidenceRetriever,
+    ) -> EvidenceRetriever:
+        return delegate
+
+    def _configure_product_repository(
+        self,
+        delegate: ProductRepository,
+    ) -> ProductRepository:
+        return delegate
 
     def print_turn(self, result: AgentTurnResult, user_message: str) -> None:
         if self._display_mode is CliDisplayMode.VERBOSE:
@@ -378,7 +422,8 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
         )
         print(f"Evidence 리랭커: {self._reranker_config.model.value}")
         print(f"Claim·Evidence·성분·상품: {self._database_name} 실제 DB")
-        print("히스토리·체크포인터·루틴·상품 taxonomy: 개발용 메모리 구현")
+        print(f"상품 taxonomy: {self._product_taxonomy.version}")
+        print("히스토리·체크포인터·루틴: 개발용 메모리 구현")
         print("실제 OpenAI API 호출 비용이 발생합니다.")
         print(f"출력 모드: {self._display_mode.value}")
         print(DIVIDER_LINE)
@@ -392,8 +437,17 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
             else CliDisplayMode.COMPACT
         )
         message_parts = [argument for argument in arguments if argument != cls.VERBOSE_FLAG]
-        cli = cls(display_mode=display_mode)
+        database = ConfiguredDatabaseFactory().create()
+        cli: InteractiveTwoLayerRagCli | None = None
         try:
+            taxonomy = await TwoLayerProductTaxonomyProvider(
+                database.session_factory
+            ).load()
+            cli = cls(
+                display_mode=display_mode,
+                database=database,
+                product_taxonomy=taxonomy,
+            )
             cli.print_runtime()
             if message_parts:
                 user_message = " ".join(message_parts).strip()
@@ -402,7 +456,10 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
             else:
                 await cli.run_loop()
         finally:
-            await cli.close()
+            if cli is not None:
+                await cli.close()
+            else:
+                await database.dispose()
 
 
 if __name__ == "__main__":

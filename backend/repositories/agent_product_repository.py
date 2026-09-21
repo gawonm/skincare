@@ -23,6 +23,16 @@ class AgentProductRow(BaseModel):
     ingredient_ids: list[UUID] = Field(min_length=1)
 
 
+class AgentProductTaxonomyRow(BaseModel):
+    """상품 테이블에 실제 존재하는 서비스 분류와 세부 유형 집계."""
+
+    model_config = ConfigDict(frozen=True)
+
+    service_category: str = Field(min_length=1)
+    product_type_normalized: str = Field(min_length=1)
+    product_count: int = Field(ge=1)
+
+
 class AgentProductReadRepository:
     """확정된 전성분 연결만 사용해 상품을 조회하고 product ID로 중복을 제거한다."""
 
@@ -97,6 +107,21 @@ class AgentProductReadRepository:
         FROM product
         WHERE product.id = :product_id
     """
+    _TAXONOMY_SQL: ClassVar[str] = """
+        SELECT
+            product.service_category::text AS service_category,
+            product.product_type_normalized::text AS product_type_normalized,
+            count(*)::integer AS product_count
+        FROM product
+        WHERE product.service_category IS NOT NULL
+          AND product.product_type_normalized IS NOT NULL
+        GROUP BY
+            product.service_category::text,
+            product.product_type_normalized::text
+        ORDER BY
+            product.service_category::text,
+            product.product_type_normalized::text
+    """
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -129,3 +154,10 @@ class AgentProductReadRepository:
         if row is None or not row["ingredient_ids"]:
             return None
         return AgentProductRow.model_validate(row)
+
+    async def list_taxonomy(self) -> list[AgentProductTaxonomyRow]:
+        result = await self._session.execute(text(self._TAXONOMY_SQL))
+        return [
+            AgentProductTaxonomyRow.model_validate(row)
+            for row in result.mappings().all()
+        ]
