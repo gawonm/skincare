@@ -554,7 +554,9 @@ MFDS 사용제한 원료정보는 사용제한·배합제한·규제 조건·jur
 | `evidence_chunk_ingredient` | 8,377 | - | - | - |
 
 (`evidence_chunk_ingredient`는 청크-성분 연결 행이라 source별 분해는 이 문서에 기록하지 않았다.)
-scientific evidence 청크는 CIR 56 + PubMed 25 = 81건뿐이다.
+source별로 단위가 다르므로 합산하지 않는다: CIR은 10 documents / 56 chunks, PubMed는 25 documents / 25 chunks
+(abstract 1건 = chunk 1건), MFDS는 11 documents / 8,288 chunks다. 전체 chunk 8,369건 중 MFDS regulatory chunk가
+8,288건을 차지하므로, 전체 chunk 수를 scientific evidence coverage 지표로 쓰면 안 된다.
 
 ### H.2 [PROPOSED / AGREEMENT NEEDED] source별 retrieval lane
 
