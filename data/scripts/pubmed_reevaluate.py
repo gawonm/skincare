@@ -78,6 +78,10 @@ class PubmedReevaluator:
         }
         self._policy = PubmedSelectionPolicy(MAX_SELECTED)
 
+    @property
+    def ingredients(self) -> dict[str, CollectionIngredient]:
+        return self._ingredients
+
     @staticmethod
     def _record(row: dict[str, object]) -> PubmedRecord:
         year = row["year"]
