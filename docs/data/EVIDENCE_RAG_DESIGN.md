@@ -911,6 +911,19 @@ PubMed 읽기 요청 29건. 결과 원본: `data/outputs/evidence_coverage/pubme
 - **정책 결정 필요**: 사마귀(Salicylic Acid 7편)·기저세포암(Ascorbic Acid)처럼 피부 질환이지만 화장품 범위가 아닌 논문은 현재 버려진다.
   "dermatology 전체" vs "cosmetic/skincare 범위"를 정해야 한다.
 
+**재-smoke 후 최소 보정 3가지와 저장 결과 재평가** (새 PubMed 호출 없음)
+1. mixed 설계는 기본 candidate(`mixed_design_review`). 제형 개발·캡슐화 단서(encapsulat, particle size, release kinetics 등)를 실험실
+   단서에 추가. 2. 어휘: 피부(scar, wound(구강·구개 제외), laceration, stretch marks, seborrh, scalp), 경로(emulsion, mask, peel, shampoo,
+   wipes, sunscreen). 3. 복합 오탐: `and its/their/the`는 combination 이 아니다.
+재평가(저장된 초록 + 실제 publication type, MeSH는 미저장이라 "Humans"로 재구성): 제형 개발 논문 2편(Sodium Hyaluronate liposome,
+Retinol 캡슐화)은 selected → candidate, "ascorbic acid and its effects"는 복합 오표시가 사라짐, 옛 FN 4편은 제목 기준 피부 관련으로 통과하고
+구강 wound 2편은 계속 제외. **부작용(수용한 비용)**: 정당한 mixed 시험 2편(Niacinamide 12100180, Ascorbic 15258452)도 candidate로 밀렸다.
+재평가 한계: 저장된 초록이 없는 selected 2편(Retinol 38628085, Sodium Hyaluronate 41650338)은 재평가하지 못했고, 실제 MeSH가 없어
+Salicylic Acid 39968706이 `route_unclear`로 보인 것은 재구성 MeSH 탓일 수 있다.
+
+**Known limitations (이번 범위 밖, 정책 설계 안 함)**: 사마귀·기저세포암 등 medical-only dermatology는 화장품 범위 밖이라 계속 버려진다.
+claim topic 재현율, 유사 논문 중복 제거, 세부 mixed 예외 규칙도 하지 않았다. 목표는 완벽한 분류기가 아니라 selected precision 이다.
+
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
 ④ candidate 필터·대표 선택 ⑤ document/chunk 생성 ⑥ BGE-M3 embedding ⑦ DB ingest ⑧ audit 재실행 ⑨ Tier A QA ⑩ retrieval 평가.

@@ -54,7 +54,7 @@ uv run python -m data.scripts.compact_evidence_collector --source pubmed \
   1. abstract 있음, erratum·editorial·letter·case report 등 제외
   2. **피부 관련성**: 제목/MeSH 에 피부 맥락이 있거나 초록에 서로 다른 피부 용어 2개 이상. 통과 못 하면 **버림**
      (`skin` 이 세포 출처로만 스치는 cystinosis 논문 등)
-  3. **연구 설계**: human_clinical / mixed(임상+실험실) / review 만. 임상 설계 단서(무작위·placebo·split-face 등)와 사람 대상 단서가
+  3. **연구 설계**: human_clinical / review 만. mixed(임상+실험실)는 제형 개발 논문이 섞이므로 기본 candidate(`mixed_design_review`), 예외 규칙 없음. 임상 설계 단서(무작위·placebo·split-face 등)와 사람 대상 단서가
      함께 있어야 human 이고 "Humans" MeSH 단독은 human 이 아니다. in_vitro / ex_vivo / animal / unclear 는 candidate
      (`non_clinical_study_design`). DB enum 에 ex_vivo 가 없어 저장 시 in_vitro 로 접는다(마이그레이션 없음)
   4. **투여 경로**: topical 만. oral·injection 은 candidate(`route_not_topical`), 판별 불가는 topical 로 간주하지 않고
