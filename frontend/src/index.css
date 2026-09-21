@@ -45,3 +45,30 @@
   --color-blue-point: #256bf6; /* 링크 강조색 */
   --color-blue-tint: #eaf1ff; /* 선택된 연령대 배경 */
 }
+
+/*
+ * AI 채팅 화면 최신 시안(피그마 node 109:39 / 109:76 / 109:118)에서 새로 쓰는 색 토큰.
+ *
+ * 위 두 블록과 달리 피그마 변수(`--moss`, `--lavender-ink`, `--clay`, `--clay-tint`)의
+ * 실제 값을 그대로 옮긴 것이다. `--color-stop-surface` 는 시안에서 변수 없이 값(#0f2d1b)만
+ * 쓰인 정지 버튼 배경이다.
+ */
+@theme {
+  --color-moss: #4c6b54; /* 사용자 말풍선 */
+  --color-lavender-ink: #564c82; /* 최초 진입 인사 heading */
+  --color-clay: #a8452e; /* 안전 안내·오류 글자 */
+  --color-clay-tint: #f4e4df; /* 안전 안내·오류 배경 */
+  --color-stop-surface: #0f2d1b; /* 응답 대기 중 정지 버튼 */
+}
+
+/*
+ * 채팅 화면 배경 그라데이션. 최초 진입(109:39)과 대화 중·응답 중(109:76, 109:118)의
+ * 색 정지점이 서로 달라서 두 벌로 둔다.
+ */
+@utility bg-chat-entry {
+  background-image: linear-gradient(to bottom, #f8f9f3 0%, #e9f2e8 55%, #ecedfd 100%);
+}
+
+@utility bg-chat-conversation {
+  background-image: linear-gradient(to bottom, #f9faf4 0%, #eef4f0 58%, #ecf0fd 100%);
+}
