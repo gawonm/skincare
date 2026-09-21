@@ -266,6 +266,11 @@ AgentProductReadRepository.list_taxonomy()
 주입한다. 따라서 두 CLI에서 실행되는 질문 해석과 상품 필터는 `FixtureProductTaxonomy`가 아니라
 DB의 최신 분류값을 사용한다.
 
+상품 검색에서 카테고리가 지정되면 `TwoLayerProductRepository`가 `ProductCategory.code`를
+`AgentProductReadRepository`에 전달한다. 저장소는 `product.service_category` 일치 조건을
+정렬과 `LIMIT`보다 먼저 SQL에 적용하므로, 앞선 다른 카테고리 상품 때문에 요청한 카테고리의
+후보가 누락되지 않는다. 카테고리가 없으면 기존처럼 확정 성분 연결만으로 조회한다.
+
 실행 배너에서는 다음 항목으로 확인할 수 있다.
 
 ```text
