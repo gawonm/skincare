@@ -213,27 +213,32 @@ class PendingQuestion(AgentModel):
 
 
 class ParsedRequest(AgentModel):
-    intents: list[Intent] = Field(min_length=1)
-    query: str = Field(min_length=1)
-    category: ProductCategory | None = None
-    texture: ProductTexture | None = None
-    skin_feel: ProductSkinFeel | None = None
-    unsupported_product_conditions: list[str] = Field(default_factory=list)
-    referenced_candidate_number: int | None = Field(default=None, ge=1)
-    rejected_candidate_numbers: list[int] = Field(default_factory=list)
-    excluded_weekdays: list[Weekday] = Field(default_factory=list)
-    reported_experiences: list[str] = Field(default_factory=list)
-    is_modification: bool = False
-    pending_answer: bool = False
-    ingredient_mentions: list[str] = Field(default_factory=list)
-    skin_concerns: list[str] = Field(default_factory=list)
-    known_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions)
-    rag_route: RagRoute | None = None
+    intents: list[Intent] = Field(min_length=1, description="사용자 질의의 핵심 의도 목록")
+    query: str = Field(min_length=1, description="검색에 사용할 독립적인 질문 문장")
+    category: ProductCategory | None = Field(default=None, description="특정 상품 카테고리 요청")
+    texture: ProductTexture | None = Field(default=None, description="원하는 제형")
+    skin_feel: ProductSkinFeel | None = Field(default=None, description="원하는 사용감")
+    unsupported_product_conditions: list[str] = Field(default_factory=list, description="지원하지 않는 제품 조건")
+    referenced_candidate_number: int | None = Field(
+        default=None,
+        ge=1,
+        description="사용자가 이전 추천 목록에서 '1번 제품', '두 번째 거'처럼 특정 번호를 명시적으로 지칭했을 때만 해당 번호(1, 2 등). 지칭하지 않았다면 반드시 null",
+    )
+    rejected_candidate_numbers: list[int] = Field(
+        default_factory=list,
+        description="사용자가 제외하길 원하는 후보 번호 목록. 지칭하지 않았다면 빈 리스트",
+    )
+    excluded_weekdays: list[Weekday] = Field(default_factory=list, description="제외할 요일")
+    reported_experiences: list[str] = Field(default_factory=list, description="사용자가 겪은 피부 반응이나 경험")
+    is_modification: bool = Field(default=False, description="기존 조건이나 루틴의 수정 요청인지 여부")
+    pending_answer: bool = Field(default=False, description="시스템의 확인 질문에 대한 답변인지 여부")
+    ingredient_mentions: list[str] = Field(default_factory=list, description="사용자가 직접 언급한 성분명 목록")
+    skin_concerns: list[str] = Field(default_factory=list, description="사용자가 언급한 피부 고민 목록")
+    known_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions, description="연령, 임신 여부 등 알려진 조건")
+    rag_route: RagRoute | None = Field(default=None, description="권장되는 RAG 검색 경로")
 
 
 class TaskContext(AgentModel):
-    """요약이 잘려도 유지해야 하는 방별 명시적 작업 조건."""
-
     search_filters: ProductSearchFilters = Field(default_factory=ProductSearchFilters)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
     rejected_product_ids: list[str] = Field(default_factory=list)

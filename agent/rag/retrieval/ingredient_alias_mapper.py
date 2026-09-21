@@ -1,5 +1,6 @@
 """소비자 성분 표현을 확정 동의어와 모호한 성분군으로 구분한다."""
 
+import re
 import unicodedata
 from enum import StrEnum
 from typing import Self
@@ -87,7 +88,38 @@ class CommonIngredientAliasMapper:
         return result
 
     def _entry(self, request: IngredientResolveRequest) -> IngredientAliasEntry | None:
-        return self._entries.get(self._normalize(request.name))
+        normalized_key = self._normalize(request.name)
+        direct = self._entries.get(normalized_key)
+        if direct is not None:
+            return direct
+
+        # "A (B)" 형태의 복합 표기는 괄호 안팎 중 확정 동의어가 하나만 유효할 때 그 표준 성분으로 연결한다.
+        return self._resolve_parenthesized(request.name)
+
+    def _resolve_parenthesized(self, name: str) -> IngredientAliasEntry | None:
+        match = re.match(r"^([^(]+)\s*\(([^)]+)\)$", name.strip())
+        if not match:
+            return None
+        outer_term = match.group(1).strip()
+        inner_term = match.group(2).strip()
+
+        outer_entry = self._entries.get(self._normalize(outer_term))
+        inner_entry = self._entries.get(self._normalize(inner_term))
+
+        # 괄호 안팎 중 한쪽만 확정 동의어인 경우(예: 'BHA (Salicylic Acid)' -> 살리실릭애씨드) 확정 성분을 우선 채택한다.
+        outer_exact = outer_entry if outer_entry and outer_entry.kind is IngredientAliasKind.EXACT_EQUIVALENT else None
+        inner_exact = inner_entry if inner_entry and inner_entry.kind is IngredientAliasKind.EXACT_EQUIVALENT else None
+
+        if outer_exact and inner_exact:
+            if outer_exact.standard_name_ko == inner_exact.standard_name_ko:
+                return outer_exact
+            # 안팎이 서로 다른 확정 성분을 가리키면 모호하므로 자동 치환하지 않는다.
+            return None
+        if inner_exact:
+            return inner_exact
+        if outer_exact:
+            return outer_exact
+        return None
 
     def _normalize(self, name: str) -> str:
         # 공백과 대소문자만 정규화하고 괄호 내용은 별칭 의미의 일부로 보존한다.
@@ -101,7 +133,13 @@ class CommonIngredientAliasMapper:
                     standard_name_ko="아스코빅애씨드",
                     description="비타민 C를 순수 아스코빅애씨드로 명시한 확정 동의어",
                 )
-                for term in ("비타민C", "vitamin c", "ascorbic acid", "아스코르빈산")
+                for term in (
+                    "비타민C",
+                    "vitamin c",
+                    "ascorbic acid",
+                    "l-ascorbic acid",
+                    "아스코르빈산",
+                )
             ],
             *[
                 IngredientAliasEntry(
@@ -111,10 +149,62 @@ class CommonIngredientAliasMapper:
                 )
                 for term in (
                     "살리실산",
-                    "살리실산(BHA)",
-                    "BHA(살리실산)",
+                    "살리실산 (BHA)",
+                    "BHA (살리실산)",
                     "살리실릭 애씨드",
                     "salicylic acid",
+                    "bha (salicylic acid)",
+                    "salicylic acid (bha)",
+                )
+            ],
+            *[
+                IngredientAliasEntry(
+                    consumer_term=term,
+                    standard_name_ko="나이아신아마이드",
+                    description="피지 조절 및 미백에 범용으로 쓰이는 나이아신아마이드 확정 동의어",
+                )
+                for term in (
+                    "나이아신아마이드",
+                    "niacinamide",
+                    "nicotinamide",
+                )
+            ],
+            *[
+                IngredientAliasEntry(
+                    consumer_term=term,
+                    standard_name_ko="판테놀",
+                    description="장벽 보습에 쓰이는 판테놀의 영문 확정 동의어",
+                )
+                for term in (
+                    "판테놀",
+                    "panthenol",
+                    "d-panthenol",
+                )
+            ],
+            *[
+                IngredientAliasEntry(
+                    consumer_term=term,
+                    standard_name_ko="병풀추출물",
+                    description="진정에 널리 쓰이는 센텔라 아시아티카 표기의 병풀추출물 확정 동의어",
+                )
+                for term in (
+                    "병풀추출물",
+                    "centella asiatica extract",
+                    "centella asiatica",
+                )
+            ],
+            *[
+                IngredientAliasEntry(
+                    consumer_term=term,
+                    standard_name_ko="글라이콜릭애씨드",
+                    description="각질 제거 및 피지 케어에 쓰이는 글라이콜릭애씨드 확정 동의어",
+                )
+                for term in (
+                    "글라이콜릭애씨드",
+                    "glycolic acid",
+                    "글리콜산",
+                    "aha (glycolic acid)",
+                    "glycolic acid (aha)",
                 )
             ],
         ]
@@ -125,6 +215,12 @@ class CommonIngredientAliasMapper:
                 candidate_standard_names_ko=["살리실릭애씨드", "베타인살리실레이트"],
                 description="BHA는 제품에 따라 서로 다른 베타하이드록시애씨드 계열 성분을 뜻할 수 있음",
             ),
+            IngredientAliasEntry(
+                consumer_term="AHA",
+                kind=IngredientAliasKind.AMBIGUOUS_FAMILY,
+                candidate_standard_names_ko=["글라이콜릭애씨드", "락틱애씨드"],
+                description="AHA는 글라이콜릭애씨드, 락틱애씨드 등 다양한 알파하이드록시애씨드를 뜻할 수 있음",
+            ),
             *[
                 IngredientAliasEntry(
                     consumer_term=term,
@@ -132,7 +228,7 @@ class CommonIngredientAliasMapper:
                     candidate_standard_names_ko=["티트리잎오일", "티트리꽃/잎/줄기오일"],
                     description="일반적인 티트리 오일 표현만으로는 DB의 구체 성분을 하나로 확정할 수 없음",
                 )
-                for term in ("티트리 오일", "tea tree oil")
+                for term in ("티트리 오일", "tea tree oil", "티트리", "tea tree")
             ],
         ]
         return [*exact_entries, *family_entries]
