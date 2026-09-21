@@ -93,6 +93,12 @@ class TestSelector:
             is EvidenceDocumentStatus.REREVIEW
         )
 
+    def test_final_report_label_is_authoritative(self) -> None:
+        # 실측: 2023년 Hyaluronates report 는 "Published Report"가 아니라 "Final Report" 라벨이다
+        report = _report("hyal", [_NIA], status_label="Final Report")
+        assert CirReportSelector().map_status(report) is EvidenceDocumentStatus.FINAL
+        assert len(CirReportSelector().select([report], [_NIA])) == 1
+
     def test_group_review_is_one_document_linked_to_all_requested_ingredients(self) -> None:
         group = _report("group", [_NIA, _RETINOL, uuid4()])
         selected = CirReportSelector().select([group], [_NIA, _RETINOL])

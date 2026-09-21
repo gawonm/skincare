@@ -12,7 +12,7 @@ from models.evidence_document import EvidenceDocumentStatus
 
 # status 페이지 라벨 -> enum. 실측한 라벨(`CIR_PDF_INGESTION_FEASIBILITY.md` 3.2절)만 매핑하고
 # 모르는 라벨은 UNKNOWN 으로 두어 production 근거로 쓰지 않는다.
-_PUBLISHED_REPORT_LABEL = "published report"
+_PUBLISHED_REPORT_LABELS = frozenset({"published report", "final report"})
 _REREVIEW_LABEL_KEYWORD = "re-review"
 _TENTATIVE_LABEL_KEYWORD = "tentative"
 _DRAFT_LABEL_KEYWORD = "draft"
@@ -31,7 +31,7 @@ class CirReportSelector:
             return EvidenceDocumentStatus.TENTATIVE
         if _DRAFT_LABEL_KEYWORD in label:
             return EvidenceDocumentStatus.DRAFT
-        if label == _PUBLISHED_REPORT_LABEL:
+        if label in _PUBLISHED_REPORT_LABELS:
             return (
                 EvidenceDocumentStatus.AMENDED_FINAL
                 if candidate.is_amended
