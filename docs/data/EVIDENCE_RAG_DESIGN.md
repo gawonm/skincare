@@ -1028,6 +1028,34 @@ claim topic이 초록과 일치, derivative·compound-name 충돌, 다른 성분
 - **남은 체계적 오류**: (1) 복합 제형 판정이 제목 어휘에만 의존해 다성분 제형이 direct_single로 통과(QA에서 UNCERTAIN 19편, 최대 유형), (2) 의료·창상 논문 통과(EXCLUDE 20편),
   (3) 수식된 성분명·공정 도구 오귀속(EXCLUDE 7편), (4) 비국소 경로 3편. 코드는 QA 결과를 보고 결정하기로 해서 이번에도 수정하지 않았다.
 
+### 최종 PubMed bundle과 CIR 보강 후보 (2026-09-22, embedding·DB write 없음)
+**결정**: UNCERTAIN 22편은 이번 canonical bundle에서 전부 제외하고 combination으로 재표시해 유지하지 않는다. 별도 deferred-review 파일로 보존해
+나중에 근거 부족 성분을 보강할 때 재검토한다. bundle은 KEEP 96편만.
+
+| 파일(gitignore, `data/outputs/evidence_coverage/`) | 내용 |
+|---|---|
+| `pubmed_final_bundle.jsonl` | EvidenceBundle 93건(고유 PMID 93, chunk 93, 성분 연결 96, 성분 55개). journal·정확한 발행일은 PMID로 다시 조회해 채움 |
+| `pubmed_deferred_uncertain.csv` | UNCERTAIN 22행 + 사유 |
+| `pubmed_excluded_by_qa.csv` | EXCLUDE 31행 + 사유 |
+
+bundle 구성: 연구 human 77 / review 16, 복합 제형 32, claim topic efficacy 91 · precaution 49문서, DOI 없음 4건, 다성분 문서 3건.
+조회한 439개 성분 중 PubMed 근거가 있는 성분은 55개이고 384개는 0건이다(검색 결과 0건 129 포함).
+
+**CIR 보강 후보** (`cir_registry_candidates.csv`, 이미 DB에 CIR가 있는 성분 제외): P1 27(PubMed KEEP 0 + 서비스 가치 높음) / P2 8(PubMed 있으나 CIR
+안전성 평가 없는 핵심 성분) / P3 147(그 외, 제품 20개 이상). PubMed 0건만으로 자동 포함하지 않았고, CIR 사이트는 검색·스크래핑하지 않았다(robots.txt 준수).
+**report 존재 확인 방법**: CIR report는 International Journal of Toxicology 등에도 게재돼 PubMed에서 게재 기록을 찾고(제목/초록에 성분명이 있을 때만 대응으로 봄),
+이미 DB에 있는 CIR 본문에서 성분명 언급을 확인했다. 확인은 report 존재와 성분 대응까지이며 attachment id·PDF는 사람이 CIR status 페이지에서 확보해야 registry에 넣을 수 있다.
+"찾지 못함"은 "report 없음"이 아니다(PubMed 색인 누락·이름 차이).
+
+| P1/P2 매핑 상태(`cir_priority_mapping.csv`) | 성분 |
+|---|---|
+| A. 기존 DB CIR 문서 재사용(성분 연결만 추가, 본문 언급 확인) 8 | Hydrolyzed Hyaluronic Acid, Sodium Acetylated Hyaluronate, Hydrolyzed Sodium Hyaluronate, Potassium Hyaluronate(Hyaluronates report), Ceramide AP, Ceramide EOP, Phytosphingosine(Ceramides report), Tocopheryl Acetate(Tocopherols report) |
+| B. 공개 report 존재 확인 7 | Adenosine(2024), Cholesterol(2025 re-review 요약), Retinol(2017), Ascorbic Acid·Sodium Ascorbyl Phosphate(2005), Salicylic Acid(2025 amended), Capryloyl Salicylic Acid(2024) |
+| B?. 대응 수동 확인 필요 3 | Gluconolactone(Glycolactones 2026, 초록 일치), Acetyl Hexapeptide-8(report는 "…Amide"), 3-O-Ethyl Ascorbic Acid(2022 ethers·esters 가능성) |
+| C. 매핑 미확인 17 | Madecassoside, Asiaticoside, Madecassic Acid, Asiatic Acid(Centella report 본문에 성분명 없음), Sodium Hyaluronate Crosspolymer, Hydroxypropyltrimonium Hyaluronate, Glutathione, Sodium DNA, Copper Tripeptide-1, Hydrolyzed Collagen, Collagen, Palmitoyl Pentapeptide-4, Palmitoyl Tripeptide-1·-5, Tripeptide-1, Cyanocobalamin, Sodium Stearoyl Glutamate |
+
+A는 DB 쓰기(evidence_chunk_ingredient)가 필요해 승인 전까지 하지 않았다. B는 registry(`CirReportCandidate` JSON)에 넣기 전에 사람이 attachment를 확인해야 한다.
+
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
 ④ candidate 필터·대표 선택 ⑤ document/chunk 생성 ⑥ BGE-M3 embedding ⑦ DB ingest ⑧ audit 재실행 ⑨ Tier A QA ⑩ retrieval 평가.
