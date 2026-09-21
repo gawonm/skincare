@@ -275,9 +275,9 @@ Backend는 런타임 Claim을 생성하거나 검증하지 않는다. 기존 Cla
 11. LLM 오류·Case 없음·reranker fallback
 12. 실제 통합 DB Case → 런타임 Claim → Evidence → Product smoke
 
-현재 1, 2, 3, 5, 6, 9, 10, 11과 unresolved 성분 차단의 결정적 테스트를 구현했다. 실제 DB
-Case 벡터 조회도 별도 통합 테스트로 통과했다. 4, ambiguous 분기, 8의 다중 Case provenance
-세부 회귀, 12의 외부 LLM 포함 E2E는 후속 테스트로 남아 있다.
+현재 1, 2, 3, 5, 6, 9, 10, 11, 12와 unresolved 성분 차단의 결정적 테스트를 구현했다. 실제 DB
+Case 벡터 조회와 외부 LLM을 포함한 E2E도 통과했다. 4, ambiguous 분기, 8의 다중 Case
+provenance 세부 회귀는 후속 테스트로 남아 있다.
 
 ## 8. Offline annotation 경로 처리
 
@@ -334,9 +334,41 @@ Agent + Case 검색 단위 테스트: 149 passed
 실제 PostgreSQL NIA Case 벡터 검색: 1 passed
 ```
 
-실제 OpenAI 포함 전체 CLI는 아직 실행하지 않았다. 현재 설정에서는 Top-3 NIA 원문이 외부
-모델로 전송되므로 데이터 전송에 대한 명시적 승인 후 실행한다. 로컬/결정적 테스트와 DB 조회는
-외부 전송 없이 완료했다.
+실제 OpenAI 포함 전체 CLI는 사용자에게 Top-3 NIA 원문 전송 범위를 알리고 명시적 승인을 받은
+뒤 실행했다. `피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?` 질의에서 Case Claim으로
+나이아신아마이드와 BHA를 추출했고, 검수 완료 Evidence가 없어도 나이아신아마이드 상품 후보를
+`Claim 기반·근거 미확인`으로 유지했다. `partial`은 실행 실패가 아니라 검수 완료 Evidence가
+없다는 상태 표현이다.
+
+추가로 확인된 품질 과제:
+
+- `BHA`는 표준 성분으로 연결되지 않아 Ingredient Resolution alias 정책이 필요하다.
+- BHA, 티트리 오일, 나이아신아마이드가 함께 언급된 문장을 성분별 Claim으로 분리하지 못했다.
+- 상품 후보에 어떤 Claim 성분으로 연결됐는지 표시하지 않아 관련성을 파악하기 어렵다.
+
+## 10.1 세 Intent 품질 회귀 점검 — 2026-09-21 13:39 KST
+
+`tests/agent/test_three_intent_quality_scenarios.py`에 다음 9개 대표 시나리오를 추가했다.
+
+- `product_discovery`: 고민 기반 Case RAG, 제형·사용감 필터, 명시 성분 제품 탐색
+- `evidence_qa`: 단일 성분 효능, 주의사항, 두 성분 병용
+- `routine_planning`: 제품 미지정 확인 질문, 명시 제품 루틴, 기존 루틴 수정
+
+각 시나리오는 Intent만 확인하지 않고 최종 상태와 상품 후보·Citation·Routine·확인 질문까지
+검증한다.
+
+```text
+신규 품질 테스트: 9 passed, 1 xfailed
+Agent 전체 테스트: 154 passed, 1 xfailed
+Ruff: passed
+```
+
+`xfail`은 고민형 문장을 개발용 해석기가 `clarification`으로 반환했을 때 결정 규칙이
+`product_discovery`를 추가하면서 기존 `clarification`을 제거하지 않는 결함이다. 이 경우 정보
+확인 단계가 먼저 실행되어 Case RAG가 중단된다. 실제 OpenAI E2E에서는 해당 질의가
+`product_discovery`로 정상 분류됐지만, LLM 오분류를 방어하려면 `RagRoutePolicy`가 정규화 시
+상충하는 `clarification`을 제거해야 한다. 이번 점검에서는 운영 코드를 변경하지 않고 알려진
+실패로 고정했다.
 
 ## 11. 완료 조건
 
