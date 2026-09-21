@@ -880,6 +880,37 @@ Palm Oil(EXCLUDE vs DEFER), Chitin·Albumen Extract(EXCLUDE vs NAME_OR_LINEAGE_R
 (5) MeSH·publication type은 저장 bundle에 없어 회귀 fixture에서 재구성했다. (6) 질의 자체(경구 제외 등)는 바꾸지 않았다.
 10개 재-smoke는 승인 후 실행한다.
 
+### PubMed 10개 재-smoke 결과 (새 검색, 2026-09-21, selected ≤3, embedding·DB write 없음)
+PubMed 읽기 요청 29건. 결과 원본: `data/outputs/evidence_coverage/pubmed_resmoke10.json`(gitignore). 성분별 selected / 이유별 candidate:
+
+| 성분 | selected | 비고 |
+|---|---:|---|
+| Niacinamide | 3 | 국소 인체 단일 3(효능). 나머지 candidate |
+| Retinol | 3 | 국소 인체 단일 3. 그중 1편은 제형 개발 논문(아래 FP) |
+| Salicylic Acid | 3 | 단일 2 + 리뷰(복합 등급) 1 |
+| Ascorbic Acid | 3 | 국소 인체 3(1편은 "and its effects"로 복합 오표시) |
+| 3-O-Ethyl Ascorbic Acid | **0** | 후보 4 전부 in vitro/동물 |
+| Centella Asiatica Extract | **0** | 경구·in vitro·경로 불명 |
+| Sodium Hyaluronate | 2 | 국소 gel 임상 1 + 제형 개발 논문 1(FP) |
+| Hexapeptide-2 | **0** | 결과 0건 |
+| Collagen | **0** | 후보 10 전부 경구(경로 필터) |
+| BHA | **0** | 특수처리 없이 0, 피부 무관 7편 버림 |
+
+확인 결과: selected 전부 피부 관련·국소 경로였고 **oral/injection/in vitro 순수 연구, comparator-only 논문은 selected에 새지 않았다**
+(이번 검색에는 Hexapeptide-9 논문이 다시 나오지 않아 comparator 규칙은 라이브로는 재확인하지 못했고 단위 테스트가 검증한다).
+0 selected는 5개 성분에서 유지됐다.
+
+**새로 발견한 오류 패턴** (다음 50-smoke 전에 고칠 것)
+- **FP-1 제형 개발 논문이 human으로 통과**: 실제 publication type이 `Clinical Trial`인 제형/캡슐화 논문(Sodium Hyaluronate 24724824
+  liposome·gel, Retinol 29604311 silicone 입자)이 임상 설계 + 실험실 단서로 `mixed_human_and_lab`이 되어 selected됐다. 이전 회귀
+  fixture는 pubtype을 재구성해 이 조건을 놓쳤다. mixed를 무조건 selectable로 두는 것이 원인이다.
+- **FP-2 복합 오표시**: 제목 "ascorbic acid and its effects"의 `and`를 복합 제형으로 봤다(10522500). 등급·순위에 영향.
+- **FN-1 피부 관련성 어휘 부족**: `scar`, `wound`(피부), `laceration`, `stretch marks`, `seborrheic`, `scalp`가 없어 Centella 흉터·상처 국소 임상
+  시험 3편과 지루성 피부염 wipes 시험이 "피부 무관"으로 버려졌다. 구강·구개 wound는 계속 제외해야 한다.
+- **FN-2 경로 어휘 부족**: `emulsion`·`mask`·`peel` 등이 없어 명백한 국소 시험이 `route_unclear`가 됐다(Ascorbic 25% melasma, Niacinamide emulsion).
+- **정책 결정 필요**: 사마귀(Salicylic Acid 7편)·기저세포암(Ascorbic Acid)처럼 피부 질환이지만 화장품 범위가 아닌 논문은 현재 버려진다.
+  "dermatology 전체" vs "cosmetic/skincare 범위"를 정해야 한다.
+
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
 ④ candidate 필터·대표 선택 ⑤ document/chunk 생성 ⑥ BGE-M3 embedding ⑦ DB ingest ⑧ audit 재실행 ⑨ Tier A QA ⑩ retrieval 평가.
