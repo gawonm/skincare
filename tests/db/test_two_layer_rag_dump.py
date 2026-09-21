@@ -28,6 +28,7 @@ from agent.rag.schemas import (
     IngredientResolveRequest,
     LocalEmbeddingModel,
     LookupStatus,
+    ProductCategory,
     ProductSearchFilters,
     ProductSearchRequest,
     RagRetrievalPolicy,
@@ -67,6 +68,12 @@ class TestTwoLayerRagLatestDump:
     """Claim 통과 후 미검수 Evidence가 Claim-only 상품으로 이어지는지 검증한다."""
 
     NIACINAMIDE_NAME: ClassVar[str] = "나이아신아마이드"
+    SALICYLIC_ACID_ID: ClassVar[str] = "5c3fa47f-b797-452c-bc86-04a872aa3f71"
+    CLEANSER_CATEGORY: ClassVar[ProductCategory] = ProductCategory(
+        code="클렌저",
+        name="클렌저",
+    )
+    PRODUCT_LIMIT: ClassVar[int] = 5
 
     async def test_nia_case_vector_search_returns_rerank_candidates(self) -> None:
         database = LatestDumpDatabaseFactory().create()
@@ -230,6 +237,30 @@ class TestTwoLayerRagLatestDump:
             assert all(
                 record.locator.startswith("chunk:")
                 for record in evidence.records
+            )
+        finally:
+            await database.dispose()
+
+    async def test_product_category_filter_is_applied_before_limit(self) -> None:
+        """카테고리를 SQL에서 제한해야 앞선 타 카테고리 상품 때문에 후보를 잃지 않는다."""
+
+        database = LatestDumpDatabaseFactory().create()
+        try:
+            result = await TwoLayerProductRepository(database.session_factory).search(
+                ProductSearchRequest(
+                    filters=ProductSearchFilters(
+                        category=self.CLEANSER_CATEGORY,
+                        ingredient_ids=[self.SALICYLIC_ACID_ID],
+                    ),
+                    limit=self.PRODUCT_LIMIT,
+                )
+            )
+
+            assert result.status is LookupStatus.SUCCESS
+            assert len(result.products) == self.PRODUCT_LIMIT
+            assert all(
+                product.category == self.CLEANSER_CATEGORY
+                for product in result.products
             )
         finally:
             await database.dispose()
