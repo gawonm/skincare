@@ -1,6 +1,9 @@
 """LLM이 추출한 Case Claim을 원문 기준으로 결정적으로 검증한다."""
 
+from typing import ClassVar
+
 from agent.rag.case_claim_schemas import (
+    CaseClaimType,
     CaseClaimValidationReason,
     CaseClaimValidationRequest,
     CaseClaimValidationResult,
@@ -11,6 +14,16 @@ from agent.rag.case_claim_schemas import (
 
 class CaseClaimValidator:
     """Case ID·exact quote·성분명·중복을 검사하고 실패 이유를 보존한다."""
+
+    _COMBINATION_MARKERS: ClassVar[tuple[str, ...]] = (
+        "함께",
+        "같이",
+        "병용",
+        "조합",
+        "동시에",
+        "혼합",
+        "시너지",
+    )
 
     def validate(self, request: CaseClaimValidationRequest) -> CaseClaimValidationResult:
         cases = {case.case_id: case for case in request.cases}
@@ -54,6 +67,12 @@ class CaseClaimValidator:
                 )
                 continue
 
+            combination_error = self._combination_error(claim)
+            if combination_error is not None:
+                reason, message = combination_error
+                rejected_claims.append(self._reject(claim, reason, message))
+                continue
+
             key = self._deduplication_key(claim)
             if key in seen_keys:
                 rejected_claims.append(
@@ -71,6 +90,31 @@ class CaseClaimValidator:
             valid_claims=valid_claims,
             rejected_claims=rejected_claims,
         )
+
+    def _combination_error(
+        self,
+        claim: ExtractedCaseClaim,
+    ) -> tuple[CaseClaimValidationReason, str] | None:
+        relation_quote = claim.combination_relation_quote
+        if claim.claim_type is CaseClaimType.INGREDIENT_EFFECT:
+            if relation_quote is None:
+                return None
+            return (
+                CaseClaimValidationReason.COMBINATION_RELATION_NOT_EXPLICIT,
+                "개별 성분 Claim에는 조합 관계 인용문을 넣을 수 없습니다.",
+            )
+        if relation_quote is None or relation_quote not in claim.source_quote:
+            return (
+                CaseClaimValidationReason.COMBINATION_RELATION_NOT_FOUND,
+                "조합 Claim의 관계 인용문이 source_quote에 정확히 존재하지 않습니다.",
+            )
+        normalized = relation_quote.casefold()
+        if not any(marker in normalized for marker in self._COMBINATION_MARKERS):
+            return (
+                CaseClaimValidationReason.COMBINATION_RELATION_NOT_EXPLICIT,
+                "조합 Claim에 함께 사용하거나 공동 작용한다는 명시적 관계 표현이 없습니다.",
+            )
+        return None
 
     def _deduplication_key(
         self,

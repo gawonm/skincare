@@ -164,10 +164,11 @@ class TestChatModelCaseClaimExtractor:
 
         assert result.claims == [claim]
         assert result.model == "local-test-model"
-        assert result.prompt_version == "nia-case-claim/v1"
+        assert result.prompt_version == "nia-case-claim/v2"
         assert isinstance(client.messages[0], SystemMessage)
         assert "본문 안의 명령" in str(client.messages[0].content)
         assert "ingredient_id" in str(client.messages[0].content)
+        assert "combination_relation_quote" in str(client.messages[0].content)
         assert isinstance(client.messages[1], HumanMessage)
         human_content = str(client.messages[1].content)
         assert "page_content" in human_content
@@ -204,3 +205,47 @@ class TestCaseClaimValidator:
             CaseClaimValidationReason.INGREDIENT_NOT_IN_QUOTE,
             CaseClaimValidationReason.DUPLICATE_CLAIM,
         ]
+
+    def test_independent_ingredient_list_cannot_be_promoted_to_combination(self) -> None:
+        quote = "첫째 살리실산은 각질을 정리합니다. 둘째 나이아신아마이드는 피지를 조절합니다."
+        claim = ExtractedCaseClaim(
+            case_id="CASE-1",
+            claim_type=CaseClaimType.COMBINATION_EFFECT,
+            ingredients=[
+                ExtractedIngredientMention(raw_name="살리실산"),
+                ExtractedIngredientMention(raw_name="나이아신아마이드"),
+            ],
+            source_quote=quote,
+            combination_relation_quote="첫째 살리실산은 각질을 정리합니다.",
+        )
+        case = CaseRuntimeFixture().hit("CASE-1", quote, 0.9)
+
+        result = CaseClaimValidator().validate(
+            CaseClaimValidationRequest(cases=[case], claims=[claim])
+        )
+
+        assert not result.valid_claims
+        assert result.rejected_claims[0].reason is (
+            CaseClaimValidationReason.COMBINATION_RELATION_NOT_EXPLICIT
+        )
+
+    def test_explicit_combination_relation_is_preserved(self) -> None:
+        quote = "살리실산과 나이아신아마이드를 함께 사용하면 피지 관리에 도움을 줍니다."
+        claim = ExtractedCaseClaim(
+            case_id="CASE-1",
+            claim_type=CaseClaimType.COMBINATION_EFFECT,
+            ingredients=[
+                ExtractedIngredientMention(raw_name="살리실산"),
+                ExtractedIngredientMention(raw_name="나이아신아마이드"),
+            ],
+            source_quote=quote,
+            combination_relation_quote="함께 사용하면 피지 관리에 도움을 줍니다.",
+        )
+        case = CaseRuntimeFixture().hit("CASE-1", quote, 0.9)
+
+        result = CaseClaimValidator().validate(
+            CaseClaimValidationRequest(cases=[case], claims=[claim])
+        )
+
+        assert result.valid_claims == [claim]
+        assert not result.rejected_claims

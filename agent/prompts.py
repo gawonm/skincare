@@ -96,7 +96,12 @@ class PromptCatalog:
             "ingredients에는 source_quote에 실제로 적힌 성분명만 넣으세요. ingredient_id, "
             "공인 근거 상태, citation, 상품 추천 여부는 만들지 마세요. 독립적인 효능을 가진 "
             "여러 성분은 ingredient_effect Claim으로 각각 나누고 성분을 정확히 1개만 넣으세요. "
-            "두 성분 이상의 공동 효과가 원문에 명시된 경우에만 combination_effect를 사용하세요. "
+            "예를 들어 '첫째 A는 보습, 둘째 B는 진정'은 combination_effect가 아니라 A와 B의 "
+            "ingredient_effect 두 건입니다. 두 성분 이상의 공동 효과가 원문에 명시된 경우에만 "
+            "combination_effect를 사용하세요. combination_effect에는 '함께', '병용', '조합', "
+            "'동시에', '혼합', '시너지'처럼 공동 관계를 직접 나타내는 원문의 연속 부분 문자열을 "
+            "combination_relation_quote에 그대로 넣으세요. 단순 나열에는 이 필드를 만들지 말고, "
+            "ingredient_effect의 combination_relation_quote는 null로 두세요. "
             "질문과 무관하거나 원문에서 정확히 인용할 수 없는 내용은 반환하지 마세요. "
             "관련 Claim이 없으면 claims를 빈 목록으로 반환하세요."
         ),
