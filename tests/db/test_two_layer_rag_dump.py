@@ -5,6 +5,7 @@ from typing import ClassVar
 import pytest
 
 from agent.claim_verification import ClaimEvidenceVerifier, IngredientRecommendationSelector
+from agent.rag.case_schemas import CaseSearchRequest
 from agent.rag.claim_anchor_adapter import ClaimHitToEvidenceQueryAnchorAdapter
 from agent.rag.claim_schemas import (
     ClaimSearchRequest,
@@ -31,6 +32,7 @@ from agent.rag.schemas import (
     RagRetrievalPolicy,
 )
 from backend.services.two_layer_rag_adapters import (
+    BackendNiaCaseRetriever,
     TwoLayerClaimRetriever,
     TwoLayerEvidenceSearchBackend,
     TwoLayerIngredientRepository,
@@ -64,6 +66,29 @@ class TestTwoLayerRagLatestDump:
     """Claim 통과 후 미검수 Evidence가 Claim-only 상품으로 이어지는지 검증한다."""
 
     NIACINAMIDE_NAME: ClassVar[str] = "나이아신아마이드"
+
+    async def test_nia_case_vector_search_returns_rerank_candidates(self) -> None:
+        database = LatestDumpDatabaseFactory().create()
+        try:
+            query_vector = [0.0] * BGE_M3_EMBEDDING_DIMENSIONS
+            query_vector[0] = 1.0
+            result = await BackendNiaCaseRetriever(database.session_factory).search(
+                CaseSearchRequest(
+                    query="피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?",
+                    query_embedding=EmbeddingVector(values=query_vector),
+                    text_version="nia_case_text/v1",
+                    embedding_model=LocalEmbeddingModel.BGE_M3.value,
+                    candidate_limit=20,
+                )
+            )
+
+            assert result.status is LookupStatus.SUCCESS
+            assert len(result.hits) == 20
+            assert len({hit.case_id for hit in result.hits}) == 20
+            assert all(hit.page_content for hit in result.hits)
+            assert all(hit.text_version == "nia_case_text/v1" for hit in result.hits)
+        finally:
+            await database.dispose()
 
     async def test_unreviewed_evidence_keeps_claim_only_product_candidates(self) -> None:
         database = LatestDumpDatabaseFactory().create()
