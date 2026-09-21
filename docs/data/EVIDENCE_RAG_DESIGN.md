@@ -671,10 +671,9 @@ concern 수 패턴으로 "템플릿성 반복"을 **추정**했다(예: 소문�
 
 **집계**: INCLUDE 4 / DEFER 9 / EXCLUDE 6 (검토 19개).
 
-**Tier A 제안(신규 수집 대상)**: Collagen, 3-O-Ethyl Ascorbic Acid, Centella Asiatica Extract, Retinol.
-Tier A는 10~20개로 좁힌다는 방침 대비 신규 대상은 4개뿐이다. 이미 근거가 있는 Niacinamide·Allantoin·Panthenol·
-Tranexamic Acid·Ceramide NP·Hyaluronic Acid 등은 이번 검토 대상이 아니라 그대로 두며, 최종 Tier A 규모는
-아래 "사용자 결정 필요"가 정해진 뒤 확정한다.
+**Tier A 제안(사람 QA 우선 대상)**: Collagen, 3-O-Ethyl Ascorbic Acid, Centella Asiatica Extract, Retinol
+(이후 Salicylic Acid·Ascorbic Acid 추가, 아래 "수집 전략 변경" 참고). 수집 전략이 바뀌어(2,872 baseline) Tier A는
+**수집 범위가 아니라 human QA 우선순위**다. 이미 근거가 있는 Niacinamide 등은 그대로 둔다.
 target topics는 **수집 목표**일 뿐이다. usage/concentration/combination은 저장값이 없어 0건으로 나오지만
 "현재 비어 있다"는 뜻이 아니라 "산출 불가"였다(Audit result 참고).
 
@@ -691,8 +690,92 @@ target topics는 **수집 목표**일 뿐이다. usage/concentration/combination
 **Threshold-sensitive reference**: Retinol(NIA 167, 임계값 170 아래)은 routing 상 P4지만 검토 결과 INCLUDE다.
 같은 이유로 임계값 근처 다른 성분이 놓쳤을 수 있으나 이번에는 임계값을 바꾸지 않았다.
 
-**사용자 결정 필요**: (1) Salicylic Acid·Ascorbic Acid를 이번 Tier A 검토 대상에 추가할지, (2) 알로에·히알루론산 계열 단위,
-(3) DEFER 중 Hexapeptide-2를 PubMed 선탐색 후 재판단할지. 다음 단계는 확정된 Tier A에 대한 PubMed/CIR 수집이며 아직 수행하지 않았다.
+**결정 반영**: (1) Salicylic Acid·Ascorbic Acid는 검토에 추가(둘 다 QA_PRIORITY), (2) 알로에·히알루론산·병풀 계열은 ID를 합치지 않고 query resolution 용도로만 묶는다, (3) Hexapeptide-2는 INCLUDE로 올리지 않고 candidate discovery smoke 표본으로 쓴다.
+
+---
+
+## 수집 전략 변경: 2,872 baseline 후보 + 수집 자격 검토 (2026-09-21)
+
+### [CURRENT]
+- DB: v4, `evidence_document` 46(MFDS 11 / CIR 10 / PubMed 25). audit universe 2,872 중 scientific 근거 0건
+  2,858, 단일 source 8, CIR+PubMed 6(Audit result 참고). 이 수치가 baseline이며 수집 후 같은 audit를 다시 돌려 비교한다.
+- 이전 전략("Tier A 10~20개만 수집 → 이후 long tail")은 폐기한다.
+
+### [DECISION]
+- baseline coverage 시도 대상은 **audit universe = confirmed product ingredient ∪ NIA 언급 ∪ 기존 근거 연결(2,872)**이며,
+  IngredientMaster 21,974 전체가 아니다. 단, **2,872는 사전 확정된 최종 수집 대상이 아니다.** 제품에 들어간다는 이유만으로
+  전부 수집하지 않도록 아래 수집 자격 규칙을 거쳐 최종 collection universe를 정한다.
+- MFDS 8,288 chunk는 유지하고 scientific count에 넣지 않는다. 삭제·재수집 없음.
+
+### 수집 자격 규칙 (`data/scripts/evidence_collection_universe.py`, 이름 규칙 + 기존 NIA/제품 수, LLM 없음)
+결정 4종: `COLLECT_BASELINE` / `QA_PRIORITY`(수집하되 사람이 먼저 검수) / `DEFER` / `EXCLUDE_FROM_SCIENTIFIC_COLLECTION`.
+순서: ① 사람 결정(Tier A manual review + Salicylic/Ascorbic Acid) → ② 계열명·기전 용어 EXCLUDE →
+③ base/보존/폴리머/계면활성·에몰리언트/pH 조절 범주는 EXCLUDE(NIA 언급이 있으면 DEFER) → ④ 향료 알레르겐 DEFER →
+⑤ NIA 0건이면서 제품 5개 미만(long tail)은 DEFER → ⑥ NIA ≥170 / P1·P3 / 제품 ≥100인 active / smoke 표본은 QA_PRIORITY →
+⑦ 나머지 COLLECT_BASELINE. 제품 5개 기준(`MIN_PRODUCTS_FOR_BASELINE`)은 임의 값이라 확인이 필요하다.
+
+| 결정 | 개수 |
+|---|---:|
+| COLLECT_BASELINE | 1,019 |
+| QA_PRIORITY | 49 |
+| DEFER | 1,219 |
+| EXCLUDE_FROM_SCIENTIFIC_COLLECTION | 585 |
+
+수집 가능 후보(COLLECT+QA) 1,068개. 범주별로는 botanical/ferment 597, active/functional 387, peptide/protein 84가 대부분이고,
+polymer 163·surfactant/emollient 336·preservative 31·base 36·pH 13 등 약 580개는 자동 제외된다.
+**한계**: 범주는 이름 정규식이라 오분류가 있다(예: 잔여 "active"에 폼·왁스·염류·수(水)류가 섞임). 결과는 제안이며 QA로 교정한다.
+
+### 성분 family 처리 (canonical ID는 합치지 않는다)
+family는 **query expansion 전용**이다. 근거가 family 전체를 다뤄도 특정 파생형에 자동 귀속하지 않고, 파생형 고유 근거만 그
+`ingredient_id`에 연결한다. universe 안 멤버: hyaluronic 23, centella 21, vitamin_c 15, bha_aha 12, aloe 9, retinoid 5
+(`ingredient_family_candidates.csv`).
+
+| family | 대표 멤버(제품/NIA/근거) | expansion 용어 | 귀속 주의 |
+|---|---|---|---|
+| hyaluronic | Sodium Hyaluronate(1145/0/1), Hyaluronic Acid(517/0/2), Hydrolyzed HA(619) | hyaluronic acid, hyaluronan, sodium hyaluronate | 분자량·염·가교별 결과 상이 |
+| aloe | Leaf Extract(94), Flower Extract(33), Leaf Juice(23), Leaf Juice Powder(4/481) | aloe vera, Aloe barbadensis | 잎즙/추출물/분말 별개 물질 |
+| centella | Extract(590/13/1), Madecassoside(349/6/2), Asiaticoside(336), Madecassic/Asiatic Acid | Centella asiatica, gotu kola | 추출물 ≠ 단일 성분 |
+| vitamin_c | Ascorbic Acid(179/36), 3-O-Ethyl(110/170), Sodium Ascorbyl Phosphate(108), Ascorbyl Glucoside(59) | ascorbic acid, vitamin C | L-AA 결과를 유도체에 귀속 금지 |
+| retinoid | Retinol(74/167/3), Retinal(62/65), Hydroxypinacolone Retinoate(23), Retinyl Palmitate(18) | retinol, retinoid, retinaldehyde | 성분별 강도 상이 |
+| bha_aha | Gluconolactone(218), Salicylic Acid(178/3), Capryloyl Salicylic Acid(138), Lactic(64), Glycolic(51) | salicylic acid, beta/alpha hydroxy acid | `BHA` 토큰은 butylated hydroxyanisole 가능성 |
+
+### 개별 결정
+- **Salicylic Acid**(제품 178·NIA 3·근거 0, routing P4): 추가 검토 결과 QA_PRIORITY. BHA 계열 대표 산이며 규제 농도·자극
+  근거가 필요하다. BHA(ID `e48d0911-…`)는 계속 EXCLUDE(negative control).
+- **Ascorbic Acid**(제품 179·NIA 36·근거 0, P4): QA_PRIORITY. 비타민C 원형이며 3-O-Ethyl 등 유도체와 귀속을 분리한다.
+- **Hexapeptide-2**: DEFER 유지, candidate discovery smoke 표본(검색 가능성·noise·직접 근거 여부 확인용).
+
+### [COLLECTION POLICY] broad discovery + compact retention
+성분당 논문 quota 없음, 검색 결과 전량 적재 없음, 근거가 없으면 0건 허용. 후보는 성분당 10~20건까지 탐색하되 대표 1~3건만 남긴다.
+저장 계약은 유지한다: PMID 1 = EvidenceDocument 1, abstract 전체 = EvidenceChunk 1(BGE-M3 1024, 원문 그대로);
+CIR report = EvidenceDocument, 관련 section/page 원문 span = EvidenceChunk(page·section·URL·제목·status·날짜 보존).
+- **PubMed 후보 발굴 설계**(구현 전): 기존 `PubmedEvidenceCollector`/`PubmedSelectionPolicy`(요청 간격 0.4초, 3회 재시도,
+  질의당 15건, 출력 파일이 곧 진행 상태인 resume)를 재사용한다. 입력은 이 universe CSV(수동 목록 없음)에서 COLLECT/QA 성분을
+  읽는다. query는 성분명 + alias + family expansion(한글 별칭 제외), pagination은 질의당 상한 15건, PMID 중복은 성분 간에도
+  한 문서로 합쳐 성분 연결만 추가한다.
+- **PubMed 필터 계약**(LLM 없음, 규칙 + 사람이 볼 수 있는 candidate 표현): abstract 필수, 제목/abstract의 성분 직접 언급,
+  publication type(RCT/SR 우대, erratum·letter·case report 제외), human > in vitro > animal, 단일 성분 > 복합 제형,
+  claim topic 키워드 관련성, 유사 논문 중복 제거, PMID/DOI 보존. 통과하지 못하면 `candidate`로 남겨 사람이 본다.
+  LLM relevance filter는 필요하면 별도 제안으로만 남기고 실행하지 않는다.
+- **CIR 가용성 발굴 설계**: 기존 `CirReportSelector`(final/amended 우선, 성분별 최신 1건, group review 처리)와
+  `CirSectionChunker`를 재사용한다. **차단 요인**: robots.txt가 `/search/`를 막아 성분 → report 매핑을 자동으로 만들 수 없고
+  (COMPACT_EVIDENCE_COLLECTOR.md), 지금은 사람이 status 페이지 UUID·PDF를 입력한다. 2,872 전체 availability 확인은 이
+  입력 확보 방법(공식 목록 파일 등)이 정해져야 가능하다.
+
+### [HUMAN QA]
+Tier A는 **수집 gate가 아니라 QA 우선순위**다. 순서: ① 기존 P1/P3 + Tier A 후보, ② NIA 높은 성분, ③ 제품 많은 active,
+④ retrieval test에서 문제가 난 성분. 목적은 query 적절성, 후보 필터, 대표 논문 선택 기준, 성분 매핑 오류 확인이다.
+
+### Smoke 표본 (18개, 전량 실행 전 10 → 50 → 전체 순서)
+Niacinamide, Retinol, Salicylic Acid, Ascorbic Acid, 3-O-Ethyl Ascorbic Acid, Sodium Ascorbyl Phosphate,
+Centella Asiatica Extract, Madecassoside, Hyaluronic Acid, Sodium Hyaluronate, Hexapeptide-2, Collagen,
+Acetyl Hexapeptide-8, Curcuma Longa Root Extract, Tocopherol, Glycerin(base 대조), Melanin(기전 용어 대조), BHA(모호 용어 대조).
+각각 좋은 active / 파생형 / family / 모호 용어를 collector가 어떻게 처리하는지 본다.
+
+### [NEXT IMPLEMENTATION]
+① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
+④ candidate 필터·대표 선택 ⑤ document/chunk 생성 ⑥ BGE-M3 embedding ⑦ DB ingest ⑧ audit 재실행 ⑨ Tier A QA ⑩ retrieval 평가.
+대규모 외부 호출·embedding·DB write는 승인 전 실행하지 않았다.
 
 ---
 
