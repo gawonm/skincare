@@ -708,24 +708,26 @@ target topics는 **수집 목표**일 뿐이다. usage/concentration/combination
 - MFDS 8,288 chunk는 유지하고 scientific count에 넣지 않는다. 삭제·재수집 없음.
 
 ### 수집 자격 규칙 (`data/scripts/evidence_collection_universe.py`, 이름 규칙 + 기존 NIA/제품 수, LLM 없음)
-결정 4종: `COLLECT_BASELINE` / `QA_PRIORITY`(수집하되 사람이 먼저 검수) / `DEFER` / `EXCLUDE_FROM_SCIENTIFIC_COLLECTION`.
-순서: ① 사람 결정(Tier A manual review + Salicylic/Ascorbic Acid) → ② 계열명·기전 용어 EXCLUDE →
-③ base/보존/폴리머/계면활성·에몰리언트/pH 조절 범주는 EXCLUDE(NIA 언급이 있으면 DEFER) → ④ 향료 알레르겐 DEFER →
-⑤ NIA 0건이면서 제품 5개 미만(long tail)은 DEFER → ⑥ NIA ≥170 / P1·P3 / 제품 ≥100인 active / smoke 표본은 QA_PRIORITY →
-⑦ 나머지 COLLECT_BASELINE. botanical은 추가 gate(⑤-2)를 둔다: NIA 언급 · 기존 근거 · 제품 20개 이상 중 하나가 있어야 한다.
-`MIN_PRODUCTS_FOR_BASELINE=5`는 과학적 중요도 기준이 아니라 **NIA 0 + 제품 극소수 long tail을 DEFER하는 operational noise cutoff**이고,
-`BOTANICAL_MIN_PRODUCTS=20`은 provisional 값이다. 둘 다 지금은 튜닝하지 않으며 50개 QA 후 조정한다.
+결정 5종: `COLLECT_BASELINE` / `QA_PRIORITY`(수집하되 사람이 먼저 검수) / `DEFER` / `EXCLUDE_FROM_SCIENTIFIC_COLLECTION` /
+`NAME_OR_LINEAGE_REVIEW`(NIA에는 나오나 confirmed 제품 0개라 자동 수집하지 않고 사람이 이름·계보를 확인한다).
+순서(50개 human QA 반영 후): ① 사람 결정(Tier A manual review + Salicylic/Ascorbic Acid) → ② safety-review registry 승인 항목 COLLECT →
+③ 계열명·기전 용어 EXCLUDE → ④ 제형 범주(보존/폴리머/계면활성·에몰리언트/pH/충전제/제형 보조)는 EXCLUDE, NIA 언급이 있으면 DEFER,
+자극성 세정 계면활성제는 DEFER + `safety_relevant` → ⑤ base/보습/아미노산·당류는 EXCLUDE하지 않고 DEFER → ⑥ 향료 알레르겐 DEFER →
+⑦ **NIA>0 이면서 제품 0 → NAME_OR_LINEAGE_REVIEW** → ⑧ NIA 0·제품 5개 미만(long tail) DEFER → ⑨ botanical·캐리어 오일은
+**NIA>0 또는 기존 근거>0일 때만** 통과(제품 수 단독 gate 폐기) → ⑩ NIA ≥170 / P1·P3 / 제품 ≥100인 active / smoke는 QA_PRIORITY →
+⑪ 나머지 COLLECT_BASELINE. `MIN_PRODUCTS_FOR_BASELINE=5`는 과학적 중요도 기준이 아니라 **NIA 0 + 제품 극소수 long tail을 DEFER하는
+operational noise cutoff**이며 유지한다. 새 범주: `uv_filter`(일반 active와 구분하되 수집 대상, 별도 파이프라인 없음), `carrier_oil`,
+`filler_powder`, `formulation_aid`.
 
-| 결정 | 개수 |
+| 결정 | 개수 (보정 전 → 후) |
 |---|---:|
-| COLLECT_BASELINE | 628 |
-| QA_PRIORITY | 49 |
-| DEFER | 1,610 |
-| EXCLUDE_FROM_SCIENTIFIC_COLLECTION | 585 |
+| COLLECT_BASELINE | 628 → 417 |
+| QA_PRIORITY | 49 → 35 |
+| DEFER | 1,610 → 1,813 |
+| EXCLUDE_FROM_SCIENTIFIC_COLLECTION | 585 → 571 |
+| NAME_OR_LINEAGE_REVIEW | - → 36 |
 
-수집 가능 후보(COLLECT+QA) **677개는 PROVISIONAL collection universe**이며 최종이 아니다(botanical gate 적용 전에는 1,068개였다).
-범주별로는 active/functional 387, botanical/ferment 206, peptide/protein 84가 대부분이고,
-polymer 163·surfactant/emollient 336·preservative 31·base 36·pH 13 등 약 580개는 자동 제외된다.
+수집 가능 후보(COLLECT+QA) **677 → 452개는 여전히 PROVISIONAL collection universe**이며 최종이 아니다(botanical gate 이전에는 1,068개).
 **한계**: 범주는 이름 정규식이라 오분류가 있다(예: 잔여 "active"에 폼·왁스·염류·수(水)류가 섞임). 결과는 제안이며 QA로 교정한다.
 
 ### 성분 family 처리 (canonical ID는 합치지 않는다)
@@ -778,7 +780,7 @@ Acetyl Hexapeptide-8, Curcuma Longa Root Extract, Tocopherol, Glycerin(base 대�
 
 ### [PROVISIONAL] 후속 진행 순서와 지금까지의 smoke 결과
 순서: ① smoke 10 PubMed candidate discovery → ② 50개 stratified QA → ③ eligibility 규칙 보정 → ④ 50개 smoke → ⑤ full-run 승인.
-embedding·DB write·1,068(현 677) 전체 실행은 하지 않았다.
+embedding·DB write·전체 collection universe 실행은 하지 않았다.
 
 **① PubMed smoke 10 (읽기 전용 검색, 성분당 selected ≤3, 파일 출력만·DB/embedding 없음)**: 성분 25편 selected + 후보 82건.
 입력은 universe CSV에서 export한 `CollectionIngredient` JSON이다(`--export-ingredients-file`, 수동 목록 없음).
@@ -825,6 +827,37 @@ DEFER 10 / EXCLUDE 10. 사람이 `reviewer_verdict`를 채운다. 예비 관찰(
 COLLECT_BASELINE 20개 중 KEEP 5(precision 25%), false INCLUDE 14. false EXCLUDE 4(Histidine·Sodium Laureth Sulfate는 KEEP,
 Sorbitol·Lysine은 DEFER). `MIN_PRODUCTS_FOR_BASELINE=5`는 false DEFER가 0이라 유지한다. 오류의 원인은 제품 수가 아니라 범주다.
 원본: `data/outputs/evidence_coverage/collection_universe_qa_sample_reviewed.csv`(gitignore).
+
+### 50개 QA 기반 규칙 보정 결과 (2026-09-21)
+사람 QA verdict(KEEP 13 / DEFER 22 / EXCLUDE 12 / UNCERTAIN 3)를 근거로 규칙을 고쳤다. 사람 판정 원본
+(`collection_universe_qa_sample_reviewed.csv`)과 보정 전 universe(`collection_universe_before_qa_fix.csv`)는 gitignore 위치에 보존했다.
+- **UV filter**: 별도 category. preservative의 "benzoate" 규칙보다 앞에 둬서 표본 밖 오류(Diethylamino Hydroxybenzoyl Hexyl Benzoate가
+  EXCLUDE됨)도 고쳤다. 7개 COLLECT, 제품 5개 미만 4개는 long tail DEFER.
+- **active 잔여 오분류 제거**: 분체/충전제(Boron Nitride 등), 증점제(Algin), 용제·제형 보조(Triethyl Citrate, Butyloctyl Salicylate)를 active에서 뺐다.
+- **botanical/캐리어 오일**: 제품 수 단독 gate 폐기. NIA>0 또는 기존 근거가 있을 때만 COLLECT. botanical+오일 COLLECT/QA 206 → 13.
+- **EXCLUDE 세분화**: 아미노산·당류·보습제는 DEFER, 자극성 계면활성제는 DEFER + `safety_relevant`. 폴리머·보존제·pH 조절제는 EXCLUDE 유지.
+- **NIA>0 + 제품 0**: 자동 COLLECT 금지, NAME_OR_LINEAGE_REVIEW 36개(Aloesin, Litchi Chinensis Seed Powder, Lonicera Caerulea Fruit Juice, Chitin,
+  Achyranthes Bidentata Root Extract, Helianthus Annuus (Sunflower) Seed 등). 제품이 없어도 성분·효능 정보 조회 use case가 있으므로 버리지 않고,
+  유효 성분이면 COLLECT/QA_PRIORITY, 잘린 이름·family·기전 용어·템플릿 노이즈면 DEFER/EXCLUDE로 사람이 정한다.
+  목록에 한글 이름(귤껍질), Niacin·Cineole 같은 단순 물질, 미생물(Cutibacterium Acnes)도 섞여 있어 확인이 필요하다.
+- **safety-review registry** (`docs/data/safety_review_registry.json`): 코드에 성분명을 박지 않고 파일로 관리한다. Mentha/Melaleuca/Lavandula/
+  Citrus peel oil/Eucalyptus/Rosmarinus 계열 49개를 `candidate`(사람 검토 대상, 자동 수집 안 함)로 추출했다(water·powder 제외). QA reviewer가
+  KEEP한 3개(Mentha Piperita Leaf Extract, Histidine, Sodium Laureth Sulfate)만 `approved`다.
+
+| 50개 QA 재적용 | 보정 전 | 보정 후(registry 승인 포함) | 보정 후(규칙 단독) |
+|---|---:|---:|---:|
+| 완전 일치(KEEP은 수집 여부로) | 27/50 | 45/50 | 42/50 |
+| 수집 vs 비수집 일치 | 29/50 | 49/50 | 46/50 |
+| false INCLUDE(수집인데 KEEP 아님) | 19 | 1 | 1 |
+| KEEP인데 EXCLUDE | 2 | 0 | 0 |
+| KEEP인데 수집 안 됨 | 0 | 0 | 3 |
+
+규칙 단독 수치는 registry 승인(QA 표본에 맞춰 승인한 3개)을 뺀 값이다. 승인 항목이 표본에 맞춰진 것이라 "registry 승인 포함" 수치는 과적합
+가능성이 있고, 일반화 성능은 규칙 단독 쪽에 가깝다. 남은 불일치: Acetyl Glutamine(false INCLUDE 1), Triethyl Citrate(DEFER vs EXCLUDE),
+Palm Oil(EXCLUDE vs DEFER), Chitin·Albumen Extract(EXCLUDE vs NAME_OR_LINEAGE_REVIEW: 정책상 사람 확인 경로가 맞다).
+**남은 UNCERTAIN 3개**(Helianthus Annuus Seed, Achyranthes Bidentata Root Extract, Lonicera Caerulea Fruit Juice)는 자동 규칙으로 확정하지 않고
+모두 NAME_OR_LINEAGE_REVIEW다. **미해결**: active/functional은 여전히 COLLECT+QA 347개(전체 후보의 77%)이고 NIA>0은 소수라, 규칙 보강 뒤에도
+이 잔여 범주에 노이즈가 남아 있을 수 있다. 다음 QA는 이 범주를 다시 표본 검수하는 것이 좋다.
 
 ### [NEXT IMPLEMENTATION]
 ① universe CSV를 collector 입력으로 읽는 어댑터 ② PubMed candidate discovery(smoke) ③ CIR availability 입력 확보 방법 결정
