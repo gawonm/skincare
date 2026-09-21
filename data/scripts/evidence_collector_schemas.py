@@ -111,6 +111,7 @@ class PubmedSelectionReason(StrEnum):
     ROUTE_NOT_TOPICAL = "route_not_topical"
     ROUTE_UNCLEAR = "route_unclear"
     NON_CLINICAL_STUDY_DESIGN = "non_clinical_study_design"
+    MIXED_DESIGN_REVIEW = "mixed_design_review"  # 임상+실험실 혼합은 기본 candidate
     COMPARATOR_ONLY = "comparator_only"
     NOT_SKIN_RELEVANT = "not_skin_relevant"
     NO_CLAIM_TOPIC = "no_claim_topic"

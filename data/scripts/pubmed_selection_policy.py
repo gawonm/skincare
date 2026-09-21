@@ -91,9 +91,8 @@ _STUDY_TYPE_SCORE = {
 _TRIAL_BONUS = 2
 _SYSTEMATIC_REVIEW_BONUS = 3
 # 임상 설계로 볼 수 있는 것만 selected 후보가 된다. in vitro/ex vivo/동물/불명은 candidate 로만 남는다.
-_SELECTABLE_DESIGNS = frozenset(
-    {StudyDesign.HUMAN_CLINICAL, StudyDesign.MIXED_HUMAN_AND_LAB, StudyDesign.REVIEW}
-)
+# mixed(임상+실험실)는 제형 개발 논문이 섞여 들어오므로 기본 candidate 로 둔다(예외 규칙은 만들지 않는다).
+_SELECTABLE_DESIGNS = frozenset({StudyDesign.HUMAN_CLINICAL, StudyDesign.REVIEW})
 
 # 선택 순서: 단일 성분 직접 근거 → 리뷰 → 복합 제형. 복합 제형은 제외하지 않되 뒤로 민다.
 _GRADE_ORDER = {
@@ -105,7 +104,8 @@ _GRADE_ORDER = {
 
 # 복합 제형 표지. 결정적 규칙이라 놓치는 경우가 있어 제외가 아니라 감점과 표시만 한다.
 # "patients with acne" 같은 일반 문장의 with/and 를 오탐하지 않도록 성분명에 붙은 접속만 본다.
-_COMBINATION_CONNECTOR = r"(?:,|\band\b|\bplus\b|\bwith\b|\+|/)"
+# "X and its effects" 의 and 는 다른 성분을 잇는 접속이 아니므로 its/their/the 앞은 제외한다
+_COMBINATION_CONNECTOR = r"(?:,|\band\b(?!\s+(?:its|their|the)\b)|\bplus\b|\bwith\b|\+|/)"
 _COMBINATION_KEYWORD_PATTERN = re.compile(r"\bcombination\b|\bcombined\b", re.IGNORECASE)
 _NON_ASCII_LETTER_PATTERN = re.compile(r"[^\x00-\x7f]")
 
@@ -273,6 +273,8 @@ class PubmedSelectionPolicy:
         # 성분 이름만 걸린 비피부 논문은 버린다(예: cystinosis, 내분비 독성 연구)
         if skin is SkinRelevance.NOT_RELEVANT:
             return rejected, PubmedSelectionReason.NOT_SKIN_RELEVANT
+        if design is StudyDesign.MIXED_HUMAN_AND_LAB:
+            return candidate, PubmedSelectionReason.MIXED_DESIGN_REVIEW
         if design not in _SELECTABLE_DESIGNS:
             return candidate, PubmedSelectionReason.NON_CLINICAL_STUDY_DESIGN
         if route in (AdministrationRoute.ORAL, AdministrationRoute.INJECTION):

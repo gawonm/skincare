@@ -281,3 +281,80 @@ class TestAliasContract:
         assert any(f.name == "vitamin_c" for f in FAMILY_RULES)
         bare = CollectorInputExporter.build_ingredient(ingredient_id, "Ascorbic Acid", None, [])
         assert bare.aliases == []
+
+
+def _plain(title: str, abstract: str, pubtypes: list[str] | None = None) -> PubmedRecord:
+    return PubmedRecord(
+        pmid="77",
+        doi=None,
+        title=title,
+        abstract=abstract,
+        journal=None,
+        publication_date=None,
+        publication_types=pubtypes or ["Randomized Controlled Trial"],
+        mesh_terms=[],
+        authors=[],
+    )
+
+
+class TestMixedDesignIsCandidate:
+    def test_formulation_development_paper_with_clinical_pubtype_is_not_selected(self) -> None:
+        # 실제 smoke 재현: publication type 이 Clinical Trial 이고 초록은 제형 개발(in vitro 단서 포함)
+        record = _record("24724824", trial=True)
+        record = record.model_copy(
+            update={"publication_types": ["Clinical Trial", "Comparative Study"]}
+        )
+        (assessment,) = PubmedSelectionPolicy(3).assess(_ingredient("Sodium Hyaluronate"), [record])
+        assert assessment.disposition is _CANDIDATE
+        assert assessment.reason is PubmedSelectionReason.MIXED_DESIGN_REVIEW
+
+
+class TestLexicalGaps:
+    def test_scar_and_skin_wound_are_skin_relevant_but_oral_wound_is_not(self) -> None:
+        scar = _plain("Cream on scar development after surgery", "Patients applied a cream.")
+        assert SkinRelevanceClassifier().classify(scar) is SkinRelevance.RELEVANT
+        skin_wound = _plain("Spray film on acute wounds", "Wound healing was measured.")
+        assert SkinRelevanceClassifier().classify(skin_wound) is SkinRelevance.RELEVANT
+        palatal = _plain("Gel on palatal wound healing", "Patients rinsed. Oral wound pain fell.")
+        assert SkinRelevanceClassifier().classify(palatal) is SkinRelevance.NOT_RELEVANT
+
+    def test_seborrheic_and_scalp_are_skin_relevant(self) -> None:
+        record = _plain("Wipes in infant seborrheic dermatitis", "Scalp scaling improved.")
+        assert SkinRelevanceClassifier().classify(record) is SkinRelevance.RELEVANT
+
+    @pytest.mark.parametrize("word", ["emulsion", "mask", "peel", "shampoo", "wipes"])
+    def test_topical_vehicle_words_give_topical_route(self, word: str) -> None:
+        record = _plain(
+            f"Niacinamide {word} for facial skin", "Volunteers used it in a randomized trial."
+        )
+        design = StudyDesignClassifier().classify(record)
+        assert RouteClassifier().classify(record, design) is AdministrationRoute.TOPICAL
+
+
+class TestCombinationFalsePositive:
+    @pytest.mark.parametrize("tail", ["and its effects", "and their effects", "and the skin"])
+    def test_and_its_their_the_is_not_a_combination(self, tail: str) -> None:
+        record = _plain(f"Use of topical ascorbic acid {tail} on photodamaged skin", "x")
+        policy = PubmedSelectionPolicy()
+        assert policy.classify_formulation(record, ["ascorbic acid"]) is (
+            EvidenceFormulationType.SINGLE_INGREDIENT
+        )
+
+    def test_real_combination_is_still_detected(self) -> None:
+        record = _plain("Ascorbic acid and glycerin for skin", "x")
+        assert PubmedSelectionPolicy().classify_formulation(record, ["ascorbic acid"]) is (
+            EvidenceFormulationType.COMBINATION_FORMULATION
+        )
+
+
+class TestEncapsulationPaper:
+    def test_retinol_encapsulation_paper_with_clinical_pubtype_is_not_selected(self) -> None:
+        record = _plain(
+            "Encapsulation and controlled release of retinol from silicone particles for topical delivery.",
+            "Retinol reduces wrinkles in facial skin. We encapsulate retinol in silicone particles prepared by sol-gel "
+            "polymerization and study the release kinetics. Volunteers applied the cream in a randomized test.",
+            ["Comparative Study", "Controlled Clinical Trial"],
+        )
+        (assessment,) = PubmedSelectionPolicy(3).assess(_ingredient("Retinol"), [record])
+        assert assessment.disposition is _CANDIDATE
+        assert assessment.reason is PubmedSelectionReason.MIXED_DESIGN_REVIEW

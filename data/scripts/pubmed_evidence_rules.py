@@ -68,6 +68,13 @@ _IN_VITRO = _rx(
     r"\bproteom",
     r"\bcytotox",
     r"\bnanocomposite",
+    # 제형 개발·캡슐화 논문의 실험실 단서(임상 pubtype 이 붙어도 human 근거가 아니다)
+    r"\bencapsulat",
+    r"\bentrapment\b",
+    r"\bparticle size\b",
+    r"\brelease (?:kinetics|profile|rate)s?\b",
+    r"\bfranz\b",
+    r"\bsol-gel\b",
     r"\bMTT\b",
     r"\bHaCaT\b",
 )
@@ -152,6 +159,12 @@ _TOPICAL_TERMS = _rx(
     r"\bapplied\b",
     r"\bapplication\b",
     r"\bchemical peel",
+    r"\bemulsion\b",
+    r"\bmask\b",
+    r"\bpeel(?:s|ing)?\b",
+    r"\bshampoo\b",
+    r"\bwipes?\b",
+    r"\bsunscreen",
 )
 _ORAL_TERMS = _rx(
     rf"\boral(?:ly)?\b{_ORAL_CAVITY}",
@@ -260,6 +273,13 @@ _SKIN_TERMS = _rx(
     r"\brosacea\b",
     r"\bpsoriasis\b",
     r"\bcrow'?s feet\b",
+    r"\bscar(?:s|ring)?\b",
+    r"\blaceration",
+    r"\bstretch marks?\b",
+    r"\bseborrh",
+    r"\bscalp\b",
+    # 구강·구개 상처는 피부가 아니다
+    r"(?<!oral )(?<!palatal )(?<!gingival )(?<!dental )\bwounds?\b",
 )
 _SKIN_MESH = frozenset(
     {"skin", "skin aging", "face", "dermatology", "skin diseases", "skin physiological phenomena"}
