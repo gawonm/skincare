@@ -145,6 +145,11 @@ class PubmedSmokeRunner:
     def request_count(self) -> int:
         return self._source.request_count
 
+    @property
+    def last_queries(self) -> list[str]:
+        """직전 run_one 이 보낸 query. 결과가 0건이어도 남는다."""
+        return list(self._source.queries)
+
     def run_one(self, stratum: str, ingredient: CollectionIngredient) -> list[dict[str, object]]:
         """성분 하나의 결과를 성분×PMID 행으로 돌려준다. 버려진 record 도 사유와 함께 남긴다."""
         self._source.reset()
