@@ -171,12 +171,17 @@ export enum ChatTurnTone {
   Error = "error",
 }
 
-/** 입력창 placeholder. 화면 상태별로 다르다(시안 04A/04B/04C). */
-export enum ChatPlaceholder {
-  Initial = "무엇이든 물어보세요.",
-  Conversation = "성분 이름이나 궁금한 점을 입력",
-  Responding = "계속 물어볼 수 있어요.",
-}
+/**
+ * 입력창 placeholder. 최신 시안은 최초 진입(109:39)과 대화 중(109:76) 모두 같은 문구를 쓰고,
+ * 응답 대기 중(109:118)에는 비어 있다.
+ */
+export const CHAT_INPUT_PLACEHOLDER = "무엇이든 물어보세요.";
+
+/**
+ * 헤더 우측 "새 대화". 시안에는 있지만 대화 초기화 엔드포인트가 미정이라
+ * (계약서 "아직 안 정한 것" 2번) 동작 없이 비활성으로 그린다. `docs/front/README.md` 참고.
+ */
+export const CHAT_NEW_CONVERSATION_LABEL = "새 대화";
 
 /**
  * 응답을 기다리는 동안 보여 주는 문구(시안 04C).
@@ -196,8 +201,9 @@ export const CHAT_FAILURE_MESSAGE = {
 } as const;
 
 /**
- * 04A 최초 진입 화면의 안내 문구.
- * 이름은 로그인 시에만 있어 지금은 이름 없는 폴백만 쓴다.
+ * 최초 진입 화면(109:39)의 안내 문구.
+ * 시안은 "안녕하세요 {이름}님" 이지만 이름은 `GET /auth/me` 연결 후에나 알 수 있어
+ * 지금은 이름 없는 폴백만 쓴다.
  */
 export const CHAT_EMPTY_STATE = {
   eyebrow: "SKINCARE ASSISTANT",

@@ -1,5 +1,5 @@
 /**
- * 대화 메시지 목록(시안 04B) + 응답 대기 행(시안 04C) + 다시 시도 버튼.
+ * 대화 메시지 목록 + 응답 대기 행 + 다시 시도 버튼(시안 109:76 / 109:118).
  *
  * 새 메시지가 쌓이거나 대기 상태가 바뀔 때마다 맨 아래로 따라 내려간다.
  */
@@ -28,7 +28,7 @@ export function ChatMessageList({ turns, waiting, canRetry, onRetry }: ChatMessa
   }, [turns, waiting, canRetry]);
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-4">
+    <div className="flex flex-col gap-3 py-3">
       {turns.map((turn, index) => (
         // 메시지는 append-only 이고 순서가 바뀌지 않으므로 index 를 key 로 써도 안전하다.
         // (재시도로 끝의 실패 안내를 걷어 낼 때도 뒤에서부터 지워서 앞 index 는 그대로다.)
@@ -40,7 +40,7 @@ export function ChatMessageList({ turns, waiting, canRetry, onRetry }: ChatMessa
           <button
             type="button"
             onClick={onRetry}
-            className="rounded-full border border-sage-600 px-4 py-1.5 text-sm font-medium text-sage-700 transition hover:bg-sage-50"
+            className="rounded-full border border-moss-deep px-4 py-1.5 text-[13px] font-medium text-moss-deep transition hover:bg-surface-2"
           >
             {CHAT_RETRY_LABEL}
           </button>

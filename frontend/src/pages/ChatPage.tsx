@@ -1,5 +1,5 @@
 /**
- * AI 채팅 화면 (시안 04A 최초 진입 / 04B 대화 중 / 04C 응답 중).
+ * AI 채팅 화면 (시안 109:39 최초 진입 / 109:76 대화 중 / 109:118 응답 중).
  *
  * `POST /chat` 은 로그인 사용자 전용이라 세션이 없으면 훅이 로그인 화면으로 보낸다.
  * 데이터 접근은 전부 `useChat` 훅 뒤에 있다.
@@ -25,28 +25,36 @@ export function ChatPage() {
   useEffect(() => stopSending, [stopSending]);
 
   return (
-    <div className="mx-auto flex h-screen w-full max-w-md flex-col bg-canvas">
-      <ChatHeader />
+    <div className="mx-auto flex h-screen w-full max-w-md flex-col bg-surface">
+      {/* 배경 그라데이션과 아래 여백이 시안마다 달라서(최초 진입 20px, 대화 16px) 함께 바꾼다. */}
+      <div
+        className={[
+          "flex min-h-0 flex-1 flex-col px-5",
+          hasMessages ? "bg-chat-conversation pb-4" : "bg-chat-entry pb-5",
+        ].join(" ")}
+      >
+        <ChatHeader />
 
-      <main className="min-h-0 flex-1 overflow-y-auto">
-        {hasMessages ? (
-          <ChatMessageList
-            turns={turns}
-            waiting={sending}
-            canRetry={canRetry}
-            onRetry={retry}
-          />
-        ) : (
-          <ChatEmptyState />
-        )}
-      </main>
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          {hasMessages ? (
+            <ChatMessageList
+              turns={turns}
+              waiting={sending}
+              canRetry={canRetry}
+              onRetry={retry}
+            />
+          ) : (
+            <ChatEmptyState />
+          )}
+        </main>
 
-      <ChatComposer
-        status={status}
-        hasMessages={hasMessages}
-        onSend={sendMessage}
-        onStop={stopSending}
-      />
+        <ChatComposer
+          status={status}
+          hasMessages={hasMessages}
+          onSend={sendMessage}
+          onStop={stopSending}
+        />
+      </div>
 
       <BottomTabBar />
     </div>
