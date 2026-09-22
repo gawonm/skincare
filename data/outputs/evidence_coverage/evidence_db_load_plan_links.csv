@@ -146,3 +146,13 @@ cir,cir_attachment:7a7dbaa1-8e74-ec11-8943-0022482f06a6:8:Conclusion:2,3f32c6d8-
 cir,cir_attachment:297dbaa1-8e74-ec11-8943-0022482f06a6:31:Discussion:0,7f204c2a-39f5-4d20-b993-2a5fcf50d776,Tocopheryl Acetate,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
 cir,cir_attachment:297dbaa1-8e74-ec11-8943-0022482f06a6:31:Discussion:1,7f204c2a-39f5-4d20-b993-2a5fcf50d776,Tocopheryl Acetate,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
 pubmed_abstract,PMID:30945430:abstract:0,dab59fa5-aa76-4ab0-866d-bb58c9e3fb79,Panthenol,CANONICAL_ONLY,REMOVE,"Decision 3 확정: 최종 QA는 이 논문(복합 처방: panthenol+madecassoside+copper-zinc-manganese)을 Madecassoside 단독 근거로만 채택하고 Panthenol 단독 근거로는 유지하지 않기로 함. Madecassoside link(REUSE 대상, 이미 combined bundle에 포함)는 그대로 두고 이 Panthenol link만 canonical evidence_chunk_ingredient에서 제거 후보. DB mutation은 아직 하지 않음",False
+pubmed_abstract,PMID:10971324:abstract:0,93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4,Niacinamide,CANONICAL_ONLY,REUSE,human re-review 확정 KEEP,False
+pubmed_abstract,PMID:21822427:abstract:0,93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4,Niacinamide,CANONICAL_ONLY,REUSE,human re-review 확정 KEEP,False
+pubmed_abstract,PMID:21982351:abstract:0,dab59fa5-aa76-4ab0-866d-bb58c9e3fb79,Panthenol,CANONICAL_ONLY,REUSE,human re-review 확정 KEEP,False
+pubmed_abstract,PMID:40682399:abstract:0,c78dfd19-39f6-4b68-aac9-c59051713807,Ceramide NP,CANONICAL_ONLY,REUSE,"human re-review 확정 KEEP - 40682399: Ceramide NP 단독 효능 근거 아님, combination evidence 조건부 유지",False
+pubmed_abstract,PMID:17613133:abstract:0,2a547080-b166-49ba-a7ec-b94c5d09ee37,Dipotassium Glycyrrhizate,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: CIR 공식 safety assessment의 PubMed 색인본 - PubMed lane 중복,False
+pubmed_abstract,PMID:27324942:abstract:0,f5ed1356-89f1-4564-a5a0-808484032f39,Hyaluronic Acid,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: 여러 의료 route/application이 섞인 review라 topical skincare 효과 분리 불가,False
+pubmed_abstract,PMID:34348350:abstract:0,c78dfd19-39f6-4b68-aac9-c59051713807,Ceramide NP,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: Ceramide NP 단독이 아니라 fatty acids를 포함한 lipid mixture 시험,False
+pubmed_abstract,PMID:38843906:abstract:0,95ff3311-de1d-4921-bb5e-71ffb50008fc,Tranexamic Acid,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: oral/topical/injection 및 병용치료가 섞인 review,False
+pubmed_abstract,PMID:40177799:abstract:0,c51f0352-5bbe-497b-9fab-133245c5a482,Allantoin,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: compound medical formulation이라 Allantoin 단독 귀속 불가,False
+pubmed_abstract,PMID:40826371:abstract:0,95ff3311-de1d-4921-bb5e-71ffb50008fc,Tranexamic Acid,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: microneedling-assisted medical procedure 연구,False

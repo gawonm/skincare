@@ -133,3 +133,16 @@ cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba,cir_attachment:cd3b62ad-
 cir,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e:13:Clinical Studies:0,INSERT,canonical에 없는 신규 chunk,EMBED_NEW
 cir,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e:14:Clinical Studies:1,INSERT,canonical에 없는 신규 chunk,EMBED_NEW
 cir,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e:16:Conclusion:2,INSERT,canonical에 없는 신규 chunk,EMBED_NEW
+pubmed_abstract,PMID:10971324,PMID:10971324:abstract:0,REUSE,human re-review 확정 KEEP,NONE
+pubmed_abstract,PMID:21822427,PMID:21822427:abstract:0,REUSE,human re-review 확정 KEEP,NONE
+pubmed_abstract,PMID:21982351,PMID:21982351:abstract:0,REUSE,human re-review 확정 KEEP,NONE
+pubmed_abstract,PMID:40682399,PMID:40682399:abstract:0,REUSE,human re-review 확정 KEEP - 40682399: combination evidence 전용,NONE
+pubmed_abstract,PMID:17613133,PMID:17613133:abstract:0,REMOVE,human re-review 확정 EXCLUDE: CIR 공식 safety assessment의 PubMed 색인본 - PubMed lane 중복,N/A_REMOVED
+pubmed_abstract,PMID:27324942,PMID:27324942:abstract:0,REMOVE,human re-review 확정 EXCLUDE: 여러 의료 route/application이 섞인 review라 topical skincare 효과 분리 불가,N/A_REMOVED
+pubmed_abstract,PMID:34348350,PMID:34348350:abstract:0,REMOVE,human re-review 확정 EXCLUDE: Ceramide NP 단독이 아니라 fatty acids를 포함한 lipid mixture 시험,N/A_REMOVED
+pubmed_abstract,PMID:38843906,PMID:38843906:abstract:0,REMOVE,human re-review 확정 EXCLUDE: oral/topical/injection 및 병용치료가 섞인 review,N/A_REMOVED
+pubmed_abstract,PMID:40177799,PMID:40177799:abstract:0,REMOVE,human re-review 확정 EXCLUDE: compound medical formulation이라 Allantoin 단독 귀속 불가,N/A_REMOVED
+pubmed_abstract,PMID:40826371,PMID:40826371:abstract:0,REMOVE,human re-review 확정 EXCLUDE: microneedling-assisted medical procedure 연구,N/A_REMOVED
+pubmed_abstract,PMID:11702613,PMID:11702613:abstract:0,DEFER,"over_budget - evidentiary 문제 아님, canonical 상태 그대로 보존, 이번 재검토 대상 아님",NONE
+pubmed_abstract,PMID:29947134,PMID:29947134:abstract:0,DEFER,"over_budget - evidentiary 문제 아님, canonical 상태 그대로 보존, 이번 재검토 대상 아님",NONE
+pubmed_abstract,PMID:38618759,PMID:38618759:abstract:0,DEFER,"over_budget - evidentiary 문제 아님, canonical 상태 그대로 보존, 이번 재검토 대상 아님",NONE
