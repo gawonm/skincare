@@ -10,6 +10,7 @@ from agent.rag.ports import EvidenceRetriever
 from agent.rag.retrieval.ingredient_alias_mapper import (
     CommonIngredientAliasMapper,
     IngredientAliasEntry,
+    IngredientMentionDetectionRequest,
 )
 from agent.rag.schemas import (
     EvidenceConditions,
@@ -183,8 +184,51 @@ class TestIngredientAliases:
                 ]
             )
 
+    @pytest.mark.parametrize(
+        ("message", "expected"),
+        [
+            ("나이아신아마이드 사용 시 주의사항 알려줘", ["나이아신아마이드"]),
+            ("BHA가 피지에 좋아?", ["BHA"]),
+            ("비타민 C와 판테놀을 같이 써도 돼?", ["아스코빅애씨드", "판테놀"]),
+        ],
+    )
+    def test_detects_known_mentions_in_current_user_message(
+        self, message: str, expected: list[str]
+    ) -> None:
+        result = CommonIngredientAliasMapper().detect_mentions(
+            IngredientMentionDetectionRequest(text=message)
+        )
+        assert result.mentions == expected
+
+    @pytest.mark.parametrize(
+        "message", ["비타민C 유도체 추천해줘", "vitamin c derivative가 궁금해"]
+    )
+    def test_does_not_reduce_derivative_request_to_pure_vitamin_c(self, message: str) -> None:
+        result = CommonIngredientAliasMapper().detect_mentions(
+            IngredientMentionDetectionRequest(text=message)
+        )
+        assert result.mentions == []
+
 
 class TestEntityResolutionFallback:
+    async def test_recovers_explicit_ingredient_when_llm_omits_mentions(self) -> None:
+        scenario = FallbackScenario()
+        scenario.llm.parsed = ParsedRequest(
+            intents=[Intent.EVIDENCE_QA],
+            query="나이아신아마이드 사용 시 주의사항 알려줘",
+            ingredient_mentions=[],
+        )
+        app = scenario.create()
+
+        await app.service.handle_turn(
+            AgentTestFactory().request("room-a", "1", scenario.llm.parsed.query)
+        )
+
+        assert [request.name for request in scenario.ingredients.requests] == [
+            "나이아신아마이드"
+        ]
+        assert scenario.search.requests[0].target_ids == ["test:niacinamide"]
+
     async def test_alias_retry_uses_repository_ids_without_rewriting_question(self) -> None:
         scenario = FallbackScenario()
         scenario.ingredients.register("아스코빅애씨드", "test:ascorbic")

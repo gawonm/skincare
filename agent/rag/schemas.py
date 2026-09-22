@@ -705,6 +705,16 @@ class ProductCandidate(RagModel):
     unresolved: list[str] = Field(default_factory=list)
 
 
+class ProductCandidateLimitation(StrEnum):
+    """상품 후보의 검증 한계이며 다음 사용자 요청의 검색 조건은 아니다."""
+
+    DEMO_DATA = "개발용 상품 데이터이며 실제 제품 검증 결과가 아님"
+    DIRECTIONS_UNKNOWN = "제품 사용법 미상"
+    VERSION_UNKNOWN = "제품 버전 미상"
+    INGREDIENT_EVIDENCE_ONLY = "성분 근거이며 완제품 자체의 임상 효과를 입증하지 않습니다."
+    CLAIM_NOT_VERIFIED = "현재 연결된 공인 근거로 Claim을 충분히 확인하지 못했습니다."
+
+
 class ProductCandidateSet(RagModel):
     candidate_set_id: str = Field(min_length=1)
     candidates: list[ProductCandidate] = Field(default_factory=list)

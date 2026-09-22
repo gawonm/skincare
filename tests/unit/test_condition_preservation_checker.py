@@ -1,4 +1,7 @@
-from agent.rag.generation.condition_preservation_checker import ConditionPreservationChecker
+from agent.rag.generation.condition_preservation_checker import (
+    ConditionPreservationChecker,
+    EvidenceConditionPresenter,
+)
 from agent.rag.schemas import (
     EvidenceConditions,
     EvidenceRecord,
@@ -57,7 +60,7 @@ class TestConditionPreservationChecker:
         )
 
     def test_source_without_conditions_always_passes(self) -> None:
-        evidence = self._evidence("항산화 효과가 있는 성분이다.")
+        evidence = self._evidence("1%와 5%에서 항산화 효과를 비교한 자료다.")
         assert ConditionPreservationChecker().is_preserved(
             self._statement("이 성분은 항산화 효과가 있다."), evidence
         )
@@ -76,3 +79,22 @@ class TestConditionPreservationChecker:
         assert checker.is_preserved(
             self._statement("한국에서 이 성분은 0.5%까지 사용할 수 있다."), evidence
         )
+
+    def test_presents_english_conditions_as_compact_fields_after_korean_sentence(self) -> None:
+        evidence = self._evidence(
+            "Certain leave-on formulations are allowed up to 1.0% in the EU.",
+            EvidenceConditions(concentration="1.0%", formulation="leave-on formulations"),
+            jurisdiction="EU",
+        )
+
+        presented = EvidenceConditionPresenter().present(
+            self._statement("일부 제형에서는 정해진 배합 한도에 주의해야 합니다."),
+            [evidence],
+        )
+
+        assert presented.sentence.startswith("일부 제형에서는")
+        assert "적용 조건:" in presented.sentence
+        assert "농도=1.0%" in presented.sentence
+        assert "제형=leave-on formulations" in presented.sentence
+        assert "관할=EU" in presented.sentence
+        assert ConditionPreservationChecker().is_preserved(presented, evidence)

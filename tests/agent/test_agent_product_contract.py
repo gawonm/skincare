@@ -10,6 +10,7 @@ from agent.factory import DevelopmentAgentApplication, DevelopmentAgentFactory
 from agent.ports import ProductRepository
 from agent.rag.schemas import (
     LookupStatus,
+    ProductCandidateLimitation,
     ProductCandidateSet,
     ProductCategory,
     ProductGetRequest,
@@ -99,6 +100,18 @@ class UnsupportedConditionLlm(FakeLlmClient):
     async def understand(self, request: UnderstandingRequest) -> ParsedRequest:
         parsed = await super().understand(request)
         parsed.unsupported_product_conditions = ["현재 카탈로그에 확인된 사용감 데이터가 없음"]
+        return parsed
+
+
+class InternalLimitationEchoLlm(FakeLlmClient):
+    async def understand(self, request: UnderstandingRequest) -> ParsedRequest:
+        parsed = await super().understand(request)
+        parsed.category = ProviderCatalog.MASK.model_copy(deep=True)
+        parsed.unsupported_product_conditions = [
+            ProductCandidateLimitation.DIRECTIONS_UNKNOWN.value,
+            ProductCandidateLimitation.VERSION_UNKNOWN.value,
+            ProductCandidateLimitation.CLAIM_NOT_VERIFIED.value,
+        ]
         return parsed
 
 
@@ -217,6 +230,27 @@ class TestDynamicProductContract:
         assert not repo.requests
         assert any("사용감" in item.detail for item in result.unresolved)
         assert "제품 후보를 제시하지 않았습니다" in result.message
+
+    async def test_previous_candidate_limitations_do_not_block_new_product_search(self) -> None:
+        catalog = ProviderCatalog()
+        repo = ProviderProducts([catalog.product()])
+        app = DevelopmentAgentFactory(
+            llm=InternalLimitationEchoLlm(),
+            product_repository=repo,
+            product_taxonomy=catalog.taxonomy(),
+        ).create()
+        catalog.register(app)
+
+        result = await app.service.handle_turn(
+            AgentTestFactory().request("room-a", "1", "시트 마스크 추천해줘")
+        )
+
+        assert len(repo.requests) == 1
+        assert any(isinstance(item, ProductCandidateSet) for item in result.artifacts)
+        assert not any(
+            item.detail in {limitation.value for limitation in ProductCandidateLimitation}
+            for item in result.unresolved
+        )
 
     async def test_valid_code_uses_provider_name(self) -> None:
         catalog = ProviderCatalog()

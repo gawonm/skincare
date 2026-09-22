@@ -1,6 +1,9 @@
 """현재 EvidenceRecord 계약을 유지하면서 새 RAG의 문장별 인용·보류 판정을 적용한다."""
 
-from agent.rag.generation.condition_preservation_checker import ConditionPreservationChecker
+from agent.rag.generation.condition_preservation_checker import (
+    ConditionPreservationChecker,
+    EvidenceConditionPresenter,
+)
 from agent.rag.ports import EvidenceStatementGenerator
 from agent.rag.retrieval.question_intent_classifier import QuestionIntentClassifier
 from agent.rag.schemas import (
@@ -33,6 +36,7 @@ class AnswerGenerator:
         self._client = client
         self._classifier = QuestionIntentClassifier()
         self._checker = ConditionPreservationChecker()
+        self._condition_presenter = EvidenceConditionPresenter()
 
     async def generate(
         self, request: EvidenceSearchRequest, search: EvidenceSearchResult
@@ -131,9 +135,14 @@ class AnswerGenerator:
             if not ids or any(evidence_id not in records for evidence_id in ids):
                 continue
             sources = [records[evidence_id] for evidence_id in ids]
-            if not all(self._checker.is_preserved(claim, source) for source in sources):
+            presented_claim = self._condition_presenter.present(claim, sources)
+            if not all(
+                self._checker.is_preserved(presented_claim, source) for source in sources
+            ):
                 continue
-            claims.append(EvidenceBackedStatement(sentence=claim.sentence, sources=sources))
+            claims.append(
+                EvidenceBackedStatement(sentence=presented_claim.sentence, sources=sources)
+            )
         return (
             IngredientVerificationResult(claims=claims)
             if claims

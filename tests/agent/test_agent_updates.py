@@ -35,7 +35,9 @@ from agent.rag.schemas import (
     IngredientResolveRequest,
     IngredientResolveResult,
     LookupStatus,
+    ProductCandidate,
     ProductCandidateSet,
+    ProductRecord,
     RegulatoryConfidence,
     RoutinePlan,
     Weekday,
@@ -334,6 +336,33 @@ class TestContextWindow:
         assert [item.sequence for item in context.recent_messages] == [3, 4, 5]
         assert all(len(item.content) <= 20 for item in context.recent_messages)
         assert all(len(item.content) > 20 for item in state.messages)
+
+    def test_candidate_limitations_are_not_exposed_as_llm_search_context(self) -> None:
+        candidate = ProductCandidate(
+            rank=1,
+            product=ProductRecord(
+                product_id="product-1",
+                name="테스트 제품",
+                source_id="source-1",
+                checked_at="2026-09-22",
+            ),
+            unresolved=["제품 사용법 미상", "제품 버전 미상"],
+        )
+        state = AgentState(
+            candidate_set=ProductCandidateSet(
+                candidate_set_id="candidate-set-1", candidates=[candidate]
+            )
+        )
+
+        context = ContextBuilder(ConversationSummarizer()).build(state)
+
+        assert context.candidate_set is not None
+        assert context.candidate_set.candidates[0].unresolved == []
+        assert state.candidate_set is not None
+        assert state.candidate_set.candidates[0].unresolved == [
+            "제품 사용법 미상",
+            "제품 버전 미상",
+        ]
 
 
 class TestDataEvidence:

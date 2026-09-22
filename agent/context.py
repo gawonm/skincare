@@ -1,5 +1,6 @@
 """원문 저장소와 분리해 이번 LLM 호출에 필요한 제한된 문맥을 만든다."""
 
+from agent.rag.schemas import ProductCandidateSet
 from agent.schemas import AgentState, ConversationSummary, LlmContext, MessageRole
 
 SUMMARY_ITEM_SEPARATOR = " | "
@@ -54,8 +55,23 @@ class ContextBuilder:
                 for message in state.messages
             ],
             pending_question=state.pending_question,
-            candidate_set=state.candidate_set,
+            candidate_set=self._candidate_reference_context(state),
             routine=state.routine,
             profile=state.profile,
             task_context=state.task_context,
+        )
+
+    def _candidate_reference_context(self, state: AgentState) -> ProductCandidateSet | None:
+        if state.candidate_set is None:
+            return None
+        # 후보의 검증 한계는 이전 출력의 내부 상태다. 번호·상품 정보만 LLM에 제공해야
+        # 다음 사용자 요청의 미지원 상품 조건으로 역수입되지 않는다.
+        return state.candidate_set.model_copy(
+            deep=True,
+            update={
+                "candidates": [
+                    candidate.model_copy(update={"unresolved": []})
+                    for candidate in state.candidate_set.candidates
+                ]
+            },
         )
