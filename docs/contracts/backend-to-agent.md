@@ -375,7 +375,10 @@ NIA Q&A는 현재 Agent에 대응하는 변환 계약이 없다. 기존 로더�
 
 ## 7. 아직 합의가 필요한 항목
 
-- `config.yaml`에 OpenAI 키가 없을 때 서버 전체 기동을 막을지 Agent 기능만 비활성화할지
+- `config.yaml`에 OpenAI 키가 없을 때(`chat.provider: openai`인데 `openai` 블록 누락) 서버 전체
+  기동을 막을지 Agent 기능만 비활성화할지: 이미 구현은 후자다. `AgentConfigurationAssembler`가
+  `RuntimeError`를 던지고, `_assemble_agent`가 이를 잡아 로그만 남긴 뒤 서버는 정상 기동한다.
+  `POST /chat`만 503이고 로그인 등 나머지 기능은 영향받지 않는다. 이견 있으면 알려달라는 상태다.
 - 향후 로컬 BGE-M3로 전환할 경우의 1024차원 ERD·마이그레이션·재색인 계획과 검증 임계값
 - Agent 조립 객체의 lifespan 위치, 실패 정책, 실행 제한: 2절 "운영 조립 구현 현황"에 backend
   제안을 적었다. 실제 구현은 이미 merge됐고(#62), 문제가 있으면 알려달라는 상태다.
