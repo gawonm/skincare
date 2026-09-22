@@ -1008,3 +1008,64 @@ Agent의 결정적 질문 축 분류 결과를 다음 검색 계획으로 변환
 - 지원하지 않는 source type: 조용히 무시하지 않고 `UNSUPPORTED`
 - 인용문 검증 실패: 해당 생성 문장만 제외하고, 검증된 문장이 하나도 없을 때만
   `CITATION_VALIDATION_FAILED`
+
+## 14. NIA Case 의도별 질의와 메타데이터 리랭크 계약 — 2026-09-22
+
+> 상태: **사용자 확인 및 Agent 구현 완료**
+>
+> 관련 계획:
+> [`2026-09-22_NIA_CASE_QUERY_DECOMPOSITION_PLAN.md`](../agent/RAG_YK/2026-09-22_NIA_CASE_QUERY_DECOMPOSITION_PLAN.md)
+
+### 14.1 의도별 질의
+
+Agent는 복합 사용자 요청을 다음 `IntentQueryPlan`으로 분리한다.
+
+```python
+class IntentQueryPlan(AgentModel):
+    case_query: str | None = Field(default=None, min_length=1)
+    evidence_query: str | None = Field(default=None, min_length=1)
+    product_query: str | None = Field(default=None, min_length=1)
+    routine_query: str | None = Field(default=None, min_length=1)
+```
+
+- `case_query`에는 사용자가 명시한 연령대·성별·계절·피부 타입·피부 고민과 성분·주의 질문을
+  보존한다.
+- 상품 선택 조건과 루틴 기간·일정 지시는 `case_query`에서 제외하고 각각 `product_query`,
+  `routine_query`에 보존한다.
+- Case embedding, Case rerank, Top-3 Case 관련 성분 선별은 같은 `case_query`를 사용한다.
+- Case 관련 성분을 공인 Evidence로 검증할 때는 `evidence_query`를 사용한다.
+
+### 14.2 Backend 계약 유지
+
+`CaseSearchRequest`와 Backend 검색 SQL은 10절의 기존 계약을 그대로 유지한다.
+
+- Backend는 cosine similarity 기준 vector Top-20을 반환한다.
+- `BackendNiaCaseRetriever`는 기존처럼 `CaseSearchHit.metadata`에 `age`, `gender`, `skin_type`,
+  `skin_concerns`를 보존한다.
+- Backend는 메타데이터 filter, boost 또는 별도 의미 판단을 추가하지 않는다.
+- 새 DB 컬럼, 모델, 마이그레이션, 설정 키와 BM25 인덱스는 추가하지 않는다.
+
+### 14.3 BGE reranker 입력
+
+Agent의 Case reranker는 Backend가 반환한 메타데이터를 결정적 라벨 문자열로 만들어
+`page_content` 앞에 붙인 문서를 scoring 입력으로 사용한다.
+
+```text
+[사례 문맥]
+연령: 34세
+성별: 남성
+피부 타입: 지성
+피부 고민: 여드름/뾰루지
+
+[질문·답변·추론]
+...
+```
+
+`CaseSearchHit.page_content` 자체는 변경하지 않는다. 메타데이터 문맥과 NIA Case 본문은 공식
+Evidence나 Citation으로 승격하지 않는다.
+
+### 14.4 실패와 후속 평가
+
+- reranker 실패 시 기존처럼 vector 순위 Top-3로 fallback하고 실패 이력을 남긴다.
+- 실제 골든셋에서 필요한 Case가 vector Top-20에 포함되지 않는 recall 문제가 확인될 때만 후보 수
+  확대, 메타데이터 선호 후보 합집합 또는 BM25 하이브리드 검색을 별도 계약으로 검토한다.
