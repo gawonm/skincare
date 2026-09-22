@@ -1,3 +1,131 @@
+# front → backend: 홈 화면
+
+> 상태: **초안**. 프론트는 현재 피그마 화면을 fixture로만 표시한다. 아래 계약이 합의된 뒤
+> 백엔드가 구현하고 프론트가 실제 API로 교체한다.
+
+## 범위
+
+- `GET /home`은 로그인 여부에 따라 홈 화면에 필요한 상품 섹션과 CTA를 한 번에 반환한다.
+- 로그인 사용자는 `display_mode=personalized`, 비로그인 사용자는 `display_mode=guest`를 반환한다.
+- 로그인 상태의 판별은 세션 쿠키로만 한다. 프론트가 사용자 ID를 요청에 넣지 않는다.
+- 상품 상세·AI 채팅·마이페이지의 개별 API는 이 계약 범위 밖이다.
+
+## 부르는 대상
+
+- `GET /home`
+  - 인증: 선택. 세션 쿠키가 유효하면 개인화 응답을, 없으면 게스트 응답을 반환한다.
+  - 응답: 단일 JSON(`application/json`).
+  - 타입 소유: 불리는 쪽인 backend가 `backend/schemas/home.py`에 정의한다.
+
+## 출력
+
+```python
+from enum import StrEnum
+
+from pydantic import BaseModel
+
+
+class HomeDisplayMode(StrEnum):
+    GUEST = "guest"
+    PERSONALIZED = "personalized"
+
+
+class HomeSectionKind(StrEnum):
+    RECOMMENDED = "recommended"
+    POPULAR = "popular"
+
+
+class HomeCtaKind(StrEnum):
+    START_CHAT = "start_chat"
+
+
+class HomeProductCard(BaseModel):
+    product_id: str
+    brand_name: str
+    product_name: str
+    thumbnail_url: str | None
+    price_label: str | None
+
+
+class HomeProductSection(BaseModel):
+    kind: HomeSectionKind
+    title: str
+    products: list[HomeProductCard]
+
+
+class HomeCta(BaseModel):
+    kind: HomeCtaKind
+    label: str
+
+
+class HomeResponse(BaseModel):
+    display_mode: HomeDisplayMode
+    greeting_name: str | None
+    sections: list[HomeProductSection]
+    cta: HomeCta
+```
+
+### 응답 예시
+
+```json
+{
+  "display_mode": "personalized",
+  "greeting_name": "서연",
+  "sections": [
+    {
+      "kind": "recommended",
+      "title": "서연님을 위한 추천 제품",
+      "products": [
+        {
+          "product_id": "product-001",
+          "brand_name": "브랜드명",
+          "product_name": "제품명",
+          "thumbnail_url": null,
+          "price_label": "24,000원"
+        }
+      ]
+    }
+  ],
+  "cta": {
+    "kind": "start_chat",
+    "label": "AI에게 피부 고민 상담하기"
+  }
+}
+```
+
+## 실패했을 때
+
+- 세션이 없거나 만료되어도 `401`을 반환하지 않는다. 게스트 응답을 반환한다.
+- 응답을 만들 수 없는 서버 오류는 `500`을 반환한다. 프론트의 오류 화면·재시도 UX는 미정이다.
+- 상품이 없을 때 섹션을 빈 배열로 유지할지, 섹션 자체를 제외할지는 미정이다.
+
+## 아직 안 정한 것
+
+임의로 채우지 않는다. 아래 항목은 front·backend·기획이 합의한 뒤 이 문서를 갱신한다.
+
+1. 개인화 추천의 기준: 사용자 피부 프로필, 채팅 이력, 저장 상품 중 무엇을 사용할지.
+2. 게스트의 인기 상품 선정 기준과 정렬 기준.
+3. 사용자 피부 프로필의 저장 위치와 조회 계약. 새 테이블이나 기존 테이블 변경이 필요하면
+   ERD 승인 후 진행한다.
+4. CTA가 실제로 호출할 경로. 현재 프론트는 `/chat` 화면 이동만 수행한다.
+5. `product_id`의 실제 타입(UUID 또는 다른 식별자)과 `thumbnail_url`의 이미지 제공 방식.
+6. 상품이 없거나 추천 계산이 실패한 경우의 섹션 표시 정책.
+
+## 구현 순서
+
+1. 기획·front·backend가 위 미정 항목을 합의한다.
+2. DB 구조 변경이 필요하면 `docs/erd/app.md`를 먼저 수정하고 승인받는다.
+3. backend가 `backend/schemas/home.py`와 `GET /home`을 구현한다.
+4. front가 `HomePage.tsx`의 fixture를 API 응답으로 교체한다.
+5. 로그인·게스트 상태에서 화면과 API를 함께 검증한다.
+
+## 관련 문서
+
+- [홈 화면 Frontend ↔ Backend API 계약 초안](https://app.notion.com/p/3e3db8d22c1281b7b2a3fc3609791c36?pvs=204)
+- [front → backend: AI 채팅](#front--backend-ai-채팅-로그인-사용자-서버-저장형)
+
+---
+
 # front → backend: AI 채팅 (로그인 사용자, 서버 저장형)
 
 2026-09-19 backend가 수정한 초안이다. 처음 front가 쓴 초안은 "비로그인 일회성, 서버 저장 없음"

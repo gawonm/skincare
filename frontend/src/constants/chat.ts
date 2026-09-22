@@ -8,6 +8,7 @@
 
 /** 프론트 라우트 경로. */
 export enum ChatRoute {
+  Home = "/home",
   Chat = "/chat",
   // 401(세션 없음/만료)을 받으면 보내는 곳. 계약서 "실패했을 때" 참고.
   Login = "/login",
@@ -220,19 +221,33 @@ export enum NavTabKey {
   My = "my",
 }
 
-export interface NavTabItem {
-  key: NavTabKey;
-  label: string;
-  /** 이번 범위에선 Chat 만 true. 나머지는 표시만 하고 라우팅하지 않는다. */
-  enabled: boolean;
+export enum NavTabAvailability {
+  Available = "available",
+  Disabled = "disabled",
 }
 
-/** 하단 탭 바 구성. 시안(109:39 등) 순서 그대로 홈 · AI 채팅 · MY. */
-export const NAV_TABS: NavTabItem[] = [
-  { key: NavTabKey.Home, label: "홈", enabled: false },
-  { key: NavTabKey.Chat, label: "AI 채팅", enabled: true },
-  { key: NavTabKey.My, label: "MY", enabled: false },
+export class NavTabItem {
+  public constructor(
+    public readonly key: NavTabKey,
+    public readonly label: string,
+    public readonly availability: NavTabAvailability,
+  ) {}
+}
+
+/** 하단 탭 바 구성. 시안(109:39 등) 순서 그대로 홈 · AI 채팅 · MY다. */
+export const NAV_TABS: readonly NavTabItem[] = [
+  new NavTabItem(NavTabKey.Home, "홈", NavTabAvailability.Available),
+  new NavTabItem(NavTabKey.Chat, "AI 채팅", NavTabAvailability.Available),
+  // 프로필 화면 라우트가 아직 없으므로 시안의 MY 탭은 의도적으로 비활성화한다.
+  new NavTabItem(NavTabKey.My, "MY", NavTabAvailability.Disabled),
 ];
+
+/** 활성 탭만 실제 화면 경로를 가진다. MY 화면을 만들 때 이 표에 경로를 추가한다. */
+export const NAV_TAB_ROUTE: Record<NavTabKey, ChatRoute | null> = {
+  [NavTabKey.Home]: ChatRoute.Home,
+  [NavTabKey.Chat]: ChatRoute.Chat,
+  [NavTabKey.My]: null,
+};
 
 /**
  * 하단 탭의 글리프 아이콘. 시안이 아이콘 이미지가 아니라 문자(⌂, ✦)로 그려서 그대로 쓴다.
