@@ -384,7 +384,9 @@ NIA Q&A는 현재 Agent에 대응하는 변환 계약이 없다. 기존 로더�
   제안을 적었다. 실제 구현은 이미 merge됐고(#62), 문제가 있으면 알려달라는 상태다.
 - 로컬 모델(BGE-M3·bge-reranker) 캐시 볼륨: 여전히 미정
 - NIA Q&A의 유지 여부와, 유지한다면 data→agent DTO
-- `ChatTurnOutput`을 외부 HTTP 응답으로 노출할 backend→front 계약
+- ~~`ChatTurnOutput`을 외부 HTTP 응답으로 노출할 backend→front 계약~~ → 확정 및 구현·연동
+  완료(2026-09-22). [front → backend: AI 채팅](front-to-backend.md#front--backend-ai-채팅-로그인-사용자-서버-저장형)
+  참고.
 
 ## 8. 완료 조건
 
