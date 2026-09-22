@@ -2,6 +2,14 @@
 
 > **상태: PARTIALLY_IMPLEMENTED.**
 >
+> **Evidence 상태 계약 업데이트: 2026-09-22.** `document_status`를 답변 가능 여부로
+> 사용하지 않는 방향과 질문 축별 출처 lane은 `backend-to-agent.md` 13절을 따른다.
+>
+> **P3 경로 업데이트: 2026-09-21 02:19 KST.** 피부 고민형 기본 경로는 offline
+> `ClaimRetriever`가 아니라 NIA Case Top-3의 exact quote 기반 런타임 Claim 추출을 사용한다.
+> 이 문서의 `ClaimHit`/`ClaimRetriever` 계약은 기존 구현과 후속 offline index 비교를 위해
+> 보존한다. 런타임 추출 타입과 실패 계약은 `docs/contracts/backend-to-agent.md` 10절을 따른다.
+>
 > **업데이트: 2026-09-17 20:17 KST.**
 > `origin/main` `190b5c6`을 반영한 `feature/agent-two-layer-rag-main` 기준으로
 > `EvidenceQueryAnchor`, `ClaimHit`, `ClaimRetriever`, Claim→Evidence LangGraph 경로와
@@ -57,7 +65,7 @@
 
 Claim과 Evidence 저장소는 실제 Agent 경로에 연결됐다. 피부 고민형 질의는 Claim을 먼저 찾고
 `matching_status=matched`인 성분만 `EvidenceQueryAnchor`로 변환한다. 명시 성분 질의는 기존
-Evidence 직행 경로를 유지한다. Evidence가 없거나 미검수여도 오류·상반 상태가 아니라면 Claim은
+Evidence 직행 경로를 유지한다. 허용 출처 Evidence가 없어도 오류·상반 상태가 아니라면 Claim은
 `CLAIM_ONLY` 상품 후보로 남는다.
 
 ---
@@ -289,8 +297,9 @@ Citation은 LLM이 만들지 않는다. Backend 어댑터가 검색된 DB 행에
 
 현재 DTO에는 publisher, page, DOI, PMID를 각각 담는 전용 필드가 없다. 별도
 `EvidenceCitation`/`EvidenceChunkHit` DTO는 **미구현**이며, 화면이나 API가 구조화된 개별 필드를
-요구할 때 계약을 먼저 확장한다. `document_status`의 검수 완료 매핑도 Data 파트의 상태 계약이
-확정될 때까지 보수적으로 `UNREVIEWED`를 유지한다.
+요구할 때 계약을 먼저 확장한다. `document_status`는 원문 생명주기 메타데이터로 보존하되,
+답변 생성·Citation·`SUPPORTED` 판정의 차단 조건으로 사용하지 않는다. 구체적인 사용 가능성 및
+출처 선택 규칙은 `backend-to-agent.md` 13절을 따른다.
 
 ### 7.2 현재 repository
 
@@ -334,7 +343,7 @@ Backend 어댑터가 각각 기존 `EvidenceSourceType`과 `RagConfidenceTier`�
 | unresolved 성분 재추론 금지 | 완료 |
 | 3개 지원 Claim 타입 매핑 | 완료 |
 | LangGraph Claim → Evidence → Product 배선 | 완료 |
-| Evidence 미검수/부족 시 Claim-only 유지 | 완료 |
+| 허용 출처 Evidence 부족 시 Claim-only 유지 | 완료 |
 | `evidence_chunk` 전용 Backend 조회 | 완료(기존 Evidence DTO 호환 방식) |
 | 구조화된 전용 `EvidenceCitation` DTO | 미구현·후속 계약 필요 |
 | 한 번 계산한 query embedding의 Claim/Evidence 공동 재사용 | 부분 구현·호출부 공동 캐시 미구현 |
@@ -359,7 +368,7 @@ sequenceDiagram
     Adapter-->>Workflow: EvidenceQueryAnchor 또는 None
     Workflow->>Evidence: EvidenceSearchRequest(anchor 기반)
     Evidence-->>Workflow: EvidenceSearchResult
-    Note over Workflow: 미검수·근거 없음은 INSUFFICIENT, Claim-only 유지
+    Note over Workflow: 허용 출처 근거 없음은 INSUFFICIENT, Claim-only 유지
     Workflow->>Product: 확정 성분 ID로 상품 조회
     Product-->>Workflow: 중복 제거된 상품 후보
     Workflow-->>User: Claim/Evidence 구분 응답 + 메타데이터 기반 Citation

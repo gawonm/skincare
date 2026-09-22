@@ -17,6 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agent.adapters import (
     FakeLlmClient,
+    FixtureCaseClaimExtractor,
+    FixtureCaseEmbedder,
+    FixtureCaseReranker,
+    FixtureCaseRetriever,
     FixtureClaimRetriever,
     FixtureEvidenceRetriever,
     FixtureIngredientRepository,
@@ -64,6 +68,11 @@ class SqlHistoryAgentFactory:
                 products=FixtureProductRepository(),
                 product_taxonomy=FixtureProductTaxonomy().create(),
                 ingredients=FixtureIngredientRepository(),
+                # Backend 통합 테스트도 현재 Agent의 Case → Evidence 계약을 빠짐없이 조립해야 한다.
+                case_retriever=FixtureCaseRetriever(),
+                case_reranker=FixtureCaseReranker(),
+                case_claim_extractor=FixtureCaseClaimExtractor(),
+                case_embedder=FixtureCaseEmbedder(),
                 claim_retriever=FixtureClaimRetriever(),
                 claim_annotation_version=DEVELOPMENT_CLAIM_ANNOTATION_VERSION,
                 evidence_pipeline=evidence_pipeline,

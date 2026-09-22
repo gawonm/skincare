@@ -28,6 +28,17 @@ class ProductDiscoveryCue(StrEnum):
     RECOMMEND = "추천"
 
 
+class SkinConcernCue(StrEnum):
+    ACNE = "여드름"
+    BLEMISH = "트러블"
+    COMEDONE = "좁쌀"
+    DRYNESS = "건조"
+    OILINESS = "피지"
+    PORES = "모공"
+    REDNESS = "홍조"
+    SENSITIVITY = "민감"
+
+
 class RagRouteDecision(AgentModel):
     route: RagRoute | None = None
     reason: RagRouteReason
@@ -39,7 +50,9 @@ class RagRoutePolicy:
     """LLM 누락이 사용자 사례만으로 상품을 추천하는 우회 경로가 되지 않게 한다."""
 
     def decide(self, request: ParsedRequest) -> RagRouteDecision:
-        concerns = list(dict.fromkeys(request.skin_concerns))
+        concerns = list(
+            dict.fromkeys(request.skin_concerns + self._skin_concerns_in(request.query))
+        )
         intents = list(dict.fromkeys(request.intents))
         has_ingredients = bool(request.ingredient_mentions)
         has_product_filters = bool(
@@ -51,8 +64,9 @@ class RagRoutePolicy:
             not has_ingredients and self._has_product_discovery_cue(request.query)
         )
         if normalized_product_discovery:
-            # 무엇을 사용할지 묻는 요청은 근거 설명이 아니라 후보 탐색이므로 실행 Intent도 보정한다.
-            intents = [intent for intent in intents if intent is not Intent.EVIDENCE_QA]
+            # 규칙으로 상품 탐색이 확정된 뒤에도 placeholder가 남으면 확인 질문이 먼저 실행된다.
+            replaced_intents = {Intent.CLARIFICATION, Intent.EVIDENCE_QA}
+            intents = [intent for intent in intents if intent not in replaced_intents]
             if Intent.PRODUCT_DISCOVERY not in intents:
                 intents.append(Intent.PRODUCT_DISCOVERY)
 
@@ -109,3 +123,8 @@ class RagRoutePolicy:
     def _has_product_discovery_cue(self, query: str) -> bool:
         normalized_query = " ".join(query.casefold().split())
         return any(cue.value in normalized_query for cue in ProductDiscoveryCue)
+
+    def _skin_concerns_in(self, query: str) -> list[str]:
+        normalized_query = " ".join(query.casefold().split())
+        # 자주 쓰는 고민 표현은 LLM 누락과 무관하게 동일한 RAG 경로를 타야 한다.
+        return [cue.value for cue in SkinConcernCue if cue.value in normalized_query]

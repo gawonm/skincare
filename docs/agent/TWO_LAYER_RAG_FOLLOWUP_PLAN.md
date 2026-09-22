@@ -1,5 +1,8 @@
 # 2-Layer RAG Agent 통합 작업계획 및 작업 일지
 
+> 이 문서는 2026-09-17까지의 완료 이력을 보존한다. 현재 NIA Case·최종 v2 DB·migration
+> 통합 상태는 [2026-09-20 작업 합본](RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md)을 우선한다.
+
 ## 1. 문서 목적과 기준
 
 이 문서는 2-Layer RAG Agent의 확정 정책, 구현 단계와 검증 이력을 한곳에 누적하는 기준 문서다.
@@ -327,7 +330,8 @@ git diff --check
 ### LOG-F05 — 2026-09-17 17:51 — 피부 고민형 Intent 라우팅 보정
 
 - 상태: `VERIFIED`
-- 상세 문서: `2026-09-17_1751_INTENT_ROUTING_UPDATE.md`
+- 상세 정책과 결과는 현재 [통합 작업 합본](RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md)
+  2절에 이관했다.
 - 변경 결과:
   - LLM이 피부 고민형 사용 질문을 `evidence_qa`로 오분류해도 Rule이
     `product_discovery + claim_then_evidence`로 보정한다.

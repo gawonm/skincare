@@ -122,6 +122,8 @@ class AgentNodes:
         state.parsed_request = None
         state.resolved_entities = ResolvedEntities()
         state.rag_route = None
+        state.case_bundle = None
+        state.case_claim_bundle = None
         state.claim_bundle = None
         state.claim_verification_bundle = None
         state.recommendation_ingredients = None
@@ -233,6 +235,8 @@ class AgentNodes:
             else:
                 state.task_context.search_filters = ProductSearchFilters()
                 state.task_context.rejected_product_ids = []
+                # 새 상품 탐색에 이전 Case의 사용법이 섞이면 다른 성분의 일정 근거가 될 수 있다.
+                state.task_context.case_usage_guidance = []
         validated_filters = self._product_filters.normalize(
             ProductSearchFilters(
                 category=parsed.category, texture=parsed.texture, skin_feel=parsed.skin_feel
@@ -305,13 +309,17 @@ class AgentNodes:
         for mention in parsed.ingredient_mentions or fallback_mentions:
             if not self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):
                 break
-            ingredient_result = await self._ingredient_repository.resolve(
-                self._ingredient_request(mention)
+            original_request = self._ingredient_request(mention)
+            ingredient_result = await self._ingredient_repository.resolve(original_request)
+            ambiguous_family = (
+                ingredient_result.status is LookupStatus.NO_RESULTS
+                and self._ingredient_aliases.is_ambiguous_family(original_request)
             )
-            alias_request = self._ingredient_aliases.map_request(self._ingredient_request(mention))
+            alias_request = self._ingredient_aliases.map_request(original_request)
             if (
                 ingredient_result.status is LookupStatus.NO_RESULTS
-                and alias_request.name != mention
+                and not ambiguous_family
+                and alias_request.name != original_request.name
             ):
                 if not self._reserve_tool_call(state, GraphNode.RESOLVE_ENTITIES):
                     break
@@ -325,7 +333,7 @@ class AgentNodes:
                     ingredient_result.error_message
                     or f"성분 조회를 수행하지 못했습니다: {mention} ({ingredient_result.status.value})",
                 )
-            elif ingredient_result.ambiguous_candidates:
+            elif ambiguous_family or ingredient_result.ambiguous_candidates:
                 unresolved_names.append(mention)
             elif ingredient_result.status is LookupStatus.SUCCESS and ingredient_result.ingredient:
                 ingredient_ids.append(ingredient_result.ingredient.ingredient_id)
@@ -599,7 +607,11 @@ class AgentNodes:
                 UnresolvedItem(kind=UnresolvedKind.UNSUPPORTED_CONDITION, detail=condition)
                 for condition in parsed.unsupported_product_conditions
             )
-            state.response_parts.append("요청한 상품 조건을 현재 지원 목록으로 처리할 수 없습니다.")
+            conditions = ", ".join(dict.fromkeys(parsed.unsupported_product_conditions))
+            state.response_parts.append(
+                "다음 조건은 현재 상품 데이터에서 확인할 수 없어 제품 후보를 제시하지 않았습니다: "
+                + conditions
+            )
             return
         rejected_product_ids = {
             candidate.product.product_id
@@ -926,14 +938,21 @@ class AgentNodes:
                 chat_room_id=state.chat_room_id,
                 request_id=self._require_turn(state).request_id,
                 products=products,
+                user_request=parsed.query,
                 excluded_weekdays=excluded_weekdays,
+                evidence_records=state.evidence,
+                case_usage_guidance=state.task_context.case_usage_guidance,
                 current_plan=state.routine,
             )
         )
         if not self._reserve_tool_call(state, GraphNode.PROCESS_TASK):
             return
         validation = await self._routine_planner.validate(
-            RoutineValidationRequest(plan=plan, excluded_weekdays=excluded_weekdays)
+            RoutineValidationRequest(
+                plan=plan,
+                products=products,
+                excluded_weekdays=excluded_weekdays,
+            )
         )
         if not validation.valid:
             state.status = ChatStatus.PARTIAL
@@ -943,6 +962,14 @@ class AgentNodes:
             )
             state.response_parts.append("루틴 제약 충돌로 계획을 확정하지 못했습니다.")
             return
+
+        state.unresolved.extend(
+            UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=warning)
+            for warning in validation.warnings
+        )
+        if validation.warnings:
+            # 출처가 불확실한 Rule을 일정에 강제하지 않았음을 최종 상태에서도 드러낸다.
+            state.status = ChatStatus.PARTIAL
 
         state.routine = plan
         state.artifacts.append(plan)

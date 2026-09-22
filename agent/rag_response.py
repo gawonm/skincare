@@ -1,6 +1,7 @@
 """Claim 탐색 결과와 Evidence 검증 결과를 혼동하지 않고 응답 상태에 반영한다."""
 
 from agent.citations import EvidenceCitationMapper
+from agent.rag.case_claim_schemas import CaseClaimIngredientResolutionStatus
 from agent.rag.claim_schemas import ClaimVerificationResult, ClaimVerificationStatus
 from agent.rag.schemas import (
     ApplicabilityStatus,
@@ -19,7 +20,7 @@ from agent.schemas import (
     UnresolvedKind,
 )
 
-NO_CLAIM_MESSAGE = "현재 고민과 연결되는 탐색용 성분 주장을 찾지 못했습니다."
+NO_CLAIM_MESSAGE = "현재 고민과 연결되는 사례 기반 성분을 찾지 못했습니다."
 NO_EVIDENCE_MESSAGE = "현재 연결된 검색 자료에서 관련 공인 근거를 찾지 못했습니다."
 
 
@@ -71,11 +72,82 @@ class RagResponseAssembler:
             self._append_missing_evidence_path(state)
             self._append_unresolved_claim_anchors(state)
             return
+        insufficient = [
+            result
+            for result in verification.results
+            if result.status is ClaimVerificationStatus.INSUFFICIENT
+        ]
         for result in verification.results:
+            if result.status is ClaimVerificationStatus.INSUFFICIENT:
+                continue
             self._append_claim_verification_result(state, result)
+        if insufficient:
+            self._append_insufficient_claims(state, insufficient)
         self._append_unresolved_claim_anchors(state)
 
+    def _append_insufficient_claims(
+        self,
+        state: AgentState,
+        results: list[ClaimVerificationResult],
+    ) -> None:
+        state.status = ChatStatus.PARTIAL
+        names = self._claim_ingredient_names(state, results)
+        subject = ", ".join(names) if names else "일부 후보 성분"
+        detail = f"현재 연결된 공인 근거로 충분히 확인하지 못한 후보 성분: {subject}"
+        state.unresolved.append(UnresolvedItem(kind=UnresolvedKind.NO_EVIDENCE, detail=detail))
+        state.response_parts.append(detail)
+
+    def _claim_ingredient_names(
+        self,
+        state: AgentState,
+        results: list[ClaimVerificationResult],
+    ) -> list[str]:
+        ingredient_ids = {
+            ingredient_id for result in results for ingredient_id in result.ingredient_ids
+        }
+        case_claim = state.case_claim_bundle
+        if case_claim is not None:
+            return list(
+                dict.fromkeys(
+                    ingredient.canonical_name or ingredient.raw_name
+                    for claim in case_claim.resolved_claims
+                    for ingredient in claim.ingredients
+                    if ingredient.ingredient_id in ingredient_ids
+                )
+            )
+        claim = state.claim_bundle
+        if claim is None:
+            return []
+        statement_ids = {result.statement_id for result in results}
+        return list(
+            dict.fromkeys(
+                ingredient.raw_name
+                for hit in claim.search.hits
+                if hit.statement_id in statement_ids
+                for ingredient in hit.ingredient_refs
+                if ingredient.ingredient_id in ingredient_ids and ingredient.raw_name is not None
+            )
+        )
+
     def _append_unresolved_claim_anchors(self, state: AgentState) -> None:
+        case_claim = state.case_claim_bundle
+        if case_claim is not None:
+            names = list(
+                dict.fromkeys(
+                    ingredient.raw_name
+                    for claim in case_claim.resolved_claims
+                    for ingredient in claim.ingredients
+                    if ingredient.status is not CaseClaimIngredientResolutionStatus.MATCHED
+                )
+            )
+            if names:
+                state.status = ChatStatus.PARTIAL
+                detail = "표준 성분을 확정하지 못한 Case 관련 성분: " + ", ".join(names)
+                state.unresolved.append(
+                    UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=detail)
+                )
+                state.response_parts.append(detail)
+            return
         claim = state.claim_bundle
         if claim is not None and claim.unresolved_anchors:
             state.status = ChatStatus.PARTIAL
@@ -107,16 +179,6 @@ class RagResponseAssembler:
             )
             state.response_parts.append("공인 근거 확인: " + summary)
             return
-        if result.status is ClaimVerificationStatus.INSUFFICIENT:
-            state.status = ChatStatus.PARTIAL
-            detail = (
-                f"Claim {result.statement_id}: 현재 연결된 공인 근거로 충분히 확인하지 못했습니다."
-            )
-            state.unresolved.append(
-                UnresolvedItem(kind=UnresolvedKind.NO_EVIDENCE, detail=detail)
-            )
-            state.response_parts.append(detail)
-            return
         if result.status is ClaimVerificationStatus.UNSUPPORTED:
             state.status = ChatStatus.PARTIAL
             detail = "; ".join(result.reasons) or "현재 검색기가 이 Claim 검증을 지원하지 않습니다."
@@ -135,6 +197,36 @@ class RagResponseAssembler:
         state.response_parts.append(detail)
 
     def _append_claim_context(self, state: AgentState) -> None:
+        case_claim = state.case_claim_bundle
+        if (
+            case_claim is not None
+            and case_claim.validation is not None
+            and case_claim.validation.valid_claims
+        ):
+            if case_claim.resolved_claims:
+                names = list(
+                    dict.fromkeys(
+                        ingredient.canonical_name or ingredient.raw_name
+                        for claim in case_claim.resolved_claims
+                        for ingredient in claim.ingredients
+                    )
+                )
+            else:
+                names = list(
+                    dict.fromkeys(
+                        ingredient.raw_name
+                        for claim in case_claim.validation.valid_claims
+                        for ingredient in claim.ingredients
+                    )
+                )
+            state.response_parts.append(
+                "유사 사례에서 질문과 관련해 언급된 성분: " + ", ".join(names)
+            )
+            if state.case_bundle is not None and state.case_bundle.rerank_fallback_used:
+                state.response_parts.append(
+                    "Case 재정렬 실패로 1차 벡터 검색 순위 Top-3를 사용했습니다."
+                )
+            return
         bundle = state.claim_bundle
         if bundle is None or bundle.search.status is not LookupStatus.SUCCESS:
             return
@@ -151,6 +243,38 @@ class RagResponseAssembler:
         )
 
     def _append_missing_evidence_path(self, state: AgentState) -> None:
+        case_bundle = state.case_bundle
+        case_claim = state.case_claim_bundle
+        if state.rag_route is RagRoute.CLAIM_THEN_EVIDENCE and case_bundle is not None:
+            if case_bundle.search.status is LookupStatus.ERROR:
+                state.response_parts.append(
+                    "NIA Case 검색 실패로 Claim 탐색 경로를 시작하지 못했습니다."
+                )
+                return
+            if case_bundle.search.status is LookupStatus.NO_RESULTS:
+                state.status = ChatStatus.PARTIAL
+                state.unresolved.append(
+                    UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=NO_CLAIM_MESSAGE)
+                )
+                state.response_parts.append(NO_CLAIM_MESSAGE)
+                return
+            if case_claim is not None and case_claim.extraction.status is LookupStatus.ERROR:
+                state.response_parts.append(
+                    "NIA Case 관련 성분 선별 오류로 성분 검증을 진행하지 못했습니다."
+                )
+                return
+            if (
+                case_claim is None
+                or case_claim.extraction.status is LookupStatus.NO_RESULTS
+                or case_claim.validation is None
+                or not case_claim.validation.valid_claims
+            ):
+                state.status = ChatStatus.PARTIAL
+                state.unresolved.append(
+                    UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=NO_CLAIM_MESSAGE)
+                )
+                state.response_parts.append(NO_CLAIM_MESSAGE)
+                return
         claim = state.claim_bundle
         if state.rag_route is RagRoute.EVIDENCE_ONLY:
             if not state.response_parts:
@@ -298,9 +422,12 @@ class RagResponseAssembler:
     def _unverifiable_message(self, reason: UnverifiableReason) -> str:
         messages = {
             UnverifiableReason.NO_EVIDENCE_FOUND: "확인할 근거를 찾지 못했습니다.",
-            UnverifiableReason.UNREVIEWED_EVIDENCE: "검수된 근거가 없어 답변을 보류합니다.",
+            # 과거 결과를 역직렬화해도 document_status를 사용자 경고로 노출하지 않는다.
+            UnverifiableReason.UNREVIEWED_EVIDENCE: "답변에 사용할 수 있는 공인 출처 근거가 없습니다.",
             UnverifiableReason.NOT_RELEVANT_TO_QUESTION: "질문 항목을 뒷받침할 근거가 부족합니다.",
             UnverifiableReason.MISSING_COMBINATION_EVIDENCE: "대상을 함께 다루는 병용 근거가 없습니다.",
-            UnverifiableReason.CITATION_VALIDATION_FAILED: "출처·조건 검증을 통과한 답변이 없습니다.",
+            UnverifiableReason.CITATION_VALIDATION_FAILED: (
+                "검색 자료의 인용문과 적용 조건을 확인하지 못해 답변에서 제외했습니다."
+            ),
         }
         return messages[reason]

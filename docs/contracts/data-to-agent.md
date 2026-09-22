@@ -76,3 +76,115 @@ import 하지 않으므로 backend mapper 경유)과 저장소별 metadata 변�
 1. 에이전트 담당자가 0절의 중복 파일부터 정리.
 2. 2절 항목 중 실제로 필요한 것부터 에이전트 담당자와 논의해 이 문서에 시그니처·타입을 추가.
 3. 합의 전까지 data 파트는 `agent/`에 파일을 추가하지 않는다.
+
+## 5. NIA Case 검색 확장 계약 초안 — 2026-09-20 01:48 KST
+
+> 상태: **핵심 정책 사용자 확인 완료, P1 Data exporter 구현 완료**
+
+NIA 원본을 Agent가 직접 import하지 않는다. Data는 기존
+`NiaOriginalLoader → NiaOriginalAgeFilter → NiaCaseDocumentBuilder`를 조립해 저장소와 무관한
+JSONL을 만들고, Backend가 이를 검증·임베딩·저장한 뒤 Agent 소유 검색 DTO로 반환한다.
+
+### 5.1 Data 산출 타입
+
+타입 소유 위치는 `data/scripts/nia_case_rag/export_schemas.py`다.
+
+```python
+from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from data.scripts.nia_case_document_schemas import NiaCaseDocument
+
+
+class NiaCaseDatasetSplit(StrEnum):
+    TRAINING = "training"
+    VALIDATION = "validation"
+
+
+class NiaCaseSource(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    archive_name: str = Field(min_length=1)
+    member_name: str | None = Field(default=None, min_length=1)
+    line_number: int = Field(ge=1)
+
+
+class NiaCaseExportRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    dataset_split: NiaCaseDatasetSplit
+    source: NiaCaseSource
+    document: NiaCaseDocument
+
+
+class NiaCaseArchiveManifestEntry(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    archive_name: str = Field(min_length=1)
+    dataset_split: NiaCaseDatasetSplit
+    input_record_count: int = Field(ge=0)
+    output_record_count: int = Field(ge=0)
+
+
+class NiaCaseExportManifest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    text_version: str = Field(min_length=1)
+    input_archive_count: int = Field(ge=0)
+    input_record_count: int = Field(ge=0)
+    output_record_count: int = Field(ge=0)
+    training_record_count: int = Field(ge=0)
+    validation_record_count: int = Field(ge=0)
+    duplicate_case_id_count: int = Field(ge=0)
+    failed_record_count: int = Field(ge=0)
+    archives: list[NiaCaseArchiveManifestEntry]
+    output_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+```
+
+`dataset_split`은 원본 archive 경로의 `Training`/`Validation` 구분에서 결정한다. 저장 경로가
+달라져도 결과가 바뀌지 않도록 전체 절대 경로는 산출물에 넣지 않고 파일명, ZIP member, 물리적
+줄 번호만 보존한다.
+
+### 5.2 생성 규칙
+
+- AI Hub 원본 한 줄은 `NiaOriginalRecord` 한 건이고, 연령 필터를 통과하면
+  `NiaCaseExportRecord` 한 건이 된다.
+- 연령 범위는 만 10~39세를 양끝 포함으로 적용한다.
+- `document`는 기존 `NiaCaseDocumentBuilder` 결과를 수정 없이 사용한다.
+- `case_id` 중복, 파싱 실패, 알 수 없는 split은 조용히 건너뛰지 않고 전체 생성을 실패시킨다.
+- 출력 순서는 Loader가 제공한 archive/member/line 순서를 유지한다.
+- JSONL과 manifest는 같은 실행에서 생성하며 manifest의 SHA-256은 최종 JSONL 바이트 기준이다.
+- NIA `metadata.evidence_sources`는 provenance일 뿐 MFDS/CIR/PubMed Evidence나 Citation이 아니다.
+
+### 5.3 실제 원본 검증 기준선
+
+2026-09-20에 AI Hub 원본 15개 ZIP을 기존 코드로 읽은 기준선은 전체 9,000건, Training 8,000건,
+Validation 1,000건, 10~39세 3,581건, 중복 `case_id` 0건, 빈 검색 본문 0건이다. Exporter 완료
+조건은 이 값과 일치하는 것이다.
+
+### 5.4 Agent가 받는 논리 정보
+
+Agent는 위 Data 타입을 import하지 않는다. Backend가 다음 정보만 Agent 소유 `CaseSearchHit`로
+변환한다.
+
+- `case_id`, `dataset_split`, `page_content`, `text_version`
+- `target_concern`, `gender`, `age`, `skin_type`, `skin_concerns`
+- 검색 점수와 원본 archive/member/line provenance
+- 원문 metadata 중 `evidence_sources`는 표시용 Citation에서 제외
+
+현재 P3 기본 경로는 Backend가 전달한 Top-3 Case 원문에서 Agent가 런타임 Claim을 추출한다.
+따라서 Agent가 Case를 받기 위해 offline `claim_document`가 존재할 필요는 없다.
+
+후속 offline Claim index를 사용하는 경우의 결정적 연결 키는
+`NiaCaseDocument.case_id == claim_document.source_record_id`다. Claim의
+`annotation_version`은 이 연결 키에 섞지 않고 운영 설정에서 별도로 선택한다.
+
+### 5.5 실패 계약
+
+- 입력 파일을 열 수 없음: 입력 경로를 포함한 `RuntimeError`
+- JSON/스키마 오류: 기존 `NiaOriginalParseError`를 그대로 전파
+- 알 수 없는 split 또는 중복 `case_id`: 원인과 ID를 포함한 전용 export 오류
+- 출력 파일 쓰기 실패: 부분 파일을 정상 산출물로 간주하지 않고 실패
+
+개별 오류를 숨기거나 실패 레코드만 제외한 채 manifest를 성공으로 만들지 않는다.

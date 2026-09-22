@@ -252,7 +252,7 @@ class TestRagContract:
         assert result.generated is None
         assert not generator.requests
 
-    async def test_unreviewed_source_is_not_promoted_by_source_tier(self) -> None:
+    async def test_document_status_does_not_block_generation(self) -> None:
         fixture = RagContractFixture()
         document = fixture.document(fixture.TARGET_A)
         document.evidence.review_status = EvidenceReviewStatus.UNREVIEWED
@@ -262,8 +262,5 @@ class TestRagContract:
             EvidenceSearchRequest(query="효능", target_ids=[fixture.TARGET_A])
         )
         assert result.generated is not None
-        assert (
-            result.generated.per_target[0].result.unverifiable_reason
-            is UnverifiableReason.UNREVIEWED_EVIDENCE
-        )
-        assert not generator.requests
+        assert result.generated.per_target[0].result.has_verifiable_evidence
+        assert generator.requests

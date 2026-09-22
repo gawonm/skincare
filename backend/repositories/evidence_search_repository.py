@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
-from sqlalchemy import ARRAY, Uuid, bindparam, text
+from sqlalchemy import ARRAY, String, Uuid, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import TextClause
 
@@ -33,7 +33,8 @@ class EvidenceSearchRow(BaseModel):
     retrieved_at: datetime
     chunk_id: str = Field(min_length=1)
     chunk_source_type: str = Field(min_length=1)
-    section: str = Field(min_length=1)
+    # PubMed 청크는 abstract가 있지만 MFDS 규제 청크는 section이 NULL이므로 None을 허용한다
+    section: str | None = None
     chunk_index: int = Field(ge=0)
     content: str = Field(min_length=1)
     chunk_url: str | None = None
@@ -51,6 +52,7 @@ class EvidenceVectorSearchRequest(BaseModel):
     query_vector: list[float] = Field(min_length=1)
     embedding_model: str = Field(min_length=1)
     target_ids: list[UUID] = Field(default_factory=list)
+    source_types: list[str] | None = None
     limit: int = Field(ge=1)
 
 
@@ -62,6 +64,7 @@ class EvidenceTextSearchRequest(BaseModel):
     query_text: str = Field(min_length=1)
     embedding_model: str = Field(min_length=1)
     target_ids: list[UUID] = Field(default_factory=list)
+    source_types: list[str] | None = None
     limit: int = Field(ge=1)
 
 
@@ -101,15 +104,15 @@ class EvidenceSearchRepository:
         ) AS target_ids
     """
     _TARGET_FILTER: ClassVar[str] = """
-        (
-            :has_target_filter = false
-            OR EXISTS (
-                SELECT 1
-                FROM evidence_chunk_ingredient AS target_link
-                WHERE target_link.evidence_chunk_id = evidence_chunk.id
-                  AND target_link.ingredient_id = ANY(:target_ids)
-            )
+        EXISTS (
+            SELECT 1
+            FROM evidence_chunk_ingredient AS target_link
+            WHERE target_link.evidence_chunk_id = evidence_chunk.id
+              AND target_link.ingredient_id = ANY(:target_ids)
         )
+    """
+    _SOURCE_FILTER: ClassVar[str] = """
+        (:source_types IS NULL OR evidence_document.source_type = ANY(:source_types))
     """
     _VECTOR_SQL: ClassVar[str] = f"""
         SELECT
@@ -118,7 +121,23 @@ class EvidenceSearchRepository:
         FROM evidence_chunk
         JOIN evidence_document ON evidence_document.id = evidence_chunk.document_id
         WHERE evidence_chunk.embedding_model = :embedding_model
-          AND {_TARGET_FILTER}
+          AND {_SOURCE_FILTER}
+        ORDER BY evidence_chunk.embedding <=> :query_vector, evidence_chunk.chunk_id
+        LIMIT :limit
+    """
+    _TARGETED_VECTOR_SQL: ClassVar[str] = f"""
+        WITH target_evidence_chunk AS MATERIALIZED (
+            SELECT evidence_chunk.*
+            FROM evidence_chunk
+            WHERE evidence_chunk.embedding_model = :embedding_model
+              AND {_TARGET_FILTER}
+        )
+        SELECT
+            {_BASE_COLUMNS},
+            1 - (evidence_chunk.embedding <=> :query_vector) AS score
+        FROM target_evidence_chunk AS evidence_chunk
+        JOIN evidence_document ON evidence_document.id = evidence_chunk.document_id
+        WHERE {_SOURCE_FILTER}
         ORDER BY evidence_chunk.embedding <=> :query_vector, evidence_chunk.chunk_id
         LIMIT :limit
     """
@@ -132,7 +151,24 @@ class EvidenceSearchRepository:
         FROM evidence_chunk
         JOIN evidence_document ON evidence_document.id = evidence_chunk.document_id
         WHERE evidence_chunk.embedding_model = :embedding_model
+          AND {_SOURCE_FILTER}
+          AND to_tsvector('simple', evidence_chunk.content)
+              @@ plainto_tsquery('simple', :query_text)
+        ORDER BY score DESC, evidence_chunk.chunk_id
+        LIMIT :limit
+    """
+    _TARGETED_TEXT_SQL: ClassVar[str] = f"""
+        SELECT
+            {_BASE_COLUMNS},
+            ts_rank_cd(
+                to_tsvector('simple', evidence_chunk.content),
+                plainto_tsquery('simple', :query_text)
+            ) AS score
+        FROM evidence_chunk
+        JOIN evidence_document ON evidence_document.id = evidence_chunk.document_id
+        WHERE evidence_chunk.embedding_model = :embedding_model
           AND {_TARGET_FILTER}
+          AND {_SOURCE_FILTER}
           AND to_tsvector('simple', evidence_chunk.content)
               @@ plainto_tsquery('simple', :query_text)
         ORDER BY score DESC, evidence_chunk.chunk_id
@@ -150,7 +186,8 @@ class EvidenceSearchRepository:
                 "Evidence 질의 벡터 차원이 BGE-M3 저장 벡터와 다릅니다: "
                 f"expected={self.EMBEDDING_DIMENSIONS}, actual={len(request.query_vector)}"
             )
-        statement = self._statement(self._VECTOR_SQL).bindparams(
+        sql = self._TARGETED_VECTOR_SQL if request.target_ids else self._VECTOR_SQL
+        statement = self._statement(sql, binds_target_ids=bool(request.target_ids)).bindparams(
             bindparam("query_vector", type_=Vector(self.EMBEDDING_DIMENSIONS))
         )
         return await self._execute(
@@ -159,7 +196,7 @@ class EvidenceSearchRepository:
                 "query_vector": request.query_vector,
                 "embedding_model": request.embedding_model,
                 "target_ids": request.target_ids,
-                "has_target_filter": bool(request.target_ids),
+                "source_types": request.source_types,
                 "limit": request.limit,
             },
         )
@@ -167,19 +204,29 @@ class EvidenceSearchRepository:
     async def search_by_text(
         self, request: EvidenceTextSearchRequest
     ) -> list[EvidenceSearchRow]:
+        sql = self._TARGETED_TEXT_SQL if request.target_ids else self._TEXT_SQL
         return await self._execute(
-            self._statement(self._TEXT_SQL),
+            self._statement(sql, binds_target_ids=bool(request.target_ids)),
             {
                 "query_text": request.query_text,
                 "embedding_model": request.embedding_model,
                 "target_ids": request.target_ids,
-                "has_target_filter": bool(request.target_ids),
+                "source_types": request.source_types,
                 "limit": request.limit,
             },
         )
 
-    def _statement(self, sql: str) -> TextClause:
-        return text(sql).bindparams(bindparam("target_ids", type_=ARRAY(Uuid(as_uuid=True))))
+    def _statement(self, sql: str, *, binds_target_ids: bool) -> TextClause:
+        statement = text(sql).bindparams(
+            bindparam("source_types", type_=ARRAY(String()))
+        )
+        if not binds_target_ids:
+            return statement
+        # HNSW가 전체 후보를 먼저 제한하면 희소한 성분 Evidence가 탈락하므로,
+        # 성분 지정 검색은 materialized 후보 집합에서 정확한 거리 순서를 계산한다.
+        return statement.bindparams(
+            bindparam("target_ids", type_=ARRAY(Uuid(as_uuid=True)))
+        )
 
     async def _execute(
         self,

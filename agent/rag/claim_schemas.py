@@ -164,8 +164,11 @@ class ClaimVerificationRequest(RagModel):
 
     @model_validator(mode="after")
     def validate_claim_anchor(self) -> Self:
-        if self.anchor.origin is not EvidenceQueryOrigin.CLAIM_HIT:
-            raise ValueError("Claim 검증에는 CLAIM_HIT 유래 Evidence anchor가 필요합니다.")
+        if self.anchor.origin not in (
+            EvidenceQueryOrigin.CLAIM_HIT,
+            EvidenceQueryOrigin.CASE_CLAIM,
+        ):
+            raise ValueError("Claim 검증에는 Claim 유래 Evidence anchor가 필요합니다.")
         return self
 
 

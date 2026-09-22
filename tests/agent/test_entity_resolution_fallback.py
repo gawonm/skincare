@@ -132,6 +132,31 @@ class TestIngredientAliases:
         request = IngredientResolveRequest(name=name)
         assert CommonIngredientAliasMapper().map_request(request) == request
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "살리실산",
+            "살리실산(BHA)",
+            "BHA(살리실산)",
+            " 살리실산 ( BHA ) ",
+            "SALICYLIC ACID",
+        ],
+    )
+    def test_maps_safe_salicylic_acid_aliases(self, name: str) -> None:
+        mapped = CommonIngredientAliasMapper().map_request(
+            IngredientResolveRequest(name=name)
+        )
+        assert mapped.name == "살리실릭애씨드"
+
+    @pytest.mark.parametrize("name", ["BHA", "티트리 오일", "티트리오일", "TEA TREE OIL"])
+    def test_preserves_ambiguous_families_without_single_id_mapping(self, name: str) -> None:
+        mapper = CommonIngredientAliasMapper()
+        request = IngredientResolveRequest(name=name)
+
+        assert mapper.map_request(request) == request
+        assert mapper.is_ambiguous_family(request)
+        assert len(mapper.family_candidates(request)) >= 2
+
     def test_custom_entries_and_empty_catalog(self) -> None:
         request = IngredientResolveRequest(name="테스트 별칭")
         mapper = CommonIngredientAliasMapper(
@@ -146,7 +171,7 @@ class TestIngredientAliases:
         assert CommonIngredientAliasMapper([]).map_request(request) == request
 
     def test_rejects_conflicting_normalized_aliases(self) -> None:
-        with pytest.raises(ValueError, match="서로 다른 표준명"):
+        with pytest.raises(ValueError, match="서로 다른 해석"):
             CommonIngredientAliasMapper(
                 [
                     IngredientAliasEntry(
@@ -332,15 +357,15 @@ class TestEntityResolutionFallback:
         assert output.status is ChatStatus.NEEDS_INPUT
         assert len(scenario.search.requests) == 1
 
-    async def test_unreviewed_evidence_is_not_promoted_by_fallback(self) -> None:
+    async def test_document_status_does_not_block_fallback_evidence(self) -> None:
         scenario = FallbackScenario()
         scenario.evidence(EvidenceReviewStatus.UNREVIEWED)
         app = scenario.create()
         output = await app.service.handle_turn(
             AgentTestFactory().request("room-a", "1", scenario.llm.parsed.query)
         )
-        assert not scenario.claims.requests
-        assert not output.citations
+        assert scenario.claims.requests
+        assert output.citations
         assert output.status is ChatStatus.PARTIAL
 
     async def test_unknown_pair_does_not_generate_combination_claims(self) -> None:

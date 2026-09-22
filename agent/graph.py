@@ -82,12 +82,14 @@ class AgentGraphFactory:
         router: AgentGraphRouter,
         rag_router: RagWorkflowRouter,
         checkpointer: BaseCheckpointSaver[str],
+        use_offline_claim_path: bool = False,
     ) -> None:
         self._nodes = nodes
         self._rag_nodes = rag_nodes
         self._router = router
         self._rag_router = rag_router
         self._checkpointer = checkpointer
+        self._use_offline_claim_path = use_offline_claim_path
 
     def create(self) -> AgentGraph:
         builder = StateGraph(
@@ -103,6 +105,20 @@ class AgentGraphFactory:
         builder.add_node(GraphNode.ASK_USER.value, self._nodes.ask_user)
         builder.add_node(GraphNode.ROUTE_TASK.value, self._nodes.route_task)
         builder.add_node(GraphNode.ROUTE_RAG.value, self._rag_nodes.route_rag)
+        builder.add_node(GraphNode.SEARCH_CASES.value, self._rag_nodes.search_cases)
+        builder.add_node(GraphNode.RERANK_CASES.value, self._rag_nodes.rerank_cases)
+        builder.add_node(
+            GraphNode.EXTRACT_CASE_CLAIMS.value,
+            self._rag_nodes.extract_case_claims,
+        )
+        builder.add_node(
+            GraphNode.VALIDATE_CASE_CLAIMS.value,
+            self._rag_nodes.validate_case_claims,
+        )
+        builder.add_node(
+            GraphNode.RESOLVE_CASE_CLAIM_INGREDIENTS.value,
+            self._rag_nodes.resolve_case_claim_ingredients,
+        )
         builder.add_node(GraphNode.SEARCH_CLAIMS.value, self._rag_nodes.search_claims)
         builder.add_node(
             GraphNode.RESOLVE_CLAIM_INGREDIENTS.value,
@@ -150,9 +166,27 @@ class AgentGraphFactory:
             GraphNode.ROUTE_RAG.value,
             self._rag_router.after_rag_routing,
             {
-                RagRoute.CLAIM_THEN_EVIDENCE: GraphNode.SEARCH_CLAIMS.value,
+                RagRoute.CLAIM_THEN_EVIDENCE: (
+                    GraphNode.SEARCH_CLAIMS.value
+                    if self._use_offline_claim_path
+                    else GraphNode.SEARCH_CASES.value
+                ),
                 RagRoute.EVIDENCE_ONLY: GraphNode.SEARCH_EVIDENCE.value,
             },
+        )
+        builder.add_edge(GraphNode.SEARCH_CASES.value, GraphNode.RERANK_CASES.value)
+        builder.add_edge(GraphNode.RERANK_CASES.value, GraphNode.EXTRACT_CASE_CLAIMS.value)
+        builder.add_edge(
+            GraphNode.EXTRACT_CASE_CLAIMS.value,
+            GraphNode.VALIDATE_CASE_CLAIMS.value,
+        )
+        builder.add_edge(
+            GraphNode.VALIDATE_CASE_CLAIMS.value,
+            GraphNode.RESOLVE_CASE_CLAIM_INGREDIENTS.value,
+        )
+        builder.add_edge(
+            GraphNode.RESOLVE_CASE_CLAIM_INGREDIENTS.value,
+            GraphNode.VERIFY_CLAIMS.value,
         )
         builder.add_edge(
             GraphNode.SEARCH_CLAIMS.value,
