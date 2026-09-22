@@ -7,11 +7,6 @@ from agent.evidence_query_policy import EvidenceQueryPolicy
 from agent.ports import IngredientRepository, LlmClient, ProductRepository, RoutinePlanner
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.query_planning import IntentQueryPlanner
-from agent.rag.routine_planner import RoutineFrequencyInterpreter
-from agent.rag.routine_product_selector import (
-    RoutineProductSelectionRequest,
-    RoutineProductSelector,
-)
 from agent.rag.claim_schemas import (
     IngredientRecommendationCandidate,
     RecommendationBasis,
@@ -22,6 +17,11 @@ from agent.rag.retrieval.ingredient_alias_mapper import (
     IngredientMentionDetectionRequest,
 )
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
+from agent.rag.routine_planner import RoutineFrequencyInterpreter
+from agent.rag.routine_product_selector import (
+    RoutineProductSelectionRequest,
+    RoutineProductSelector,
+)
 from agent.rag.schemas import (
     EvidenceConditions,
     IngredientResolveRequest,

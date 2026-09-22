@@ -15,10 +15,10 @@ from pydantic import ValidationError
 from agent.ports import RoutineDraftGenerator, RoutinePlanner, RoutineRuleGenerator
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.rag.schemas import (
+    DEFAULT_ROUTINE_FREQUENCY,
     ChatModelConfig,
     ConstraintSource,
     DayPeriod,
-    DEFAULT_ROUTINE_FREQUENCY,
     LlmProvider,
     ProductRecord,
     RoutineConstraint,
