@@ -203,6 +203,15 @@ class UserProfile(AgentModel):
     experiences: list[SourcedValue] = Field(default_factory=list)
 
 
+class IntentQueryPlan(AgentModel):
+    """복합 사용자 요청을 각 실행 단계가 소비할 독립 질의로 분리한다."""
+
+    case_query: str | None = Field(default=None, min_length=1)
+    evidence_query: str | None = Field(default=None, min_length=1)
+    product_query: str | None = Field(default=None, min_length=1)
+    routine_query: str | None = Field(default=None, min_length=1)
+
+
 class PendingQuestion(AgentModel):
     question_id: str = Field(min_length=1)
     question: str = Field(min_length=1)
@@ -214,7 +223,11 @@ class PendingQuestion(AgentModel):
 
 class ParsedRequest(AgentModel):
     intents: list[Intent] = Field(min_length=1, description="사용자 질의의 핵심 의도 목록")
-    query: str = Field(min_length=1, description="검색에 사용할 독립적인 질문 문장")
+    query: str = Field(min_length=1, description="전체 요청을 보존한 독립적인 질문 문장")
+    query_plan: IntentQueryPlan = Field(
+        default_factory=IntentQueryPlan,
+        description="Case·Evidence·Product·Routine 단계별 독립 질의",
+    )
     category: ProductCategory | None = Field(default=None, description="특정 상품 카테고리 요청")
     texture: ProductTexture | None = Field(default=None, description="원하는 제형")
     skin_feel: ProductSkinFeel | None = Field(default=None, description="원하는 사용감")
@@ -236,6 +249,12 @@ class ParsedRequest(AgentModel):
     skin_concerns: list[str] = Field(default_factory=list, description="사용자가 언급한 피부 고민 목록")
     known_conditions: EvidenceConditions = Field(default_factory=EvidenceConditions, description="연령, 임신 여부 등 알려진 조건")
     rag_route: RagRoute | None = Field(default=None, description="권장되는 RAG 검색 경로")
+
+
+class QueryPlanningRequest(AgentModel):
+    original_message: str = Field(min_length=1)
+    parsed_request: ParsedRequest
+    profile_concerns: list[str] = Field(default_factory=list)
 
 
 class TaskContext(AgentModel):

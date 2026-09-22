@@ -171,6 +171,7 @@ uv run python -m backend.services.nia_case_ingestion_service
 
 ## 관련 문서
 
+- [Agent ↔ Backend 성분 식별 정규화 계획](../agent/RAG_YK/2026-09-22_INGREDIENT_ALIAS_RESOLUTION_PLAN.md)
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
 - [DB 기반 Product Taxonomy 연동 상태](../agent/RAG_YK/2026-09-21_1832_DB_PRODUCT_TAXONOMY_INTEGRATION_STATUS.md)
 - [Data → Backend NIA Case 적재 계약](../contracts/data-to-backend.md)

@@ -527,8 +527,64 @@ Citation의 제목, URL, PMID, DOI는 DB 메타데이터만 사용한다. LLM �
 
 ### 9.4 Ingredient와 Product 조회
 
-- Ingredient resolve는 표준 한글/영문명, 정규화명, 구명칭의 정확 일치만 먼저 지원한다.
-- 일치 1건은 `SUCCESS`, 복수는 `ambiguous_candidates`, 없음은 `NO_RESULTS`다.
+> 2026-09-22 성분 식별 정규화 초안: 사용자 방향 확인, 코드 구현 전 Agent·Backend 최종 확인 필요.
+> 세부 근거와 확인된 마스터 행은
+> [성분 식별 정규화 및 확정 별칭 조회 계획](../agent/RAG_YK/2026-09-22_INGREDIENT_ALIAS_RESOLUTION_PLAN.md)을
+> 따른다.
+
+Ingredient resolve의 공개 타입과 소유권은 유지한다.
+
+```python
+class IngredientResolveRequest(RagModel):
+    name: str = Field(min_length=1)
+    language: str = Field(default="ko", min_length=2)
+
+
+class IngredientRecord(RagModel):
+    ingredient_id: str = Field(min_length=1)
+    canonical_name: str = Field(min_length=1)
+    ingredient_code: int | None = None
+    source_version: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+    is_demo: bool = True
+
+
+class IngredientResolveResult(RagModel):
+    status: LookupStatus
+    ingredient: IngredientRecord | None = None
+    ambiguous_candidates: list[IngredientRecord] = Field(default_factory=list)
+    error_message: str | None = None
+```
+
+호출 대상은 `IngredientRepository.resolve(request: IngredientResolveRequest)`이고, 운영 구현은
+`TwoLayerIngredientRepository.resolve()`가 `AgentIngredientReadRepository.find_exact()`를 호출한다.
+
+Backend는 의미를 바꾸지 않는 다음 정규화만 적용해 표준 한글/영문명, 정규화명, 구명칭의 정확
+일치 후보를 반환한다.
+
+- 국문 키: 앞뒤 공백 및 모든 공백 문자 제거
+- 영문 키: 소문자화 후 공백·하이픈·괄호 제거
+- `language` 기본값과 무관하게 같은 `name`에서 국문·영문 키를 모두 계산
+- 국문 키는 `normalized_name_ko`, 영문 키는 `normalized_name_en`과 직접 비교
+- 구명칭 배열은 각 원소에 같은 언어별 규칙을 적용한 뒤 정확히 일치하는 항목만 허용
+- 부분 일치, fuzzy matching, 번역·음역 추정은 금지
+
+Agent는 원문 조회가 `NO_RESULTS`일 때만 `CommonIngredientAliasMapper`의 확정 동의어로 바꿔 한 번
+재조회한다. `SUCCESS`의 모호한 후보, `ERROR`, `UNSUPPORTED`는 별칭 결과로 덮어쓰지 않는다.
+2026-09-22 확인된 신규 확정 동의어는 다음 두 개다.
+
+| 입력 별칭 | 재조회 표준 국문명 |
+| --- | --- |
+| `알로에 베라 잎즙 파우더` | `알로에베라잎즙가루` |
+| `카라파 구아이아넨시스 씨드 오일` | `안디로바씨오일` |
+
+`파우더 ↔ 가루`, `씨드 오일 ↔ 씨오일`을 모든 성분명에 적용하는 전역 치환은 허용하지 않는다.
+별칭 코드에는 UUID를 고정하지 않고, 최종 `ingredient_id`는 Backend가 현재 DB에서 반환한다.
+
+- 일치 1건은 `SUCCESS`와 `ingredient`를 반환한다.
+- 복수 후보는 `SUCCESS`와 `ambiguous_candidates`를 반환하며 Agent는 하나를 임의 선택하지 않는다.
+- 원문과 확정 별칭 재조회가 모두 무결과면 `NO_RESULTS`다.
+- DB·SQL·DTO 변환 실패는 원인을 포함한 `ERROR`이며 빈 성공이나 `NO_RESULTS`로 숨기지 않는다.
 - Claim은 `matched` UUID만 사용한다. unresolved raw name은 Ingredient resolve로 다시 추론하지
   않으며 Data 파트가 후속 annotation run에서 확정해야 한다.
 - Product 검색은 `product_ingredient.match_acceptance=confirmed`와 non-null `ingredient_id`만 사용한다.
@@ -1034,3 +1090,64 @@ Agent의 결정적 질문 축 분류 결과를 다음 검색 계획으로 변환
 - 지원하지 않는 source type: 조용히 무시하지 않고 `UNSUPPORTED`
 - 인용문 검증 실패: 해당 생성 문장만 제외하고, 검증된 문장이 하나도 없을 때만
   `CITATION_VALIDATION_FAILED`
+
+## 14. NIA Case 의도별 질의와 메타데이터 리랭크 계약 — 2026-09-22
+
+> 상태: **사용자 확인 및 Agent 구현 완료**
+>
+> 관련 계획:
+> [`2026-09-22_NIA_CASE_QUERY_DECOMPOSITION_PLAN.md`](../agent/RAG_YK/2026-09-22_NIA_CASE_QUERY_DECOMPOSITION_PLAN.md)
+
+### 14.1 의도별 질의
+
+Agent는 복합 사용자 요청을 다음 `IntentQueryPlan`으로 분리한다.
+
+```python
+class IntentQueryPlan(AgentModel):
+    case_query: str | None = Field(default=None, min_length=1)
+    evidence_query: str | None = Field(default=None, min_length=1)
+    product_query: str | None = Field(default=None, min_length=1)
+    routine_query: str | None = Field(default=None, min_length=1)
+```
+
+- `case_query`에는 사용자가 명시한 연령대·성별·계절·피부 타입·피부 고민과 성분·주의 질문을
+  보존한다.
+- 상품 선택 조건과 루틴 기간·일정 지시는 `case_query`에서 제외하고 각각 `product_query`,
+  `routine_query`에 보존한다.
+- Case embedding, Case rerank, Top-3 Case 관련 성분 선별은 같은 `case_query`를 사용한다.
+- Case 관련 성분을 공인 Evidence로 검증할 때는 `evidence_query`를 사용한다.
+
+### 14.2 Backend 계약 유지
+
+`CaseSearchRequest`와 Backend 검색 SQL은 10절의 기존 계약을 그대로 유지한다.
+
+- Backend는 cosine similarity 기준 vector Top-20을 반환한다.
+- `BackendNiaCaseRetriever`는 기존처럼 `CaseSearchHit.metadata`에 `age`, `gender`, `skin_type`,
+  `skin_concerns`를 보존한다.
+- Backend는 메타데이터 filter, boost 또는 별도 의미 판단을 추가하지 않는다.
+- 새 DB 컬럼, 모델, 마이그레이션, 설정 키와 BM25 인덱스는 추가하지 않는다.
+
+### 14.3 BGE reranker 입력
+
+Agent의 Case reranker는 Backend가 반환한 메타데이터를 결정적 라벨 문자열로 만들어
+`page_content` 앞에 붙인 문서를 scoring 입력으로 사용한다.
+
+```text
+[사례 문맥]
+연령: 34세
+성별: 남성
+피부 타입: 지성
+피부 고민: 여드름/뾰루지
+
+[질문·답변·추론]
+...
+```
+
+`CaseSearchHit.page_content` 자체는 변경하지 않는다. 메타데이터 문맥과 NIA Case 본문은 공식
+Evidence나 Citation으로 승격하지 않는다.
+
+### 14.4 실패와 후속 평가
+
+- reranker 실패 시 기존처럼 vector 순위 Top-3로 fallback하고 실패 이력을 남긴다.
+- 실제 골든셋에서 필요한 Case가 vector Top-20에 포함되지 않는 recall 문제가 확인될 때만 후보 수
+  확대, 메타데이터 선호 후보 합집합 또는 BM25 하이브리드 검색을 별도 계약으로 검토한다.
