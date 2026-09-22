@@ -1,0 +1,135 @@
+source_type,document_source_id,chunk_id,action,note
+pubmed_abstract,PMID:10021493,PMID:10021493:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:10522500,PMID:10522500:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:10965426,PMID:10965426:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:12190621,PMID:12190621:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:12562345,PMID:12562345:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:12823436,PMID:12823436:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:1303072,PMID:1303072:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:14641355,PMID:14641355:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:15022655,PMID:15022655:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:15304189,PMID:15304189:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:15689218,PMID:15689218:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:16029679,PMID:16029679:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:16766489,PMID:16766489:abstract:0,CONFLICT,"동일 chunk_id지만 content_hash 불일치(bundle parser=pubmed-abstract-v1, canonical parser=live-bge-m3-smoke-v1) - 수동 확인 필요"
+pubmed_abstract,PMID:17348991,PMID:17348991:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:17515510,PMID:17515510:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:18452433,PMID:18452433:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:18503551,PMID:18503551:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:19134126,PMID:19134126:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:19146601,PMID:19146601:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:19239556,PMID:19239556:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:19753737,PMID:19753737:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:19845667,PMID:19845667:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:20642768,PMID:20642768:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:21619548,PMID:21619548:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:23075568,PMID:23075568:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:23545907,PMID:23545907:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:24168559,PMID:24168559:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:24509969,PMID:24509969:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:25876142,PMID:25876142:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:26206496,PMID:26206496:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:26346940,PMID:26346940:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:26831423,PMID:26831423:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:26859648,PMID:26859648:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:27325103,PMID:27325103:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:27391637,PMID:27391637:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:27756097,PMID:27756097:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:28511614,PMID:28511614:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:29181960,PMID:29181960:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:29318715,PMID:29318715:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:29328637,PMID:29328637:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:29411520,PMID:29411520:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:29737899,PMID:29737899:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:30378232,PMID:30378232:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:30444533,PMID:30444533:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:30945430,PMID:30945430:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:30987568,PMID:30987568:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:31166601,PMID:31166601:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:31328306,PMID:31328306:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:31553119,PMID:31553119:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:31587493,PMID:31587493:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:31660683,PMID:31660683:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:32356369,PMID:32356369:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:32383548,PMID:32383548:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:32769524,PMID:32769524:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:33150170,PMID:33150170:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:33188584,PMID:33188584:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:33346506,PMID:33346506:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:33458927,PMID:33458927:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:33811776,PMID:33811776:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:33934471,PMID:33934471:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:34077434,PMID:34077434:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:34348343,PMID:34348343:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:34407729,PMID:34407729:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:34962047,PMID:34962047:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:35182003,PMID:35182003:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:35279940,PMID:35279940:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:35696226,PMID:35696226:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:36176207,PMID:36176207:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:36200921,PMID:36200921:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:36214607,PMID:36214607:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:36999457,PMID:36999457:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:37026889,PMID:37026889:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:37335807,PMID:37335807:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:37418701,PMID:37418701:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:37584240,PMID:37584240:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:37608511,PMID:37608511:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:38206153,PMID:38206153:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:38299457,PMID:38299457:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:38564402,PMID:38564402:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:38628085,PMID:38628085:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:39162834,PMID:39162834:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:39555866,PMID:39555866:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:39968706,PMID:39968706:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:40111222,PMID:40111222:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:40586182,PMID:40586182:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:40613435,PMID:40613435:abstract:0,REUSE,canonical chunk와 content_hash 동일
+pubmed_abstract,PMID:40682377,PMID:40682377:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:40970768,PMID:40970768:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:41134387,PMID:41134387:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:41211697,PMID:41211697:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:42324157,PMID:42324157:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:42696337,PMID:42696337:abstract:0,INSERT,canonical에 없는 신규 chunk
+pubmed_abstract,PMID:8033544,PMID:8033544:abstract:0,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:78339067-953f-de05-9d46-508a63ceca4c,cir_attachment:78339067-953f-de05-9d46-508a63ceca4c:40:Conclusion:0,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:78339067-953f-de05-9d46-508a63ceca4c,cir_attachment:78339067-953f-de05-9d46-508a63ceca4c:40:Discussion:1,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:44:CLINICAL ASSESSMENT OF SAFETY:0,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:45:CLINICAL ASSESSMENT OF SAFETY:1,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:45:CLINICAL ASSESSMENT OF SAFETY:2,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:45:CLINICAL ASSESSMENT OF SAFETY:3,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:46:CLINICAL ASSESSMENT OF SAFETY:4,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:46:CLINICAL ASSESSMENT OF SAFETY:5,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:47:CLINICAL ASSESSMENT OF SAFETY:6,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:47:CLINICAL ASSESSMENT OF SAFETY:7,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:48:CLINICAL ASSESSMENT OF SAFETY:8,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:48:CLINICAL ASSESSMENT OF SAFETY:9,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:49:CLINICAL ASSESSMENT OF SAFETY:10,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:49:CLINICAL ASSESSMENT OF SAFETY:11,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:50:CLINICAL ASSESSMENT OF SAFETY:12,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:50:CLINICAL ASSESSMENT OF SAFETY:13,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:51:CLINICAL ASSESSMENT OF SAFETY:14,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:51:CLINICAL ASSESSMENT OF SAFETY:15,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:52:CLINICAL ASSESSMENT OF SAFETY:16,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:54:DISCUSSION:17,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:54:CONCLUSION:18,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:42:Clinical Studies:0,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:42:Clinical Studies:1,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:43:Clinical Studies:2,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:43:Clinical Studies:3,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:44:Clinical Studies:4,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:48:Discussion:5,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:49:Discussion:6,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:49:Discussion:7,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:49:Conclusion:8,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:50:Conclusion:9,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:10:Clinical Studies:0,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:10:Clinical Studies:1,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:11:Clinical Studies:2,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:12:Discussion:3,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:12:Discussion:4,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:12:Conclusion:5,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:13:Conclusion:6,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e:13:Clinical Studies:0,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e:14:Clinical Studies:1,INSERT,canonical에 없는 신규 chunk
+cir,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e:16:Conclusion:2,INSERT,canonical에 없는 신규 chunk
