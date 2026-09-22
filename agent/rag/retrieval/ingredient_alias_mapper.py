@@ -262,6 +262,27 @@ class CommonIngredientAliasMapper:
                     "glycolic acid (aha)",
                 )
             ],
+            *[
+                IngredientAliasEntry(
+                    consumer_term=term,
+                    standard_name_ko="알로에베라잎즙가루",
+                    description="소비자의 파우더 표기를 화장품 표준 국문 명칭인 가루로 연결하는 확정 동의어",
+                )
+                for term in (
+                    "알로에 베라 잎즙 파우더",
+                )
+            ],
+            *[
+                IngredientAliasEntry(
+                    consumer_term=term,
+                    standard_name_ko="안디로바씨오일",
+                    description="카라파 구아이아넨시스(Carapa Guianensis) 씨드 오일 표기를 표준 국문 명칭인 안디로바씨오일로 연결하는 확정 동의어",
+                )
+                for term in (
+                    "카라파 구아이아넨시스 씨드 오일",
+                    "카라파 구아이아넨시스 씨 오일",
+                )
+            ],
         ]
         family_entries = [
             IngredientAliasEntry(
