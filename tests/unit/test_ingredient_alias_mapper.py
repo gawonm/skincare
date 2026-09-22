@@ -61,6 +61,22 @@ class TestCommonIngredientAliasMapper:
             mapper.map_request(IngredientResolveRequest(name="글리콜산")).name
             == "글라이콜릭애씨드"
         )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="알로에 베라 잎즙 파우더")).name
+            == "알로에베라잎즙가루"
+        )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="알로에베라잎즙파우더")).name
+            == "알로에베라잎즙가루"
+        )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="카라파 구아이아넨시스 씨드 오일")).name
+            == "안디로바씨오일"
+        )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="카라파 구아이아넨시스 씨 오일")).name
+            == "안디로바씨오일"
+        )
 
     def test_unregistered_name_retains_original(
         self, mapper: CommonIngredientAliasMapper

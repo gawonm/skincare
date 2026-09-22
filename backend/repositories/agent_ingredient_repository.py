@@ -1,5 +1,6 @@
 """Agent 성분 식별 포트용 `ingredient_master` 읽기 Repository."""
 
+import re
 from typing import ClassVar
 from uuid import UUID
 
@@ -38,15 +39,17 @@ class AgentIngredientReadRepository:
         FROM ingredient_master
         WHERE lower(standard_name_ko) = lower(:name)
            OR lower(COALESCE(standard_name_en, '')) = lower(:name)
-           OR lower(normalized_name_ko) = lower(:name)
-           OR lower(COALESCE(normalized_name_en, '')) = lower(:name)
+           OR lower(normalized_name_ko) = :norm_ko
+           OR lower(COALESCE(normalized_name_en, '')) = :norm_en
            OR EXISTS (
                 SELECT 1 FROM unnest(old_names_ko) AS old_name
                 WHERE lower(old_name) = lower(:name)
+                   OR lower(replace(old_name, ' ', '')) = :norm_ko
            )
            OR EXISTS (
                 SELECT 1 FROM unnest(old_names_en) AS old_name
                 WHERE lower(old_name) = lower(:name)
+                   OR lower(regexp_replace(old_name, '[ -()]', '', 'g')) = :norm_en
            )
         ORDER BY standard_name_ko, id
         LIMIT :limit
@@ -55,9 +58,27 @@ class AgentIngredientReadRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    @staticmethod
+    def normalize_ko(name: str) -> str:
+        # 국문 키는 공백 문자를 모두 제거해 normalized_name_ko와 직접 비교할 수 있게 한다.
+        return "".join(name.casefold().split())
+
+    @staticmethod
+    def normalize_en(name: str) -> str:
+        # 영문 키는 소문자화한 뒤 공백·하이픈·괄호를 제거해 normalized_name_en과 직접 비교한다.
+        return re.sub(r"[ \-()]", "", name.casefold())
+
     async def find_exact(self, name: str) -> list[IngredientLookupRow]:
+        norm_ko = self.normalize_ko(name)
+        norm_en = self.normalize_en(name)
         result = await self._session.execute(
             text(self._LOOKUP_SQL),
-            {"name": name, "limit": self.MAX_AMBIGUOUS_CANDIDATES},
+            {
+                "name": name,
+                "norm_ko": norm_ko,
+                "norm_en": norm_en,
+                "limit": self.MAX_AMBIGUOUS_CANDIDATES,
+            },
         )
         return [IngredientLookupRow.model_validate(row) for row in result.mappings().all()]
+
