@@ -7,10 +7,12 @@ uvicorn CLI 인자로 넘긴다. 설정이 config.yaml 과 CLI 두 군데로 갈
 적용됐는지 알기 어려워지기 때문이다.
 """
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -22,10 +24,17 @@ from core.config import settings
 from core.database import Database
 from core.redis import RedisClient
 
+if TYPE_CHECKING:
+    from backend.services.agent_assembly import ChatAgentAssembler
+
 # 빌드된 프론트가 놓이는 자리. Dockerfile 이 1단계 산출물을 이 경로로 복사한다.
 # 저장소 루트 기준이므로 backend/ 의 두 단계 위를 잡는다.
 FRONTEND_DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 FRONTEND_INDEX_FILENAME = "index.html"
+
+# uvicorn은 자기 로거 외의 INFO 로그를 출력하지 않는다. 조립 성공 여부를 서버 로그에서 바로
+# 보려고 uvicorn 로거를 그대로 쓴다.
+logger = logging.getLogger("uvicorn.error")
 
 
 class SpaStaticFiles(StaticFiles):
@@ -105,6 +114,30 @@ class Application:
             name="frontend",
         )
 
+    def _create_agent_assembler(self, database: Database) -> "ChatAgentAssembler":
+        # Agent 조립 모듈은 무거운 import를 끌고 오고 settings를 읽으므로 필요할 때만 불러온다.
+        from backend.services.agent_assembly import ChatAgentAssembler
+
+        return ChatAgentAssembler(database.session_factory, settings.openai, settings.agent)
+
+    async def _assemble_agent(self, app: FastAPI, database: Database) -> None:
+        """Agent `ChatService`를 조립해 `app.state`에 올린다.
+
+        조립에 실패해도 서버는 기동한다. 로그인 같은 다른 기능이 채팅 설정 문제 때문에 함께
+        죽지 않게 하려는 것이다. 실패 원인은 숨기지 않고 로그에 남기며, 그동안 `POST /chat`은
+        503을 돌려준다.
+        """
+        from backend.api.dependencies import AGENT_CHAT_SERVICE_STATE_NAME
+
+        try:
+            service = await self._create_agent_assembler(database).create()
+        except (RuntimeError, ValueError, OSError):
+            # exception()은 원인 예외와 traceback을 자동으로 붙인다
+            logger.exception("Agent 조립에 실패해 채팅(POST /chat)은 503으로 응답합니다.")
+            return
+        setattr(app.state, AGENT_CHAT_SERVICE_STATE_NAME, service)
+        logger.info("Agent 조립을 마쳤습니다. 채팅(POST /chat)을 사용할 수 있습니다.")
+
     @asynccontextmanager
     async def _lifespan(self, app: FastAPI) -> AsyncIterator[None]:
         database = Database(settings.database)
@@ -123,6 +156,7 @@ class Application:
         self._redis = redis
         app.state.database = database
         app.state.redis = redis
+        await self._assemble_agent(app, database)
 
         try:
             yield
