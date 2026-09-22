@@ -1,0 +1,158 @@
+source_type,chunk_id,ingredient_id,ingredient_name,linkage_type,action,note,in_combined_bundle
+pubmed_abstract,PMID:10021493:abstract:0,578433aa-82cf-4857-ad6b-d6196300a219,Oleic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:10522500:abstract:0,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:10965426:abstract:0,71c52574-f2b2-4fb2-a738-8bf0bc4cd7c5,Dexpanthenol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:12190621:abstract:0,c78dfd19-39f6-4b68-aac9-c59051713807,Ceramide NP,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:12562345:abstract:0,8f45539c-d042-45f6-acb1-2a654e954a76,Retinol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:12823436:abstract:0,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:1303072:abstract:0,435c3a54-86e4-4934-a706-e42dbb0f684a,Gluconolactone,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:14641355:abstract:0,71c52574-f2b2-4fb2-a738-8bf0bc4cd7c5,Dexpanthenol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:15022655:abstract:0,a1100045-b0da-49ce-8d66-42195f0d3b2f,Beeswax,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:15304189:abstract:0,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:15689218:abstract:0,30922d12-a004-48c3-89a0-05beb2df6292,Sea Salt,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:16029679:abstract:0,93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4,Niacinamide,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:16766489:abstract:0,93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4,Niacinamide,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:17348991:abstract:0,536a5712-cc8e-4a31-88b0-dff09d42124e,Acetyl Glucosamine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:17515510:abstract:0,8f45539c-d042-45f6-acb1-2a654e954a76,Retinol,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:18452433:abstract:0,12a76878-9453-49c9-994b-a70527551768,Asiaticoside,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:18503551:abstract:0,1686c2b6-b430-4de8-9dab-aab190de2005,Madecassoside,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:19134126:abstract:0,f3761c63-d931-420d-8cb2-eecf9d787631,Sodium Ascorbyl Phosphate,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:19146601:abstract:0,1e6a30aa-d018-4389-93fb-ac972c0f2f8f,Capryloyl Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:19239556:abstract:0,053b2c8b-8758-47a3-90d0-ee8afa07846a,Rosmarinic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:19753737:abstract:0,71c52574-f2b2-4fb2-a738-8bf0bc4cd7c5,Dexpanthenol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:19845667:abstract:0,536a5712-cc8e-4a31-88b0-dff09d42124e,Acetyl Glucosamine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:20642768:abstract:0,00977f5f-82e8-4638-8281-7db1d8581d04,Bisabolol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:21619548:abstract:0,e520c83f-b45b-4e38-ad9e-dc6b124b135c,Fullerenes,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:23075568:abstract:0,0fae281a-731f-4fef-a6a7-1972fa265452,Caffeine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:23545907:abstract:0,1e6a30aa-d018-4389-93fb-ac972c0f2f8f,Capryloyl Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:24168559:abstract:0,963e6d7a-5a0e-445e-94ba-a62b5471a1e3,Magnesium Ascorbyl Phosphate,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:24509969:abstract:0,c51f0352-5bbe-497b-9fab-133245c5a482,Allantoin,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:25876142:abstract:0,c04b9cea-e0c7-4f24-a269-fd3ebd03121f,Hydroxypinacolone Retinoate,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:26206496:abstract:0,c78dfd19-39f6-4b68-aac9-c59051713807,Ceramide NP,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:26346940:abstract:0,ad67735e-cc43-4f93-b1b9-2f8d222985f7,Rutin,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:26831423:abstract:0,f744cb0a-3dc7-4116-9f7a-6002c725d3a6,Bentonite,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:26859648:abstract:0,3829d045-604a-4b6b-8465-ffe62c0ca88c,Mandelic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:26859648:abstract:0,266d2b23-fc31-483b-90cd-163ca93c68ab,Phytic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:27325103:abstract:0,ee073ef1-9f4c-4dc3-93e5-cc471fab98f4,Glycyrrhetinic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:27391637:abstract:0,017c6fe9-dcb2-4c84-aea2-72a613947190,Hexylresorcinol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:27756097:abstract:0,f3761c63-d931-420d-8cb2-eecf9d787631,Sodium Ascorbyl Phosphate,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:28511614:abstract:0,dab59fa5-aa76-4ab0-866d-bb58c9e3fb79,Panthenol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:29181960:abstract:0,00977f5f-82e8-4638-8281-7db1d8581d04,Bisabolol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:29318715:abstract:0,7dade91f-fbac-4665-a2dd-50547cba260c,Lactobionic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:29328637:abstract:0,c6d640b0-a2e6-4222-bd16-a938173631dc,Squalene,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:29411520:abstract:0,91f2eebd-5f49-43c1-a5f8-b67f71947e0b,4-t-Butylcyclohexanol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:29737899:abstract:0,80a9b853-0898-4b21-a55c-a1105451a074,Resveratrol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:30378232:abstract:0,3184690c-fc0c-41a7-9cee-c8fd195121c7,Urea,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:30444533:abstract:0,938499c3-cdd7-46da-a700-3b78d90f1523,Titanium Dioxide,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:30444533:abstract:0,b70949f7-694b-4b6a-bf27-b257f99c679e,Zinc Oxide,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:30945430:abstract:0,1686c2b6-b430-4de8-9dab-aab190de2005,Madecassoside,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:30987568:abstract:0,986e97e0-cb31-451e-822b-52af2605123c,Ectoin,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:31166601:abstract:0,ee073ef1-9f4c-4dc3-93e5-cc471fab98f4,Glycyrrhetinic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:31328306:abstract:0,1e29d8a6-b106-43eb-bfe4-364179fc7708,Vinegar,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:31553119:abstract:0,3829d045-604a-4b6b-8465-ffe62c0ca88c,Mandelic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:31587493:abstract:0,86996be3-4cf6-411b-b606-d6a3e4295888,Carnitine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:31660683:abstract:0,91f2eebd-5f49-43c1-a5f8-b67f71947e0b,4-t-Butylcyclohexanol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:32356369:abstract:0,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:32383548:abstract:0,f3761c63-d931-420d-8cb2-eecf9d787631,Sodium Ascorbyl Phosphate,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:32769524:abstract:0,95ff3311-de1d-4921-bb5e-71ffb50008fc,Tranexamic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:33150170:abstract:0,86996be3-4cf6-411b-b606-d6a3e4295888,Carnitine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:33188584:abstract:0,91679ecd-302a-40a8-89d5-04916cb14bce,Inositol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:33346506:abstract:0,27829025-c758-4332-9288-697536a7c28f,Bakuchiol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:33458927:abstract:0,266d2b23-fc31-483b-90cd-163ca93c68ab,Phytic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:33811776:abstract:0,c51f0352-5bbe-497b-9fab-133245c5a482,Allantoin,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:33934471:abstract:0,e07fa4d8-d418-44cf-9e07-97ebd12aa103,Capryloyl Glycine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:34077434:abstract:0,1e29d8a6-b106-43eb-bfe4-364179fc7708,Vinegar,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:34348343:abstract:0,b60f42c2-920c-411d-b09f-252b1ef1ccb2,Chitosan,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:34407729:abstract:0,c5265191-ac38-4592-9599-d131d8c50dcc,Kojic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:34962047:abstract:0,c5265191-ac38-4592-9599-d131d8c50dcc,Kojic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:35182003:abstract:0,6f5e234d-cbb1-4524-9d7a-b191f6f83a4f,Glycolic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:35279940:abstract:0,ce99758e-fc15-418f-865d-7a63c3a68e26,Saccharide Isomerate,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:35696226:abstract:0,80a9b853-0898-4b21-a55c-a1105451a074,Resveratrol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:36176207:abstract:0,27829025-c758-4332-9288-697536a7c28f,Bakuchiol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:36200921:abstract:0,f5ed1356-89f1-4564-a5a0-808484032f39,Hyaluronic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:36214607:abstract:0,91f2eebd-5f49-43c1-a5f8-b67f71947e0b,4-t-Butylcyclohexanol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:36999457:abstract:0,a1100045-b0da-49ce-8d66-42195f0d3b2f,Beeswax,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:37026889:abstract:0,95ff3311-de1d-4921-bb5e-71ffb50008fc,Tranexamic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:37335807:abstract:0,435c3a54-86e4-4934-a706-e42dbb0f684a,Gluconolactone,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:37418701:abstract:0,b70949f7-694b-4b6a-bf27-b257f99c679e,Zinc Oxide,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:37584240:abstract:0,95ff3311-de1d-4921-bb5e-71ffb50008fc,Tranexamic Acid,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:37608511:abstract:0,7312d85a-b01d-4754-895d-48b568d18886,Astaxanthin,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:38206153:abstract:0,3184690c-fc0c-41a7-9cee-c8fd195121c7,Urea,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:38299457:abstract:0,93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4,Niacinamide,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:38564402:abstract:0,27829025-c758-4332-9288-697536a7c28f,Bakuchiol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:38628085:abstract:0,8f45539c-d042-45f6-acb1-2a654e954a76,Retinol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:39162834:abstract:0,21384047-2732-438f-b445-b3d7ad08a2f8,Guaiazulene,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:39555866:abstract:0,f8a815e8-3a01-4392-9614-4ba94f297014,Alpha-Arbutin,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:39555866:abstract:0,265988b4-ef2b-44d2-828c-d6fbb3c16223,Arbutin,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:39968706:abstract:0,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:40111222:abstract:0,435c3a54-86e4-4934-a706-e42dbb0f684a,Gluconolactone,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:40586182:abstract:0,dd16e0b8-2e81-4713-a1f1-7d7203663011,Hexapeptide-9,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:40613435:abstract:0,dab59fa5-aa76-4ab0-866d-bb58c9e3fb79,Panthenol,NEW_DOCUMENT,EXISTS,canonical evidence_chunk_ingredient에 동일 chunk+ingredient 조합이 이미 있음,True
+pubmed_abstract,PMID:40682377:abstract:0,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:40970768:abstract:0,6f5e234d-cbb1-4524-9d7a-b191f6f83a4f,Glycolic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:41134387:abstract:0,ce99758e-fc15-418f-865d-7a63c3a68e26,Saccharide Isomerate,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:41211697:abstract:0,ce99758e-fc15-418f-865d-7a63c3a68e26,Saccharide Isomerate,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:42324157:abstract:0,b5332e33-2dc3-418a-86b1-a4ad41728659,Ferulic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:42696337:abstract:0,3829d045-604a-4b6b-8465-ffe62c0ca88c,Mandelic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:8033544:abstract:0,7f0ad556-4141-4364-9489-051ac289aad5,Sodium Lauroyl Glutamate,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:78339067-953f-de05-9d46-508a63ceca4c:40:Conclusion:0,8f45539c-d042-45f6-acb1-2a654e954a76,Retinol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:78339067-953f-de05-9d46-508a63ceca4c:40:Discussion:1,8f45539c-d042-45f6-acb1-2a654e954a76,Retinol,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:44:CLINICAL ASSESSMENT OF SAFETY:0,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:45:CLINICAL ASSESSMENT OF SAFETY:1,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:45:CLINICAL ASSESSMENT OF SAFETY:2,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:45:CLINICAL ASSESSMENT OF SAFETY:3,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:46:CLINICAL ASSESSMENT OF SAFETY:4,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:46:CLINICAL ASSESSMENT OF SAFETY:5,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:47:CLINICAL ASSESSMENT OF SAFETY:6,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:47:CLINICAL ASSESSMENT OF SAFETY:7,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:48:CLINICAL ASSESSMENT OF SAFETY:8,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:48:CLINICAL ASSESSMENT OF SAFETY:9,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:49:CLINICAL ASSESSMENT OF SAFETY:10,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:49:CLINICAL ASSESSMENT OF SAFETY:11,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:50:CLINICAL ASSESSMENT OF SAFETY:12,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:50:CLINICAL ASSESSMENT OF SAFETY:13,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:51:CLINICAL ASSESSMENT OF SAFETY:14,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:51:CLINICAL ASSESSMENT OF SAFETY:15,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:52:CLINICAL ASSESSMENT OF SAFETY:16,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:54:DISCUSSION:17,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:54:CONCLUSION:18,bf432576-e990-4b02-ac67-9d414af42d76,Ascorbic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:d0ca1f11-8e74-ec11-8943-0022482f06a6:54:CONCLUSION:18,f3761c63-d931-420d-8cb2-eecf9d787631,Sodium Ascorbyl Phosphate,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:42:Clinical Studies:0,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:42:Clinical Studies:1,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:43:Clinical Studies:2,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:43:Clinical Studies:3,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:44:Clinical Studies:4,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:49:Discussion:6,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:49:Discussion:7,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:f8f3e083-2ca8-b5b4-b338-aa3ca6da8825:49:Conclusion:8,5c3fa47f-b797-452c-bc86-04a872aa3f71,Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:10:Clinical Studies:0,e40cce63-507d-4752-aa9f-ec2319ed1542,Adenosine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:10:Clinical Studies:1,e40cce63-507d-4752-aa9f-ec2319ed1542,Adenosine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:11:Clinical Studies:2,e40cce63-507d-4752-aa9f-ec2319ed1542,Adenosine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:12:Discussion:3,e40cce63-507d-4752-aa9f-ec2319ed1542,Adenosine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:12:Discussion:4,e40cce63-507d-4752-aa9f-ec2319ed1542,Adenosine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:cd3b62ad-1279-3043-bf9f-58ee259b08ba:12:Conclusion:5,e40cce63-507d-4752-aa9f-ec2319ed1542,Adenosine,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e:13:Clinical Studies:0,1e6a30aa-d018-4389-93fb-ac972c0f2f8f,Capryloyl Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e:14:Clinical Studies:1,1e6a30aa-d018-4389-93fb-ac972c0f2f8f,Capryloyl Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:995efb2f-f539-86e3-8575-19bea03f915e:16:Conclusion:2,1e6a30aa-d018-4389-93fb-ac972c0f2f8f,Capryloyl Salicylic Acid,NEW_DOCUMENT,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:dd27a62b-d988-9d8d-aaff-51a43716120d:12:DISCUSSION:3,b10aeff6-fa34-4f6e-9f6e-2675ebc7a678,Hydrolyzed Hyaluronic Acid,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:dd27a62b-d988-9d8d-aaff-51a43716120d:13:CONCLUSION:6,b10aeff6-fa34-4f6e-9f6e-2675ebc7a678,Hydrolyzed Hyaluronic Acid,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:dd27a62b-d988-9d8d-aaff-51a43716120d:12:DISCUSSION:3,8083853c-8070-432e-baf8-ccdb20bef94b,Sodium Acetylated Hyaluronate,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:dd27a62b-d988-9d8d-aaff-51a43716120d:13:CONCLUSION:6,8083853c-8070-432e-baf8-ccdb20bef94b,Sodium Acetylated Hyaluronate,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:dd27a62b-d988-9d8d-aaff-51a43716120d:12:DISCUSSION:3,09c1f435-8a40-4035-83e4-26e1bdb00e07,Hydrolyzed Sodium Hyaluronate,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:dd27a62b-d988-9d8d-aaff-51a43716120d:12:DISCUSSION:3,524a0419-b69d-4cc3-af02-347c9e2a0207,Potassium Hyaluronate,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:dd27a62b-d988-9d8d-aaff-51a43716120d:13:CONCLUSION:6,524a0419-b69d-4cc3-af02-347c9e2a0207,Potassium Hyaluronate,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:7a7dbaa1-8e74-ec11-8943-0022482f06a6:8:Conclusion:2,ff379bec-1ee4-4f8e-9407-e99d5c9cca5f,Ceramide AP,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:7a7dbaa1-8e74-ec11-8943-0022482f06a6:8:Conclusion:2,3f32c6d8-afee-4f78-af50-83c4e972a1a9,Ceramide EOP,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:297dbaa1-8e74-ec11-8943-0022482f06a6:31:Discussion:0,7f204c2a-39f5-4d20-b993-2a5fcf50d776,Tocopheryl Acetate,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+cir,cir_attachment:297dbaa1-8e74-ec11-8943-0022482f06a6:31:Discussion:1,7f204c2a-39f5-4d20-b993-2a5fcf50d776,Tocopheryl Acetate,EXISTING_DOCUMENT_REUSE,INSERT,canonical에 없는 신규 link,True
+pubmed_abstract,PMID:30945430:abstract:0,dab59fa5-aa76-4ab0-866d-bb58c9e3fb79,Panthenol,CANONICAL_ONLY,REMOVE,"Decision 3 확정: 최종 QA는 이 논문(복합 처방: panthenol+madecassoside+copper-zinc-manganese)을 Madecassoside 단독 근거로만 채택하고 Panthenol 단독 근거로는 유지하지 않기로 함. Madecassoside link(REUSE 대상, 이미 combined bundle에 포함)는 그대로 두고 이 Panthenol link만 canonical evidence_chunk_ingredient에서 제거 후보. DB mutation은 아직 하지 않음",False
+pubmed_abstract,PMID:10971324:abstract:0,93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4,Niacinamide,CANONICAL_ONLY,REUSE,human re-review 확정 KEEP,False
+pubmed_abstract,PMID:21822427:abstract:0,93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4,Niacinamide,CANONICAL_ONLY,REUSE,human re-review 확정 KEEP,False
+pubmed_abstract,PMID:21982351:abstract:0,dab59fa5-aa76-4ab0-866d-bb58c9e3fb79,Panthenol,CANONICAL_ONLY,REUSE,human re-review 확정 KEEP,False
+pubmed_abstract,PMID:40682399:abstract:0,c78dfd19-39f6-4b68-aac9-c59051713807,Ceramide NP,CANONICAL_ONLY,REUSE,"human re-review 확정 KEEP - 40682399: Ceramide NP 단독 효능 근거 아님, combination evidence 조건부 유지",False
+pubmed_abstract,PMID:17613133:abstract:0,2a547080-b166-49ba-a7ec-b94c5d09ee37,Dipotassium Glycyrrhizate,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: CIR 공식 safety assessment의 PubMed 색인본 - PubMed lane 중복,False
+pubmed_abstract,PMID:27324942:abstract:0,f5ed1356-89f1-4564-a5a0-808484032f39,Hyaluronic Acid,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: 여러 의료 route/application이 섞인 review라 topical skincare 효과 분리 불가,False
+pubmed_abstract,PMID:34348350:abstract:0,c78dfd19-39f6-4b68-aac9-c59051713807,Ceramide NP,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: Ceramide NP 단독이 아니라 fatty acids를 포함한 lipid mixture 시험,False
+pubmed_abstract,PMID:38843906:abstract:0,95ff3311-de1d-4921-bb5e-71ffb50008fc,Tranexamic Acid,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: oral/topical/injection 및 병용치료가 섞인 review,False
+pubmed_abstract,PMID:40177799:abstract:0,c51f0352-5bbe-497b-9fab-133245c5a482,Allantoin,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: compound medical formulation이라 Allantoin 단독 귀속 불가,False
+pubmed_abstract,PMID:40826371:abstract:0,95ff3311-de1d-4921-bb5e-71ffb50008fc,Tranexamic Acid,CANONICAL_ONLY,REMOVE,human re-review 확정 EXCLUDE: microneedling-assisted medical procedure 연구,False

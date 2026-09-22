@@ -49,6 +49,7 @@ _NON_HEADING_PREFIXES = ("TABLE", "FIGURE")
 # 아래 알려진 heading 과 정확히 일치하는 줄만 인정한다. 단수 "Reference"는 표 라벨로도 쓰여 제외한다.
 _TITLE_CASE_HEADINGS = frozenset(
     {
+        "author contributions",
         "introduction",
         "summary",
         "discussion",
@@ -58,6 +59,8 @@ _TITLE_CASE_HEADINGS = frozenset(
         "clinical studies",
         "clinical assessment of safety",
         "safety assessment",
+        "declaration of conflicting interests",
+        "funding",
     }
 )
 _DIGIT_PATTERN = re.compile(r"\d+")

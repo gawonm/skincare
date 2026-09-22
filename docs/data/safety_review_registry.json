@@ -1,0 +1,366 @@
+[
+ {
+  "ingredient_id": "83f4b2b9-11b9-49ac-956a-e509ad46b35f",
+  "ingredient_name": "Citrus Aurantium Amara (Bitter Orange) Peel Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "e946f3dd-078b-4612-aafb-f526c6d92e02",
+  "ingredient_name": "Citrus Aurantium Bergamia (Bergamot) Fruit Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "1afbd847-b39d-41d9-bb07-ecd038e2c082",
+  "ingredient_name": "Citrus Aurantium Bergamia (Bergamot) Peel Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "8b8984b4-0aa6-4dc5-a957-71efeff31fd9",
+  "ingredient_name": "Citrus Aurantium Dulcis (Orange) Peel Extract",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "8334e407-5ddd-437c-925e-2512f513c6e1",
+  "ingredient_name": "Citrus Aurantium Dulcis (Orange) Peel Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "157264a0-54e7-4faa-95ba-0bc763549b7f",
+  "ingredient_name": "Citrus Grandis (Grapefruit) Peel Extract",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "b5a854a7-ef06-4cac-82d9-c28ee060e0fa",
+  "ingredient_name": "Citrus Grandis (Grapefruit) Peel Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "1d0860cb-4552-4193-962f-af1b7b1b5fa9",
+  "ingredient_name": "Citrus Junos Fruit Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "9642d643-342d-458d-a682-b2bf9c14c11d",
+  "ingredient_name": "Citrus Junos Peel Extract",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "25ed499b-eb81-4317-8e9d-b46fa6499d42",
+  "ingredient_name": "Citrus Junos Peel Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "7cfa6714-cdec-406b-af6e-5780c273d9d5",
+  "ingredient_name": "Citrus Limon (Lemon) Fruit Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "58f0943c-91e6-4127-a42e-08d9ac41fdb5",
+  "ingredient_name": "Citrus Limon (Lemon) Peel Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "ab4f077a-c400-43f5-9f22-91b29dedff55",
+  "ingredient_name": "Citrus Medica Vulgaris Peel Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "3b3d83ef-4eff-40e7-ad10-65ec736c6c8d",
+  "ingredient_name": "Citrus Nobilis (Mandarin Orange) Peel Extract",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "f0e10661-a5cf-49dd-8663-74c8a48e618a",
+  "ingredient_name": "Citrus Nobilis (Mandarin Orange) Peel Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "44f219f9-d2f3-44e3-979b-a1a1d7a369ce",
+  "ingredient_name": "Citrus Paradisi (Grapefruit) Peel Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "b30c7566-668e-48e7-9603-fa7bb54a27c5",
+  "ingredient_name": "Citrus Reticulata (Tangerine) Peel Extract",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "5b6ee0bb-76e8-495b-8815-e9c40f36a30e",
+  "ingredient_name": "Citrus Reticulata (Tangerine) Peel Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "43c1654a-2a9f-408a-9937-92f8c2bc807b",
+  "ingredient_name": "Citrus Sinensis (Orange) Peel Extract",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "a59ac205-115d-47c9-8617-42b8f59112b1",
+  "ingredient_name": "Citrus Unshiu Fruit Oil",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "0d2838d6-c30d-4edb-b217-f40c745385d3",
+  "ingredient_name": "Citrus Unshiu Peel Extract",
+  "group": "Citrus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "aa9587e3-48df-4318-9826-7f34b7c8d199",
+  "ingredient_name": "Eucalyptus Globulus Leaf Extract",
+  "group": "Eucalyptus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "8690e9b0-3a1a-49d1-ae0b-60eba4612993",
+  "ingredient_name": "Eucalyptus Globulus Leaf Oil",
+  "group": "Eucalyptus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "931e3e81-c0a1-43b3-985f-50ec1909be2d",
+  "ingredient_name": "Lavandula Angustifolia (Lavender) Extract",
+  "group": "Lavandula",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "b0e2f968-6368-4990-975e-86ede17c2535",
+  "ingredient_name": "Lavandula Angustifolia (Lavender) Flower Extract",
+  "group": "Lavandula",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "8ddbecd7-3a0d-4406-b84f-7cdeffe7158d",
+  "ingredient_name": "Lavandula Angustifolia (Lavender) Oil",
+  "group": "Lavandula",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "097159f1-aef0-4dcc-a92d-140c36b3a134",
+  "ingredient_name": "Lavandula Hybrida Oil",
+  "group": "Lavandula",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "0ee6ccde-3439-475b-a28a-9cddce2d1b73",
+  "ingredient_name": "Melaleuca Alternifolia (Tea Tree) Extract",
+  "group": "Melaleuca",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "a1eba1ee-4d00-451c-8395-af6cb90b55f8",
+  "ingredient_name": "Melaleuca Alternifolia (Tea Tree) Flower/Leaf/Stem Extract",
+  "group": "Melaleuca",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "f5c5b19c-573f-4099-9050-8eefcfd3de84",
+  "ingredient_name": "Melaleuca Alternifolia (Tea Tree) Leaf Extract",
+  "group": "Melaleuca",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "226419ba-1483-40ac-b3ac-9a15b49d1bcb",
+  "ingredient_name": "Melaleuca Alternifolia (Tea Tree) Leaf Oil",
+  "group": "Melaleuca",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "bf455f41-ec8b-4997-9643-1c35a48a8a21",
+  "ingredient_name": "Melaleuca Viridiflora Leaf Oil",
+  "group": "Melaleuca",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "e132d745-3dfa-4bf5-b035-beea71875ecb",
+  "ingredient_name": "Mentha Aquatica Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "d5589d5b-50d8-4b2b-a7c9-9d5d03812b7f",
+  "ingredient_name": "Mentha Aquatica Leaf Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "b557ed95-47ac-407f-a6f3-51dc07e03859",
+  "ingredient_name": "Mentha Arvensis Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "baf99891-388b-42be-9216-286863c7973b",
+  "ingredient_name": "Mentha Arvensis Leaf Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "c5fcfc55-0438-408e-ab18-0c222b622f74",
+  "ingredient_name": "Mentha Arvensis Leaf Oil",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "b9f2ca57-4180-46f0-a42b-edc0f8cee338",
+  "ingredient_name": "Mentha Haplocalix Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "a559e36f-4e3e-4943-8aeb-be99f3cd13dd",
+  "ingredient_name": "Mentha Piperita (Peppermint) Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "a5a03a4d-8bb0-4959-aee2-2bac5e5649d1",
+  "ingredient_name": "Mentha Piperita (Peppermint) Flower/Leaf/Stem Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "f0e75152-65f3-4d90-88fa-efc6b9e77d3c",
+  "ingredient_name": "Mentha Piperita (Peppermint) Leaf Extract",
+  "group": "Mentha",
+  "status": "approved",
+  "note": "50개 QA reviewer KEEP: 자극·감작성 등 안전성 상담 근거 가치"
+ },
+ {
+  "ingredient_id": "0ffcb721-1829-4c43-b7cf-fb2a85c00bc9",
+  "ingredient_name": "Mentha Piperita (Peppermint) Oil",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "a586067c-44c1-499c-92d6-c05682be6afb",
+  "ingredient_name": "Mentha Rotundifolia Leaf Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "d060cd69-14c3-4cee-b722-6b65aab1000a",
+  "ingredient_name": "Mentha Spicata Leaf Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "75edb1bb-00c0-45c2-b6e2-1ef9b4b1bc7a",
+  "ingredient_name": "Mentha Suaveolens Leaf Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "d09402d0-940b-47c4-9d18-8a5cf375f8a9",
+  "ingredient_name": "Mentha Viridis (Spearmint) Extract",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "b16e60f0-2ccf-4e68-9a2f-da7910d5438f",
+  "ingredient_name": "Mentha Viridis (Spearmint) Leaf Oil",
+  "group": "Mentha",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "2c80e757-681e-4a06-ada9-5057e82c9d44",
+  "ingredient_name": "Rosmarinus Officinalis (Rosemary) Extract",
+  "group": "Rosmarinus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "b9f54a86-9f03-4111-ba14-5a65bccac217",
+  "ingredient_name": "Rosmarinus Officinalis (Rosemary) Leaf Extract",
+  "group": "Rosmarinus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "b571d5ac-334f-4dae-8a37-07512ff94c36",
+  "ingredient_name": "Rosmarinus Officinalis (Rosemary) Leaf Oil",
+  "group": "Rosmarinus",
+  "status": "candidate",
+  "note": "초안 후보(정규식 추출). 사람 검토 전"
+ },
+ {
+  "ingredient_id": "5e97d37d-a596-4dd8-954f-8bc38050d625",
+  "ingredient_name": "Histidine",
+  "group": "amino_acid",
+  "status": "approved",
+  "note": "50개 QA reviewer KEEP: 피부 장벽·NMF 관련 직접 근거 가치"
+ },
+ {
+  "ingredient_id": "befe395f-b07f-46b9-b04c-e137b2199fb2",
+  "ingredient_name": "Sodium Laureth Sulfate",
+  "group": "irritant_surfactant",
+  "status": "approved",
+  "note": "50개 QA reviewer KEEP: 세정제 자극·장벽 영향 안전성 근거 가치"
+ }
+]

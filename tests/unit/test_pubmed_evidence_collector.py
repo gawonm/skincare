@@ -50,7 +50,17 @@ def _article_xml(
     month: str = "Mar",
 ) -> str:
     parts = (
-        [(None, "Twenty subjects used niacinamide.")] if abstract_parts is None else abstract_parts
+        [
+            (
+                None,
+                (
+                    "Twenty volunteers applied a topical niacinamide cream to facial skin "
+                    "in a randomized trial; wrinkles improved."
+                ),
+            )
+        ]
+        if abstract_parts is None
+        else abstract_parts
     )
     abstract = ""
     if parts:
@@ -111,7 +121,7 @@ class TestParser:
 
 class TestSelectionPolicy:
     def test_budget_hard_limit_is_enforced(self) -> None:
-        with pytest.raises(ValueError, match="1~4"):
+        with pytest.raises(ValueError, match="1~3"):
             PubmedSelectionPolicy(MAX_PAPERS_HARD_LIMIT + 1)
         with pytest.raises(ValueError):
             PubmedSelectionPolicy(0)
@@ -163,13 +173,22 @@ class TestSelectionPolicy:
         assert assessment.disposition is PubmedSelectionDisposition.CANDIDATE
         assert assessment.reason is PubmedSelectionReason.INGREDIENT_NOT_IN_TITLE
 
-    def test_in_vitro_and_unknown_study_types_are_candidates_not_selected(self) -> None:
+    def test_in_vitro_and_unclear_designs_are_candidates_not_selected(self) -> None:
         in_vitro = _record(
-            "1", publication_types=["Journal Article"], mesh_terms=["In Vitro Techniques"]
+            "1",
+            publication_types=["Journal Article"],
+            mesh_terms=["Humans", "In Vitro Techniques"],
+            abstract="Cultured keratinocytes were treated with niacinamide; skin cells improved.",
         )
-        unknown = _record("2", publication_types=["Journal Article"], mesh_terms=["Niacinamide"])
-        result = PubmedSelectionPolicy().assess(_NIACINAMIDE, [in_vitro, unknown])
+        unclear = _record(
+            "2",
+            publication_types=["Journal Article"],
+            mesh_terms=["Niacinamide"],
+            abstract="Niacinamide and the skin: an overview of wrinkles.",
+        )
+        result = PubmedSelectionPolicy().assess(_NIACINAMIDE, [in_vitro, unclear])
         assert {a.disposition for a in result} == {PubmedSelectionDisposition.CANDIDATE}
+        assert {a.reason for a in result} == {PubmedSelectionReason.NON_CLINICAL_STUDY_DESIGN}
         assert {a.study_type for a in result} == {
             EvidenceStudyType.IN_VITRO,
             EvidenceStudyType.UNKNOWN,
@@ -179,13 +198,20 @@ class TestSelectionPolicy:
         policy = PubmedSelectionPolicy()
         trial = _record(publication_types=["Randomized Controlled Trial"], mesh_terms=[])
         review = _record(publication_types=["Systematic Review"], mesh_terms=["Humans"])
+        # "Humans" MeSH 는 사람 세포 실험에도 붙는다: 임상 설계 단서 없이는 human 이 아니다
         mixed = _record(
-            publication_types=["Journal Article"], mesh_terms=["Humans", "In Vitro Techniques"]
+            publication_types=["Journal Article"],
+            mesh_terms=["Humans", "In Vitro Techniques"],
+            abstract="Cultured keratinocytes were treated.",
         )
-        animal = _record(publication_types=["Journal Article"], mesh_terms=["Animals"])
+        animal = _record(
+            publication_types=["Journal Article"],
+            mesh_terms=["Animals"],
+            abstract="Mice were treated.",
+        )
         assert policy.classify_study_type(trial) is EvidenceStudyType.HUMAN_STUDY
         assert policy.classify_study_type(review) is EvidenceStudyType.REVIEW
-        assert policy.classify_study_type(mixed) is EvidenceStudyType.MIXED_IN_VITRO_AND_HUMAN
+        assert policy.classify_study_type(mixed) is EvidenceStudyType.IN_VITRO
         assert policy.classify_study_type(animal) is EvidenceStudyType.ANIMAL_STUDY
 
     def test_combination_formulation_is_flagged_and_ranked_lower(self) -> None:
@@ -242,16 +268,16 @@ class _FakeSource:
 
 class TestCollector:
     def test_stops_after_first_query_when_budget_filled(self) -> None:
-        records = {str(i): _record(str(i)) for i in range(1, 5)}
-        source = _FakeSource([["1", "2", "3", "4"]], records)
-        result = PubmedEvidenceCollector(source, PubmedSelectionPolicy(4)).collect(_NIACINAMIDE)
+        records = {str(i): _record(str(i)) for i in range(1, 4)}
+        source = _FakeSource([["1", "2", "3"]], records)
+        result = PubmedEvidenceCollector(source, PubmedSelectionPolicy(3)).collect(_NIACINAMIDE)
         assert len(source.search_calls) == 1
-        assert len(result.selected) == 4
+        assert len(result.selected) == 3
 
     def test_second_query_only_fetches_new_pmids_and_dedups(self) -> None:
         records = {str(i): _record(str(i)) for i in range(1, 4)}
         source = _FakeSource([["1", "2"], ["2", "3"]], records)
-        result = PubmedEvidenceCollector(source, PubmedSelectionPolicy(4)).collect(_NIACINAMIDE)
+        result = PubmedEvidenceCollector(source, PubmedSelectionPolicy(3)).collect(_NIACINAMIDE)
         assert source.fetch_calls == [["1", "2"], ["3"]]
         assert sorted(a.record.pmid for a in result.selected) == ["1", "2", "3"]
         assert result.queries_run == 2
@@ -345,14 +371,15 @@ class TestRunner:
 
 
 class TestCosmeticContextRanking:
-    def test_topical_paper_outranks_oral_supplement_paper(self) -> None:
+    def test_oral_supplement_paper_is_not_selected_but_kept_as_candidate(self) -> None:
         oral = _record(
             "1",
-            title="Niacinamide supplementation in patients",
-            abstract="Oral tablets were given.",
+            title="Niacinamide supplementation improves skin wrinkles",
+            abstract="Oral tablets were given to volunteers in a randomized trial; skin improved.",
         )
-        topical = _record(
-            "2", title="Niacinamide in patients", abstract="A topical cream was applied."
-        )
+        topical = _record("2")
         result = PubmedSelectionPolicy().assess(_NIACINAMIDE, [oral, topical])
-        assert [a.record.pmid for a in result][:2] == ["2", "1"]
+        by_pmid = {a.record.pmid: a for a in result}
+        assert by_pmid["2"].disposition is PubmedSelectionDisposition.SELECTED
+        assert by_pmid["1"].disposition is PubmedSelectionDisposition.CANDIDATE
+        assert by_pmid["1"].reason is PubmedSelectionReason.ROUTE_NOT_TOPICAL
