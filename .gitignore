@@ -79,4 +79,5 @@ models_cache/
 !docs/
 !docs/**
 
-skincare_latest_2026-09-17.dump
+skincare_reference_2026-09-21_v4.dump
+skincare_reference_2026-09-21_v4.dump.sha256
