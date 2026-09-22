@@ -55,7 +55,9 @@ class AnswerGenerator:
                 hit
                 for hit in search.chunks
                 if target_id in hit.chunk.evidence.target_ids
-                and hit.chunk.evidence.scope is not EvidenceScope.PAIR
+                # 복수 성분 연구를 단일 성분의 독립 효능으로 확대하지 않기 위해
+                # 개별 답변은 정확한 단일 성분 범위만 허용한다.
+                and hit.chunk.evidence.scope is EvidenceScope.INGREDIENT
             ]
             individual_request = request.model_copy(
                 deep=True,
