@@ -43,6 +43,11 @@ uv run python -m data.scripts.compact_evidence_collector --source pubmed \
 연결만 합치며, 이미 수집된 성분의 PubMed 검색은 건너뛴다(예산을 늘려 다시 받으려면 출력 파일에서
 해당 성분의 bundle 을 지운다).
 
+검수된 복합 제형은 일반 collector 출력에 자동 포함하지 않는다. 복수 표준 성분 ID를 확정한
+`data/manual_review/pubmed_association_reviews.json`만
+`data.scripts.pubmed_association_bundle`로 별도 bundle을 만들며, 현재 반영 내역은
+[PUBMED_ASSOCIATION_EVIDENCE_REPORT.md](PUBMED_ASSOCIATION_EVIDENCE_REPORT.md)에 기록한다.
+
 ## PubMed
 
 - 공식 E-utilities 만 사용, 요청 간격 0.4초, 실패는 3회 재시도 후 예외.
