@@ -1,17 +1,20 @@
 """RAG와 루틴 도구가 주고받는 구조화 타입."""
 
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     FiniteFloat,
+    GetJsonSchemaHandler,
     SecretStr,
     field_validator,
     model_validator,
 )
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_ROUTINE_FREQUENCY = 2
@@ -749,7 +752,9 @@ class RoutineRuleSource(RagModel):
     applicable_product_ids: list[str] = Field(min_length=1)
 
 
-class RoutineRuleCandidate(RagModel):
+class RoutineRuleCandidateBase(RagModel):
+    """모든 루틴 Rule 후보가 공유하는 출처 및 제품 범위."""
+
     rule_type: RoutineRuleType
     product_ids: list[str] = Field(min_length=1)
     source_id: str = Field(min_length=1)
@@ -758,6 +763,58 @@ class RoutineRuleCandidate(RagModel):
     allowed_periods: list[DayPeriod] = Field(default_factory=list)
     max_frequency_per_week: int | None = Field(default=None, ge=1, le=7)
     related_product_ids: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        schema = handler(core_schema)
+        rule_type_schema = schema.get("properties", {}).get("rule_type")
+        if isinstance(rule_type_schema, dict) and "const" in rule_type_schema:
+            # OpenAI Structured Outputs의 지원 하위 집합에 맞춰 단일 Literal도 enum으로 표현한다.
+            rule_type_schema["enum"] = [rule_type_schema.pop("const")]
+        return schema
+
+
+class AllowedPeriodRoutineRuleCandidate(RoutineRuleCandidateBase):
+    rule_type: Literal[RoutineRuleType.ALLOWED_PERIOD]
+    allowed_periods: list[DayPeriod] = Field(min_length=1)
+
+
+class MaxFrequencyRoutineRuleCandidate(RoutineRuleCandidateBase):
+    rule_type: Literal[RoutineRuleType.MAX_FREQUENCY_PER_WEEK]
+    # LLM 제공 JSON Schema에서도 필수 정수로 보여야 null 응답을 파싱 뒤에 발견하지 않는다.
+    max_frequency_per_week: int = Field(ge=1, le=7)
+
+
+class AvoidSamePeriodRoutineRuleCandidate(RoutineRuleCandidateBase):
+    rule_type: Literal[RoutineRuleType.AVOID_SAME_PERIOD]
+    related_product_ids: list[str] = Field(min_length=1)
+
+
+class OrderBeforeRoutineRuleCandidate(RoutineRuleCandidateBase):
+    rule_type: Literal[RoutineRuleType.ORDER_BEFORE]
+    related_product_ids: list[str] = Field(min_length=1)
+
+
+class WarningRoutineRuleCandidate(RoutineRuleCandidateBase):
+    rule_type: Literal[RoutineRuleType.WARNING]
+
+
+RoutineRuleCandidate = (
+    AllowedPeriodRoutineRuleCandidate
+    | MaxFrequencyRoutineRuleCandidate
+    | AvoidSamePeriodRoutineRuleCandidate
+    | OrderBeforeRoutineRuleCandidate
+    | WarningRoutineRuleCandidate
+)
+
+
+class RoutineRule(RoutineRuleCandidateBase):
+    source_kind: RoutineRuleSourceKind
+    enforcement: RoutineRuleEnforcement
 
     @model_validator(mode="after")
     def validate_rule_payload(self) -> Self:
@@ -774,11 +831,6 @@ class RoutineRuleCandidate(RagModel):
         } and not self.related_product_ids:
             raise ValueError(f"{self.rule_type.value} 규칙에는 상대 제품이 필요합니다.")
         return self
-
-
-class RoutineRule(RoutineRuleCandidate):
-    source_kind: RoutineRuleSourceKind
-    enforcement: RoutineRuleEnforcement
 
 
 class RoutineRuleModelOutput(RagModel):
