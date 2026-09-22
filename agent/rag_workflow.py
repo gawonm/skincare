@@ -168,11 +168,10 @@ class RagWorkflowNodes:
             return state
         if not self._runtime.reserve_tool_call(state, GraphNode.RERANK_CASES):
             return state
-        parsed = self._runtime.require_parsed(state)
         try:
             rerank = await self._case_reranker.rerank(
                 CaseRerankRequest(
-                    query=parsed.query,
+                    query=self._case_query(state),
                     candidates=bundle.search.hits,
                 )
             )
@@ -202,9 +201,8 @@ class RagWorkflowNodes:
             return state
         if not self._runtime.reserve_tool_call(state, GraphNode.EXTRACT_CASE_CLAIMS):
             return state
-        parsed = self._runtime.require_parsed(state)
         result = await self._case_claim_extractor.extract(
-            CaseClaimExtractionRequest(query=parsed.query, cases=cases)
+            CaseClaimExtractionRequest(query=self._case_query(state), cases=cases)
         )
         state.case_claim_bundle = CaseClaimBundle(extraction=result)
         if result.status is LookupStatus.ERROR:
@@ -252,7 +250,6 @@ class RagWorkflowNodes:
         evidence_anchor_keys: set[tuple[tuple[str, ...], str]] = set()
         target_ids: list[str] = []
         request_id = self._runtime.require_turn(state).request_id
-        parsed = self._runtime.require_parsed(state)
         for claim in bundle.validation.valid_claims:
             ingredients = [
                 await self._resolve_case_ingredient(state, ingredient.raw_name)
@@ -267,7 +264,7 @@ class RagWorkflowNodes:
             anchor = self._case_claim_anchor_adapter.adapt(
                 resolved,
                 request_id=request_id,
-                user_query=parsed.query,
+                user_query=self._evidence_query(state),
             )
             if anchor is not None:
                 anchor_key = (
@@ -323,7 +320,7 @@ class RagWorkflowNodes:
             return state
         result = await self._claim_retriever.search(
             ClaimSearchRequest(
-                query=parsed.query,
+                query=self._case_query(state),
                 annotation_version=self._claim_annotation_version,
                 skin_concerns=list(
                     dict.fromkeys(
@@ -484,7 +481,7 @@ class RagWorkflowNodes:
         request = self._query_policy.search_request(
             state,
             EvidenceSearchRequest(
-                query=parsed.query,
+                query=self._evidence_query(state),
                 target_ids=target_ids,
                 known_conditions=known_conditions,
                 combination_target_ids=combination_target_ids,
@@ -564,8 +561,11 @@ class RagWorkflowNodes:
 
     def _case_query(self, state: AgentState) -> str:
         parsed = self._runtime.require_parsed(state)
-        concerns = parsed.skin_concerns + [concern.value for concern in state.profile.concerns]
-        return " ".join(dict.fromkeys([parsed.query, *concerns])).strip()
+        return parsed.query_plan.case_query or parsed.query
+
+    def _evidence_query(self, state: AgentState) -> str:
+        parsed = self._runtime.require_parsed(state)
+        return parsed.query_plan.evidence_query or parsed.query
 
     async def _resolve_case_ingredient(
         self,

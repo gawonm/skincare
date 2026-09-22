@@ -11,8 +11,10 @@
 
 구형 `RagQueryService`와 동기식 `OpenAiEmbedder`는 사용하지 않는다. 현재 운영 임베더는
 비동기 `OpenAiTextEmbedder`이며 사용자 질의의 최종 진입점은 Agent의
-`ChatService.handle_turn`이다. 히스토리·상품·성분·루틴·체크포인터 운영 구현은 아직 연결해야
-한다.
+`ChatService.handle_turn`이다. 히스토리·상품·성분·루틴·체크포인터 운영 구현은 `ChatAgentAssembler`
+(`backend/services/agent_assembly.py`)가 `backend/main.py` lifespan에서 연결한다(2026-09-22, #62).
+조립 위치·실패 정책·실행 제한의 근거는 [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
+2절 "운영 조립 구현 현황"을 따른다.
 
 ## 2-Layer RAG 최신 dump 읽기 연동 (2026-09-17)
 
@@ -169,6 +171,7 @@ uv run python -m backend.services.nia_case_ingestion_service
 
 ## 관련 문서
 
+- [Agent ↔ Backend 성분 식별 정규화 계획](../agent/RAG_YK/2026-09-22_INGREDIENT_ALIAS_RESOLUTION_PLAN.md)
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
 - [DB 기반 Product Taxonomy 연동 상태](../agent/RAG_YK/2026-09-21_1832_DB_PRODUCT_TAXONOMY_INTEGRATION_STATUS.md)
 - [Data → Backend NIA Case 적재 계약](../contracts/data-to-backend.md)
@@ -176,8 +179,9 @@ uv run python -m backend.services.nia_case_ingestion_service
 - [Agent 통합 검토](../agent/AGENT_INTEGRATION_REVIEW.md)
 - [2-Layer RAG Agent 통합 작업계획 및 작업 일지](../agent/TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
 - [Claim → Evidence RAG 인터페이스 계약](../contracts/claim-evidence-rag-interface.md)
-- [front → backend 계약](../contracts/front-to-backend.md): AI 채팅(미정), 회원가입 확장
-  (성별·연령대·약관동의 — 확정 및 구현 완료. `models/user.py`, `backend/schemas/auth.py`)
+- [front → backend 계약](../contracts/front-to-backend.md): 홈 화면(`GET /home`, 초안),
+  AI 채팅(미정), 회원가입 확장(성별·연령대·약관동의 — 확정 및 구현 완료.
+  `models/user.py`, `backend/schemas/auth.py`)
 
 ## Evidence RAG `document_status` 매핑 보류 (2026-09-17)
 

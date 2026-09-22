@@ -6,6 +6,7 @@ from agent.context import ContextBuilder
 from agent.evidence_query_policy import EvidenceQueryPolicy
 from agent.ports import IngredientRepository, LlmClient, ProductRepository, RoutinePlanner
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
+from agent.query_planning import IntentQueryPlanner
 from agent.rag.claim_schemas import (
     IngredientRecommendationCandidate,
     RecommendationBasis,
@@ -42,6 +43,7 @@ from agent.schemas import (
     MessageRole,
     ParsedRequest,
     PendingQuestion,
+    QueryPlanningRequest,
     RagRoute,
     ResolvedEntities,
     RoutineSaveHandoff,
@@ -98,6 +100,7 @@ class AgentNodes:
         self._task_plan = task_plan
         self._rag_route_policy = rag_route_policy
         self._evidence_query_policy = evidence_query_policy
+        self._query_planner = IntentQueryPlanner()
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
         self._require_turn_fields(state)
@@ -266,7 +269,7 @@ class AgentNodes:
     async def decide_rag_route(self, state: AgentState) -> AgentState:
         parsed = self._require_parsed(state)
         decision = self._rag_route_policy.decide(parsed)
-        state.parsed_request = parsed.model_copy(
+        parsed = parsed.model_copy(
             deep=True,
             update={
                 "intents": decision.normalized_intents,
@@ -274,6 +277,15 @@ class AgentNodes:
                 "skin_concerns": decision.normalized_skin_concerns or parsed.skin_concerns,
             },
         )
+        turn = self._require_turn(state)
+        parsed.query_plan = self._query_planner.build(
+            QueryPlanningRequest(
+                original_message=turn.message,
+                parsed_request=parsed,
+                profile_concerns=[concern.value for concern in state.profile.concerns],
+            )
+        )
+        state.parsed_request = parsed
         state.rag_route = decision.route
         state.task_queue = self._task_plan.build(state.parsed_request)
         self._record_event(
@@ -886,7 +898,7 @@ class AgentNodes:
         )
         result = await self._product_repository.search(
             ProductSearchRequest(
-                query=parsed.query,
+                query=parsed.query_plan.product_query or parsed.query,
                 allow_discovery=Intent.PRODUCT_DISCOVERY in parsed.intents,
                 filters=filters,
             )
@@ -938,7 +950,7 @@ class AgentNodes:
                 chat_room_id=state.chat_room_id,
                 request_id=self._require_turn(state).request_id,
                 products=products,
-                user_request=parsed.query,
+                user_request=parsed.query_plan.routine_query or parsed.query,
                 excluded_weekdays=excluded_weekdays,
                 evidence_records=state.evidence,
                 case_usage_guidance=state.task_context.case_usage_guidance,
