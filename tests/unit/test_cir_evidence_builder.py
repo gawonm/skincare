@@ -225,6 +225,18 @@ class TestChunker:
         ]
         assert not any("citation" in c.content for c in result.chunks)
 
+    def test_back_matter_is_not_folded_into_conclusion(self) -> None:
+        result = _chunk(
+            [
+                (
+                    "Conclusion\nThe ingredient is safe.\n"
+                    "Declaration of Conflicting Interests\nNo conflicts.\n"
+                    "Funding\nCIR funded this report.\nReferences\n1. Citation"
+                )
+            ]
+        )
+        assert [c.content for c in result.chunks] == ["The ingredient is safe."]
+
     def test_singular_reference_label_is_not_a_heading(self) -> None:
         result = _chunk(["Conclusion\nReference\nstill conclusion body"])
         assert "Reference" in result.chunks[0].content

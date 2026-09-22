@@ -35,6 +35,8 @@ class CollectionIngredient(BaseModel):
     ingredient_id: UUID
     standard_name_en: str
     standard_name_ko: str | None = None
+    # exact-equivalent 표기만 넣는다(철자·구 INCI 명칭 등 같은 물질). 파생형·family·계열명은 넣지 않는다:
+    # 그런 용어 결과가 원형 성분에 자동 귀속되기 때문이다.
     aliases: list[str] = Field(default_factory=list)
 
 
@@ -65,7 +67,54 @@ class PubmedSelectionDisposition(StrEnum):
     REJECTED = "rejected"
 
 
+class AdministrationRoute(StrEnum):
+    TOPICAL = "topical"
+    ORAL = "oral"
+    INJECTION = "injection"
+    NOT_APPLICABLE = "not_applicable"  # in vitro/ex vivo/동물 등 투여 경로가 없는 설계
+    UNCLEAR = "unclear"  # 판별 불가. topical 로 간주하지 않는다
+
+
+class StudyDesign(StrEnum):
+    """DB `EvidenceStudyType` 보다 세분화한 내부 분류. ex_vivo 는 저장 시 in_vitro 로 접는다."""
+
+    HUMAN_CLINICAL = "human_clinical"
+    MIXED_HUMAN_AND_LAB = "mixed_human_and_lab"
+    ANIMAL = "animal"
+    IN_VITRO = "in_vitro"
+    EX_VIVO = "ex_vivo"
+    REVIEW = "review"
+    UNCLEAR = "unclear"
+
+
+class IngredientRole(StrEnum):
+    INTERVENTION = "intervention"  # 성분이 실제 시험 대상(intervention/exposure)
+    COMPARATOR_OR_BACKGROUND = "comparator_or_background"  # 비교 대조·배경·참고로만 언급
+    UNCLEAR = "unclear"
+
+
+class SkinRelevance(StrEnum):
+    RELEVANT = "relevant"
+    NOT_RELEVANT = "not_relevant"
+
+
+class EvidenceGrade(StrEnum):
+    """selected 근거의 직접성 등급. 복합 제형을 단일 성분 직접 근거로 과장하지 않기 위해 남긴다."""
+
+    DIRECT_SINGLE_TOPICAL_HUMAN = "direct_single_topical_human"
+    COMBINATION_TOPICAL_HUMAN = "combination_topical_human"  # 성분 기여를 분리할 수 없음
+    TOPICAL_REVIEW = "topical_review"
+    NOT_GRADED = "not_graded"  # selected 가 아닌 항목
+
+
 class PubmedSelectionReason(StrEnum):
+    ROUTE_NOT_TOPICAL = "route_not_topical"
+    ROUTE_UNCLEAR = "route_unclear"
+    NON_CLINICAL_STUDY_DESIGN = "non_clinical_study_design"
+    MIXED_DESIGN_REVIEW = "mixed_design_review"  # 임상+실험실 혼합은 기본 candidate
+    COMPARATOR_ONLY = "comparator_only"
+    NOT_SKIN_RELEVANT = "not_skin_relevant"
+    NO_CLAIM_TOPIC = "no_claim_topic"
     NO_ABSTRACT = "no_abstract"
     EXCLUDED_PUBLICATION_TYPE = "excluded_publication_type"
     NOT_RELEVANT_TO_INGREDIENT = "not_relevant_to_ingredient"
@@ -87,6 +136,12 @@ class PubmedAssessment(BaseModel):
     score: int
     disposition: PubmedSelectionDisposition
     reason: PubmedSelectionReason | None = None
+    # 아래 필드는 candidate JSONL 에만 남는다(DB 저장 컬럼 없음). 예전 파일을 읽을 수 있게 기본값을 둔다.
+    route: AdministrationRoute = AdministrationRoute.UNCLEAR
+    study_design: StudyDesign = StudyDesign.UNCLEAR
+    ingredient_role: IngredientRole = IngredientRole.UNCLEAR
+    skin_relevance: SkinRelevance = SkinRelevance.RELEVANT
+    evidence_grade: EvidenceGrade = EvidenceGrade.NOT_GRADED
 
 
 class EvidenceDocumentDraft(BaseModel):
