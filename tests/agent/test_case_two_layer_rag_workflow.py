@@ -52,6 +52,7 @@ from agent.schemas import (
     ChatStatus,
     ChatTurnInput,
     Intent,
+    IntentQueryPlan,
     ParsedRequest,
     RagRoute,
     RegisterRoomRequest,
@@ -91,9 +92,11 @@ class TrackingCaseRetriever(CaseRetriever):
     def __init__(self, calls: list[CaseWorkflowCall]) -> None:
         self._calls = calls
         self._delegate = FixtureCaseRetriever()
+        self.requests: list[CaseSearchRequest] = []
 
     async def search(self, request: CaseSearchRequest) -> CaseSearchResult:
         self._calls.append(CaseWorkflowCall.CASE_SEARCH)
+        self.requests.append(request.model_copy(deep=True))
         return await self._delegate.search(request)
 
 
@@ -101,9 +104,11 @@ class TrackingCaseReranker(CaseReranker):
     def __init__(self, calls: list[CaseWorkflowCall]) -> None:
         self._calls = calls
         self._delegate = FixtureCaseReranker()
+        self.requests: list[CaseRerankRequest] = []
 
     async def rerank(self, request: CaseRerankRequest) -> CaseRerankResult:
         self._calls.append(CaseWorkflowCall.CASE_RERANK)
+        self.requests.append(request.model_copy(deep=True))
         return await self._delegate.rerank(request)
 
 
@@ -121,12 +126,14 @@ class TrackingCaseClaimExtractor(CaseClaimExtractor):
         self._calls = calls
         self._invalid_quote = invalid_quote
         self._delegate = FixtureCaseClaimExtractor()
+        self.requests: list[CaseClaimExtractionRequest] = []
 
     async def extract(
         self,
         request: CaseClaimExtractionRequest,
     ) -> CaseClaimExtractionResult:
         self._calls.append(CaseWorkflowCall.CLAIM_EXTRACTION)
+        self.requests.append(request.model_copy(deep=True))
         if not self._invalid_quote:
             return await self._delegate.extract(request)
         return CaseClaimExtractionResult(
@@ -210,6 +217,7 @@ class CaseWorkflowHarness:
         invalid_quote: bool = False,
         llm: LlmClient | None = None,
         evidence_retriever: EvidenceRetriever | None = None,
+        case_retriever: CaseRetriever | None = None,
         case_reranker: CaseReranker | None = None,
         case_claim_extractor: CaseClaimExtractor | None = None,
         ingredient_repository: IngredientRepository | None = None,
@@ -225,7 +233,7 @@ class CaseWorkflowHarness:
         app = DevelopmentAgentFactory(
             llm=effective_llm,
             case_embedder=TrackingCaseEmbedder(calls),
-            case_retriever=TrackingCaseRetriever(calls),
+            case_retriever=case_retriever or TrackingCaseRetriever(calls),
             case_reranker=case_reranker or TrackingCaseReranker(calls),
             case_claim_extractor=(
                 case_claim_extractor
@@ -261,6 +269,55 @@ class CaseWorkflowHarness:
 
 
 class TestCaseTwoLayerRagWorkflow:
+    async def test_복합_요청의_Case_전용_질의를_검색_리랭크_성분선별에_공통_사용한다(
+        self,
+    ) -> None:
+        calls: list[CaseWorkflowCall] = []
+        harness = CaseWorkflowHarness()
+        case_query = "30대 남성 환절기 여드름 지성 피부에 좋은 성분과 주의사항"
+        retriever = TrackingCaseRetriever(calls)
+        reranker = TrackingCaseReranker(calls)
+        extractor = TrackingCaseClaimExtractor(calls)
+        llm = FixedCaseWorkflowLlm(
+            ParsedRequest(
+                intents=[
+                    Intent.PRODUCT_DISCOVERY,
+                    Intent.ROUTINE_PLANNING,
+                    Intent.EVIDENCE_QA,
+                ],
+                query="여드름 지성 피부에 좋은 성분과 주의점 및 3일 스킨케어 루틴",
+                query_plan=IntentQueryPlan(
+                    case_query="여드름 지성 피부에 좋은 성분과 주의사항",
+                    evidence_query="여드름 지성 피부 성분의 효능과 주의사항",
+                    product_query="검증된 추천 성분을 포함하는 상품",
+                    routine_query="추천 상품으로 3일간 스킨케어 루틴 구성",
+                ),
+                skin_concerns=["여드름", "지성 피부"],
+                rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+            )
+        )
+        app = harness.create(
+            calls,
+            llm=llm,
+            case_retriever=retriever,
+            case_reranker=reranker,
+            case_claim_extractor=extractor,
+        )
+
+        await app.service.handle_turn(
+            harness.request(
+                "case-query-plan-1",
+                (
+                    "30대 남성, 요즘 환절기여서 힘들다. 여드름이 자꾸 올라오는 지성 피부인데 "
+                    "어떤 성분이 좋고 주의할 점은 뭐야? 추천 상품으로 3일간 스킨케어 루틴 짜줘"
+                ),
+            )
+        )
+
+        assert retriever.requests[0].query == case_query
+        assert reranker.requests[0].query == case_query
+        assert extractor.requests[0].query == case_query
+
     async def test_Evidence가_없어도_Case_Claim_상품을_유지한다(self) -> None:
         calls: list[CaseWorkflowCall] = []
         harness = CaseWorkflowHarness()
