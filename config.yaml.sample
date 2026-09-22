@@ -64,11 +64,13 @@ openai:
   timeout_seconds: 30
   max_retries: 1
 
-# 현재 DB vector(1536)를 유지하도록 OpenAI 임베딩을 선택한다. local로 바꾸면 DB 차원 전환이 필요하다.
+# 채팅(POST /chat)은 2-Layer Claim/Evidence 경로(BGE-M3, 1024차원)로만 조립된다(ChatAgentAssembler).
+# embedding.provider를 openai로 두면 저장된 벡터(1024차원)와 차원이 달라 조립이 즉시 RuntimeError로
+# 실패한다. openai_* 키는 구형 rag_chunk(1536차원) 단일 경로 스크립트에서만 쓰는 값으로 남겨 둔다.
 # 리랭커는 항상 로컬에서 실행하며 모델 파일은 최초 실행 때 캐시에 내려받는다.
 agent:
   chat:
-    # openai | ollama | local
+    # openai | ollama | local. local/ollama는 base_url의 OpenAI 호환 서버를 호출한다.
     provider: openai
     local:
       base_url: http://localhost:11434/v1
@@ -76,11 +78,11 @@ agent:
       timeout_seconds: 60
       max_retries: 1
   embedding:
-    provider: openai
+    # 채팅 조립은 local(BGE-M3)만 허용한다. openai는 구형 rag_chunk 스크립트 전용이다.
+    provider: local
     openai_model: text-embedding-3-small
     openai_dimensions: 1536
     openai_batch_size: 100
-    # provider: local을 선택할 때 사용하는 설정이다.
     model: BAAI/bge-m3
     device: null
     batch_size: 16
@@ -94,9 +96,10 @@ agent:
     cache_folder: null
     local_files_only: false
   retrieval:
-    # Claim 검색 시 사용할 annotation run을 명시해 서로 다른 버전이 섞이지 않게 한다.
-    claim_annotation_version: llm-pilot-2026-09-14-openai-gpt-4o-mini
-    # 기존 text-embedding-3-small 검증값. local 전환 시 별도 검증값으로 바꾼다.
+    # 선택 항목이다. 피부 고민형 기본 경로(NIA Case 검색)는 이 값이 없어도 조립된다.
+    # 오프라인 Claim 비교 경로를 별도로 쓸 때만 실제 적재된 annotation run으로 채운다.
+    claim_annotation_version: null
+    # BGE-M3 기준 검증값이 아직 확정 전이라 임시값이다. 후속 평가에서 바뀔 수 있다(계약 9.6절).
     free_text_min_vector_similarity: 0.45
     rrf_k: 60
     rerank_candidate_limit: 30
