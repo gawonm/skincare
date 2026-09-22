@@ -132,7 +132,18 @@ class TestLocalBgeCaseRerankerV2M3:
 
         assert [hit.case_id for hit in result.hits] == ["CASE-2", "CASE-4", "CASE-3"]
         assert [hit.rerank_score for hit in result.hits] == [0.9, 0.7, 0.5]
-        assert model.pairs[0] == ["피지가 많아요", "첫 번째"]
+        assert model.pairs[0] == [
+            "피지가 많아요",
+            (
+                "[사례 문맥]\n"
+                "연령: 25세\n"
+                "성별: 여성\n"
+                "피부 타입: 지성\n"
+                "피부 고민: 피지\n\n"
+                "[질문·답변·추론]\n"
+                "첫 번째"
+            ),
+        ]
 
 
 class TestChatModelCaseClaimExtractor:
