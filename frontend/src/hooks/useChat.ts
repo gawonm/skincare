@@ -1,169 +1,207 @@
 /**
- * AI 채팅 화면의 상태와 목 스트림 연결을 한곳에 모은 훅.
+ * AI 채팅 화면의 상태와 `POST /chat` 호출을 한곳에 모은 훅.
  *
- * 데이터 접근(`api/chatMock.ts`)을 이 훅 뒤에 숨겨서, 나중에 실제 백엔드로 바꿀 때
- * 화면 컴포넌트는 건드리지 않고 이 파일과 `api/*` 만 손보면 되게 한다.
- * (auth 의 `api/auth.ts` + `hooks/useLogin.ts` 와 같은 구성. 다만 SSE 스트림이라
- *  TanStack Query 의 `useMutation` 대신 로컬 상태로 누적한다.)
+ * 응답은 SSE 가 아니라 완성된 단일 JSON 이라서 "요청 중 → 응답" 두 단계뿐이다. 정지 버튼으로
+ * 대기를 끊어야 해서 `useMutation` 대신 `AbortController` 를 직접 들고 있다.
  *
- * 대화 이력은 이 훅의 메모리에만 있다. 화면을 벗어나 언마운트되면 사라지는 것이
- * 계약서가 말하는 "초기화" 다. 서버·에이전트는 무상태다.
+ * 대화는 서버가 저장하지만 이전 메시지를 다시 그리는 API 는 없다(계약서 "범위"). 그래서
+ * 이 훅의 `turns` 는 이번 화면 세션에서 오간 것만 담고, 화면을 벗어나면 사라진다.
+ * 다시 들어와도 Agent 는 이전 대화를 기억한다.
  */
 
 import { useCallback, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-import { streamMockChatResponse } from "../api/chatMock";
-import { ChatRole, ChatStatus, SseEventName } from "../constants/chat";
-import type { ChatMessage, ChatRequest, SourceItem } from "../schemas/chat";
+import { ChatApi, ChatResponseParseError } from "../api/chat";
+import { ApiError } from "../api/client";
+import {
+  CHAT_FAILURE_MESSAGE,
+  ChatHttpStatus,
+  ChatRole,
+  ChatRoute,
+  ChatStatus,
+  ChatTurnStatus,
+  ChatTurnTone,
+} from "../constants/chat";
+import type { ChatTurnResponse } from "../schemas/chat";
 
-/**
- * 화면에 그릴 대화 한 턴.
- * 계약서 `ChatMessage`(역할 + 본문)에 더해, assistant 턴은 SSE 의 warning/sources
- * 이벤트 결과를 함께 들고 있다. 서버로 보낼 때는 역할 + 본문만 남기고 떼어낸다.
- */
+/** 화면에 그릴 대화 한 턴. */
 export interface ChatTurn {
   role: ChatRole;
   content: string;
-  warning: string | null;
-  sources: SourceItem[] | null;
+  tone: ChatTurnTone;
+  /**
+   * 서버가 돌려준 응답 원본. artifacts/citations 등을 화면이 꺼내 쓸 수 있게 통째로 둔다.
+   * 사용자 턴과 프론트가 만든 실패 안내 턴에서는 null.
+   */
+  response: ChatTurnResponse | null;
 }
 
-/** 스트리밍 중인 assistant 답변의 누적 상태. */
-export interface StreamingTurn {
-  /** 아직 본문 토큰이 오기 전 진행 상태 문구(시안 04C). 토큰이 오면 null 로 바뀐다. */
-  stageLabel: string | null;
+/** 재시도할 요청. 같은 `request_id` 를 그대로 다시 보내야 서버가 같은 요청으로 인식한다. */
+interface RetryTarget {
+  requestId: string;
   content: string;
-  warning: string | null;
-  sources: SourceItem[] | null;
+}
+
+/** 요청이 실패했을 때 화면에 보여 줄 문구와 재시도 가능 여부. */
+interface ChatFailureInfo {
+  message: string;
+  retryable: boolean;
 }
 
 export interface UseChatResult {
   turns: ChatTurn[];
-  /** status 가 Streaming 일 때만 값이 있다. */
-  streaming: StreamingTurn | null;
   status: ChatStatus;
-  /** 목/스트림 처리 중 발생한 오류 문구. 없으면 null. */
-  error: string | null;
+  /** 마지막 실패를 같은 `request_id` 로 다시 보낼 수 있는지. */
+  canRetry: boolean;
   sendMessage: (content: string) => void;
-  stopStreaming: () => void;
+  retry: () => void;
+  /** 응답 대기를 끊는다(서버 처리는 계속될 수 있다). 대기 중이 아니면 아무 일도 하지 않는다. */
+  stopSending: () => void;
+}
+
+/** 요청 결과(예외·응답)를 화면 문구와 턴으로 바꾼다. 401 은 여기 오기 전에 훅이 로그인으로 보낸다. */
+class ChatResponseMapper {
+  static describe(cause: unknown): ChatFailureInfo {
+    if (cause instanceof ChatResponseParseError) {
+      // 사용자에게는 짧게, 어느 필드가 틀렸는지는 개발자가 볼 수 있게 콘솔에 남긴다.
+      console.error(cause.message, cause);
+      return { message: CHAT_FAILURE_MESSAGE.responseMismatch, retryable: false };
+    }
+    if (cause instanceof ApiError) {
+      // 서버에 닿지 못한 경우(0)와 Agent 미준비(503)는 잠시 뒤 나아질 수 있어 다시 시도할 수 있다.
+      // 같은 request_id 를 다시 보내도 서버가 같은 요청으로 다루므로 중복 처리되지 않는다.
+      const retryable =
+        cause.isNetworkError || cause.status === ChatHttpStatus.ServiceUnavailable;
+      return { message: cause.message, retryable };
+    }
+    console.error("채팅 요청 중 예상하지 못한 오류", cause);
+    return { message: CHAT_FAILURE_MESSAGE.unexpected, retryable: false };
+  }
+
+  /**
+   * 서버 응답을 대화창 턴으로 만든다.
+   * `needs_input` 은 Agent 가 되묻는 질문을 이미 `message` 안에 넣어 보내므로, 질문이
+   * `message` 에 없을 때만 덧붙여 같은 문장이 두 번 나오지 않게 한다.
+   */
+  static toTurn(response: ChatTurnResponse): ChatTurn {
+    let content = response.message;
+    if (
+      response.status === ChatTurnStatus.NeedsInput &&
+      response.follow_up_question !== null &&
+      !content.includes(response.follow_up_question)
+    ) {
+      content = `${content}\n\n${response.follow_up_question}`;
+    }
+    return {
+      role: ChatRole.Assistant,
+      content,
+      tone:
+        response.status === ChatTurnStatus.Error ? ChatTurnTone.Error : ChatTurnTone.Normal,
+      response,
+    };
+  }
 }
 
 export function useChat(): UseChatResult {
+  const navigate = useNavigate();
   const [turns, setTurns] = useState<ChatTurn[]>([]);
-  const [streaming, setStreaming] = useState<StreamingTurn | null>(null);
   const [status, setStatus] = useState<ChatStatus>(ChatStatus.Idle);
-  const [error, setError] = useState<string | null>(null);
+  const [retryTarget, setRetryTarget] = useState<RetryTarget | null>(null);
 
-  // 진행 중인 스트림을 취소하기 위한 컨트롤러. 스트림이 없으면 null.
+  // 진행 중인 요청을 끊기 위한 컨트롤러. 요청이 없으면 null.
   const abortRef = useRef<AbortController | null>(null);
 
-  const stopStreaming = useCallback(() => {
-    // 사용자가 정지를 눌렀거나 화면이 언마운트된 경우. 진행 중이 아니면 할 일 없음.
+  const stopSending = useCallback(() => {
     abortRef.current?.abort();
   }, []);
+
+  const run = useCallback(
+    async (target: RetryTarget): Promise<void> => {
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setStatus(ChatStatus.Sending);
+      setRetryTarget(null);
+
+      try {
+        const response = await ChatApi.sendMessage(
+          { request_id: target.requestId, message: target.content },
+          controller.signal,
+        );
+        setTurns((prev) => [...prev, ChatResponseMapper.toTurn(response)]);
+        if (response.status === ChatTurnStatus.Error && response.retryable) {
+          setRetryTarget(target);
+        }
+      } catch (cause) {
+        // 정지 버튼이나 화면 이탈로 끊은 경우. 실패로 보여 줄 것이 없다.
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (cause instanceof ApiError && cause.status === ChatHttpStatus.Unauthorized) {
+          navigate(ChatRoute.Login);
+          return;
+        }
+        const failure = ChatResponseMapper.describe(cause);
+        setTurns((prev) => [
+          ...prev,
+          {
+            role: ChatRole.Assistant,
+            content: failure.message,
+            tone: ChatTurnTone.Error,
+            response: null,
+          },
+        ]);
+        if (failure.retryable) {
+          setRetryTarget(target);
+        }
+      } finally {
+        // 정지 후 곧바로 새 요청이 시작됐다면 그 요청의 컨트롤러를 지우지 않는다.
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+          setStatus(ChatStatus.Idle);
+        }
+      }
+    },
+    [navigate],
+  );
 
   const sendMessage = useCallback(
     (raw: string) => {
       const content = raw.trim();
-      // 빈 입력이나 응답 진행 중 재전송은 무시한다(중복 스트림 방지).
-      if (content.length === 0 || status === ChatStatus.Streaming) {
+      // 빈 입력이나 응답 대기 중 재전송은 무시한다(같은 방에 동시에 두 턴이 들어가지 않게).
+      if (content.length === 0 || status === ChatStatus.Sending) {
         return;
       }
 
-      const userTurn: ChatTurn = {
-        role: ChatRole.User,
-        content,
-        warning: null,
-        sources: null,
-      };
-      const history: ChatTurn[] = [...turns, userTurn];
-
-      setTurns(history);
-      setError(null);
-      setStatus(ChatStatus.Streaming);
-      setStreaming({ stageLabel: null, content: "", warning: null, sources: null });
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      const request: ChatRequest = {
-        // 서버에는 역할 + 본문만 보낸다. warning/sources 는 화면 표시용이라 뺀다.
-        messages: history.map(
-          (turn): ChatMessage => ({ role: turn.role, content: turn.content }),
-        ),
-      };
-
-      // 누적값은 리렌더와 무관하게 최신 상태를 들고 있어야 하므로 지역 변수로 모은다.
-      let text = "";
-      let warning: string | null = null;
-      let sources: SourceItem[] | null = null;
-
-      const finalize = (): void => {
-        // 토큰이 하나도 안 온 채 끊겼으면 빈 assistant 턴은 만들지 않는다.
-        if (text.length > 0) {
-          setTurns((prev) => [
-            ...prev,
-            { role: ChatRole.Assistant, content: text, warning, sources },
-          ]);
-        }
-        setStreaming(null);
-        setStatus(ChatStatus.Idle);
-        abortRef.current = null;
-      };
-
-      const run = async (): Promise<void> => {
-        try {
-          for await (const sse of streamMockChatResponse(request, controller.signal)) {
-            switch (sse.event) {
-              case SseEventName.Stage:
-                setStreaming({ stageLabel: sse.data.label, content: text, warning, sources });
-                break;
-              case SseEventName.Token:
-                text += sse.data.text;
-                setStreaming({ stageLabel: null, content: text, warning, sources });
-                break;
-              case SseEventName.Warning:
-                warning = sse.data.text;
-                setStreaming({ stageLabel: null, content: text, warning, sources });
-                break;
-              case SseEventName.Sources:
-                sources = sse.data.items;
-                setStreaming({ stageLabel: null, content: text, warning, sources });
-                break;
-              case SseEventName.Done:
-                // 정상 종료. 남은 처리는 루프 밖 finalize 에서 한다.
-                break;
-              case SseEventName.Error:
-                // TODO(contract): 에러 시 화면 상태(재시도 버튼, 부분 답변 유지 여부)는 미정.
-                //  지금은 문구만 노출하고, 받은 부분 답변은 아래 finalize 에서 남긴다.
-                setError(sse.data.detail);
-                break;
-            }
-          }
-          finalize();
-        } catch (cause) {
-          if (cause instanceof DOMException && cause.name === "AbortError") {
-            // 사용자가 정지를 누른 경우. 여기까지 받은 부분 답변은 남긴다.
-            //  (에러로 인한 중단 시 부분 답변 유지 여부는 계약서 미정 — 위 TODO 참고.)
-            finalize();
-            return;
-          }
-          // 예상 못 한 예외. 규칙 7: 삼키지 않고 원인을 드러낸다.
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : "채팅 응답을 처리하는 중 오류가 발생했습니다.",
-          );
-          setStreaming(null);
-          setStatus(ChatStatus.Idle);
-          abortRef.current = null;
-        }
-      };
-
-      void run();
+      setTurns((prev) => [
+        ...prev,
+        { role: ChatRole.User, content, tone: ChatTurnTone.Normal, response: null },
+      ]);
+      // 재시도해도 같은 요청으로 인식되도록 발급은 사용자가 보낼 때 딱 한 번만 한다.
+      void run({ requestId: crypto.randomUUID(), content });
     },
-    [status, turns],
+    [run, status],
   );
 
-  return { turns, streaming, status, error, sendMessage, stopStreaming };
+  const retry = useCallback(() => {
+    if (retryTarget === null || status === ChatStatus.Sending) {
+      return;
+    }
+    // 실패 안내는 다시 시도하는 순간 걷어 낸다. 사용자 말풍선은 그대로 두고 응답만 다시 기다린다.
+    setTurns((prev) =>
+      prev.length > 0 && prev[prev.length - 1].tone === ChatTurnTone.Error
+        ? prev.slice(0, -1)
+        : prev,
+    );
+    void run(retryTarget);
+  }, [retryTarget, run, status]);
+
+  return {
+    turns,
+    status,
+    canRetry: retryTarget !== null,
+    sendMessage,
+    retry,
+    stopSending,
+  };
 }

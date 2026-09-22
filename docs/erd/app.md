@@ -987,8 +987,8 @@ document-ingredient 조인 테이블은 추가하지 않음 — 지시사항 반
 | request_id | text | N | - | UK `(chat_room_id, request_id)` |
 | input_fingerprint | text | N | - | 같은 `request_id`로 다른 입력이 재요청되면 `REQUEST_CONFLICT` 판정에 사용 |
 | status | text(enum) | N | - | `in_progress`/`staged`/`completed`/`failed` |
-| staged_output | jsonb | Y | - | `ChatTurnOutput` 직렬화. `complete_turn` 전 임시 보관(`stage_turn_result`) |
-| staged_snapshot | jsonb | Y | - | `SessionSnapshot` 직렬화. 위와 동일 시점에 임시 보관 |
+| staged_output | jsonb | Y | - | `ChatTurnOutput` 직렬화. `stage_turn_result`에서 저장하고, `complete_turn` 뒤에도 **지우지 않는다** — 같은 `request_id` 재요청에 저장된 응답을 그대로 돌려주고, 과거 후보 목록·루틴 버전을 아티팩트 ID로 다시 찾는 데 쓴다(`chat_room`에는 최신 값 하나뿐) |
+| staged_snapshot | jsonb | Y | - | `SessionSnapshot` 직렬화. 위와 같은 이유로 확정 뒤에도 남긴다(확정 시 `source_revision`이 반영된 값으로 갱신) |
 | failure_code | text(enum) | Y | - | `graph`/`storage`(`TurnFailureCode`) |
 | failure_detail | text | Y | - | |
 | retryable | boolean | Y | - | |

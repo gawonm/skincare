@@ -159,6 +159,7 @@ SHA-256도 일치했다.
 - `product` 저장 계약(backend 파트에 넘긴 인터페이스): [docs/contracts/data-to-backend.md](../contracts/data-to-backend.md)
 - NIA Case 논리 산출물 계약: [docs/contracts/data-to-agent.md](../contracts/data-to-agent.md)
 - 채팅 히스토리 테이블 생성 요청(backend 파트가 넘긴 인터페이스): [docs/contracts/backend-to-data.md](../contracts/backend-to-data.md)
+- Tier A 핵심 성분용 compact Evidence(PubMed/CIR) collector: [COMPACT_EVIDENCE_COLLECTOR.md](COMPACT_EVIDENCE_COLLECTOR.md)
 - 올리브영 글로벌 키워드 검색 파이프라인 인수인계: [oliveyoung_global_pipeline_handoff.md](oliveyoung_global_pipeline_handoff.md)
 - 전성분 파싱·매칭·RAG 인수인계: [SKINCARE_DATA_RAG_HANDOFF.md](SKINCARE_DATA_RAG_HANDOFF.md)
 

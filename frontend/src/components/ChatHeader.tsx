@@ -1,21 +1,21 @@
 /**
- * 채팅 화면 상단 바.
+ * 채팅 화면 상단. 시안(109:39 / 109:76)에는 제목 없이 우측 "새 대화" 만 있다.
  *
- * "성분 AI" 제목과 우측 "성분노트" 링크만 둔다. 시안의 "새 대화" 버튼과 시계(이력)
- * 아이콘은 이번 범위가 아니라 제외한다.
+ * "새 대화" 는 대화 초기화 엔드포인트가 미정이라(계약서 "아직 안 정한 것" 2번) 시안대로
+ * 그리기만 하고 동작하지 않는다. 결정되면 `onClick` 을 연결하고 `disabled` 를 푼다.
  */
+
+import { CHAT_NEW_CONVERSATION_LABEL } from "../constants/chat";
 
 export function ChatHeader() {
   return (
-    <header className="flex shrink-0 items-center justify-between px-5 pb-3 pt-4">
-      <h1 className="text-xl font-bold text-slate-900">성분 AI</h1>
-      {/* TODO: 성분노트 화면이 생기면 라우트를 연결한다. 지금은 이동 대상이 없어 비활성. */}
+    <header className="mt-2.5 flex h-[52px] shrink-0 items-center justify-end">
       <button
         type="button"
         disabled
-        className="text-sm font-medium text-slate-500"
+        className="text-[13px] font-bold whitespace-nowrap text-moss-deep"
       >
-        성분노트
+        {CHAT_NEW_CONVERSATION_LABEL}
       </button>
     </header>
   );
