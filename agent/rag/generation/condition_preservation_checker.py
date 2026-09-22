@@ -1,13 +1,113 @@
 """조건 보존은 인용한 모든 자료를 대상으로 검사한다. 의미적 함의 검증은 별도다."""
 
 import re
+from enum import StrEnum
+from typing import ClassVar
 
-from agent.rag.schemas import EvidenceRecord, GeneratedEvidenceStatement
+from pydantic import Field
+
+from agent.rag.schemas import EvidenceRecord, GeneratedEvidenceStatement, RagModel
+
+
+class EvidenceConditionLabel(StrEnum):
+    CONCENTRATION = "농도"
+    FORMULATION = "제형"
+    ROUTE = "사용 경로"
+    USAGE = "사용법"
+    DURATION = "기간"
+    PH = "pH"
+    JURISDICTION = "관할"
+    RAW_CONDITION = "기타 조건"
+    SOURCE_VALUE = "원문 수치"
+
+
+class EvidenceConditionFact(RagModel):
+    label: EvidenceConditionLabel
+    value: str = Field(min_length=1)
+
+
+class EvidenceConditionExtractor:
+    _PERCENT = re.compile(r"\d+(?:\.\d+)?\s*%\s*(?:이하|미만|이상|초과)?")
+    _JURISDICTIONS = ("한국", "대한민국", "미국", "EU", "유럽", "일본", "중국", "아세안")
+    _FIELD_LABELS: ClassVar[dict[str, EvidenceConditionLabel]] = {
+        "concentration": EvidenceConditionLabel.CONCENTRATION,
+        "formulation": EvidenceConditionLabel.FORMULATION,
+        "route": EvidenceConditionLabel.ROUTE,
+        "usage": EvidenceConditionLabel.USAGE,
+        "duration": EvidenceConditionLabel.DURATION,
+        "ph": EvidenceConditionLabel.PH,
+        "jurisdiction": EvidenceConditionLabel.JURISDICTION,
+    }
+
+    def extract(self, evidence: EvidenceRecord) -> list[EvidenceConditionFact]:
+        facts = [
+            EvidenceConditionFact(label=self._FIELD_LABELS[field], value=value)
+            for field, value in evidence.conditions.model_dump().items()
+            if value
+        ]
+        if evidence.raw_conditions:
+            facts.append(
+                EvidenceConditionFact(
+                    label=EvidenceConditionLabel.RAW_CONDITION,
+                    value=evidence.raw_conditions,
+                )
+            )
+        if evidence.jurisdiction:
+            facts.append(
+                EvidenceConditionFact(
+                    label=EvidenceConditionLabel.JURISDICTION,
+                    value=evidence.jurisdiction,
+                )
+            )
+        facts.extend(
+            EvidenceConditionFact(
+                label=EvidenceConditionLabel.SOURCE_VALUE,
+                value=match.group(0),
+            )
+            for match in self._PERCENT.finditer(evidence.text)
+        )
+        facts.extend(
+            EvidenceConditionFact(label=EvidenceConditionLabel.JURISDICTION, value=term)
+            for term in self._JURISDICTIONS
+            if term in evidence.text
+        )
+        unique: dict[str, EvidenceConditionFact] = {}
+        for fact in facts:
+            key = " ".join(fact.value.casefold().split())
+            unique.setdefault(key, fact)
+        return list(unique.values())
+
+
+class EvidenceConditionPresenter:
+    """원문 조건은 번역 추측 대신 짧은 구조화 표기로 사용자에게 함께 보여준다."""
+
+    def __init__(self, extractor: EvidenceConditionExtractor | None = None) -> None:
+        self._extractor = extractor or EvidenceConditionExtractor()
+
+    def present(
+        self,
+        claim: GeneratedEvidenceStatement,
+        sources: list[EvidenceRecord],
+    ) -> GeneratedEvidenceStatement:
+        sentence = claim.sentence.strip()
+        normalized_sentence = " ".join(sentence.casefold().split())
+        facts: dict[str, EvidenceConditionFact] = {}
+        for source in sources:
+            for fact in self._extractor.extract(source):
+                key = " ".join(fact.value.casefold().split())
+                if key not in normalized_sentence:
+                    facts.setdefault(key, fact)
+        if not facts:
+            return claim.model_copy(deep=True)
+        conditions = "; ".join(
+            f"{fact.label.value}={fact.value}" for fact in facts.values()
+        )
+        return claim.model_copy(update={"sentence": f"{sentence} (적용 조건: {conditions})"})
 
 
 class ConditionPreservationChecker:
-    _PERCENT = re.compile(r"\d+(?:\.\d+)?\s*%\s*(?:이하|미만|이상|초과)?")
-    _JURISDICTIONS = ("한국", "대한민국", "미국", "EU", "유럽", "일본", "중국", "아세안")
+    def __init__(self, extractor: EvidenceConditionExtractor | None = None) -> None:
+        self._extractor = extractor or EvidenceConditionExtractor()
 
     def is_preserved(
         self,
@@ -15,11 +115,8 @@ class ConditionPreservationChecker:
         evidence: EvidenceRecord,
     ) -> bool:
         sentence = " ".join(claim.sentence.casefold().split())
-        required = [value for value in evidence.conditions.model_dump().values() if value]
-        required.extend(
-            value for value in (evidence.raw_conditions, evidence.jurisdiction) if value
-        )
-        required.extend(match.group(0) for match in self._PERCENT.finditer(evidence.text))
-        required.extend(term for term in self._JURISDICTIONS if term in evidence.text)
         # 제형·투여경로·자유문 조건은 동의어를 임의 해석하지 않고 보존된 경우만 채택한다.
-        return all(" ".join(value.casefold().split()) in sentence for value in required)
+        return all(
+            " ".join(fact.value.casefold().split()) in sentence
+            for fact in self._extractor.extract(evidence)
+        )

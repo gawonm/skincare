@@ -227,20 +227,32 @@ class TestRagContract:
             not call.is_combination and "같이" not in call.question for call in generator.requests
         )
 
-    async def test_invalid_claims_are_not_promoted_to_verified_answers(self) -> None:
+    async def test_missing_conditions_are_appended_but_unknown_citations_are_rejected(
+        self,
+    ) -> None:
         fixture = RagContractFixture()
         chunks = await RagIngestionPipeline(FieldChunker(), ContractEmbedder()).run(
             [fixture.document(fixture.TARGET_A)]
         )
-        for mode in (GenerationMode.OMIT_CONDITION, GenerationMode.UNKNOWN_CITATION):
-            result = await fixture.pipeline(
-                ContractSearchBackend(chunks), ContractEvidenceStatementGenerator(mode)
-            ).run(EvidenceSearchRequest(query="효능", target_ids=[fixture.TARGET_A]))
-            assert result.generated is not None
-            assert (
-                result.generated.per_target[0].result.unverifiable_reason
-                is UnverifiableReason.CITATION_VALIDATION_FAILED
-            )
+        condition_result = await fixture.pipeline(
+            ContractSearchBackend(chunks),
+            ContractEvidenceStatementGenerator(GenerationMode.OMIT_CONDITION),
+        ).run(EvidenceSearchRequest(query="효능", target_ids=[fixture.TARGET_A]))
+        assert condition_result.generated is not None
+        condition_answer = condition_result.generated.per_target[0].result
+        assert condition_answer.has_verifiable_evidence
+        assert "적용 조건:" in condition_answer.answer
+        assert "0.4% 이하" in condition_answer.answer
+
+        citation_result = await fixture.pipeline(
+            ContractSearchBackend(chunks),
+            ContractEvidenceStatementGenerator(GenerationMode.UNKNOWN_CITATION),
+        ).run(EvidenceSearchRequest(query="효능", target_ids=[fixture.TARGET_A]))
+        assert citation_result.generated is not None
+        assert (
+            citation_result.generated.per_target[0].result.unverifiable_reason
+            is UnverifiableReason.CITATION_VALIDATION_FAILED
+        )
 
     async def test_unsupported_search_never_calls_generator(self) -> None:
         fixture = RagContractFixture()
