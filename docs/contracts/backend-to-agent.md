@@ -527,8 +527,64 @@ Citation의 제목, URL, PMID, DOI는 DB 메타데이터만 사용한다. LLM �
 
 ### 9.4 Ingredient와 Product 조회
 
-- Ingredient resolve는 표준 한글/영문명, 정규화명, 구명칭의 정확 일치만 먼저 지원한다.
-- 일치 1건은 `SUCCESS`, 복수는 `ambiguous_candidates`, 없음은 `NO_RESULTS`다.
+> 2026-09-22 성분 식별 정규화 초안: 사용자 방향 확인, 코드 구현 전 Agent·Backend 최종 확인 필요.
+> 세부 근거와 확인된 마스터 행은
+> [성분 식별 정규화 및 확정 별칭 조회 계획](../agent/RAG_YK/2026-09-22_INGREDIENT_ALIAS_RESOLUTION_PLAN.md)을
+> 따른다.
+
+Ingredient resolve의 공개 타입과 소유권은 유지한다.
+
+```python
+class IngredientResolveRequest(RagModel):
+    name: str = Field(min_length=1)
+    language: str = Field(default="ko", min_length=2)
+
+
+class IngredientRecord(RagModel):
+    ingredient_id: str = Field(min_length=1)
+    canonical_name: str = Field(min_length=1)
+    ingredient_code: int | None = None
+    source_version: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+    is_demo: bool = True
+
+
+class IngredientResolveResult(RagModel):
+    status: LookupStatus
+    ingredient: IngredientRecord | None = None
+    ambiguous_candidates: list[IngredientRecord] = Field(default_factory=list)
+    error_message: str | None = None
+```
+
+호출 대상은 `IngredientRepository.resolve(request: IngredientResolveRequest)`이고, 운영 구현은
+`TwoLayerIngredientRepository.resolve()`가 `AgentIngredientReadRepository.find_exact()`를 호출한다.
+
+Backend는 의미를 바꾸지 않는 다음 정규화만 적용해 표준 한글/영문명, 정규화명, 구명칭의 정확
+일치 후보를 반환한다.
+
+- 국문 키: 앞뒤 공백 및 모든 공백 문자 제거
+- 영문 키: 소문자화 후 공백·하이픈·괄호 제거
+- `language` 기본값과 무관하게 같은 `name`에서 국문·영문 키를 모두 계산
+- 국문 키는 `normalized_name_ko`, 영문 키는 `normalized_name_en`과 직접 비교
+- 구명칭 배열은 각 원소에 같은 언어별 규칙을 적용한 뒤 정확히 일치하는 항목만 허용
+- 부분 일치, fuzzy matching, 번역·음역 추정은 금지
+
+Agent는 원문 조회가 `NO_RESULTS`일 때만 `CommonIngredientAliasMapper`의 확정 동의어로 바꿔 한 번
+재조회한다. `SUCCESS`의 모호한 후보, `ERROR`, `UNSUPPORTED`는 별칭 결과로 덮어쓰지 않는다.
+2026-09-22 확인된 신규 확정 동의어는 다음 두 개다.
+
+| 입력 별칭 | 재조회 표준 국문명 |
+| --- | --- |
+| `알로에 베라 잎즙 파우더` | `알로에베라잎즙가루` |
+| `카라파 구아이아넨시스 씨드 오일` | `안디로바씨오일` |
+
+`파우더 ↔ 가루`, `씨드 오일 ↔ 씨오일`을 모든 성분명에 적용하는 전역 치환은 허용하지 않는다.
+별칭 코드에는 UUID를 고정하지 않고, 최종 `ingredient_id`는 Backend가 현재 DB에서 반환한다.
+
+- 일치 1건은 `SUCCESS`와 `ingredient`를 반환한다.
+- 복수 후보는 `SUCCESS`와 `ambiguous_candidates`를 반환하며 Agent는 하나를 임의 선택하지 않는다.
+- 원문과 확정 별칭 재조회가 모두 무결과면 `NO_RESULTS`다.
+- DB·SQL·DTO 변환 실패는 원인을 포함한 `ERROR`이며 빈 성공이나 `NO_RESULTS`로 숨기지 않는다.
 - Claim은 `matched` UUID만 사용한다. unresolved raw name은 Ingredient resolve로 다시 추론하지
   않으며 Data 파트가 후속 annotation run에서 확정해야 한다.
 - Product 검색은 `product_ingredient.match_acceptance=confirmed`와 non-null `ingredient_id`만 사용한다.

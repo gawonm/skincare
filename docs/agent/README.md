@@ -145,6 +145,7 @@ DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump
 ## 관련 문서
 
 - [NIA Case 의도별 질의 분리 및 메타데이터 리랭크 계획](RAG_YK/2026-09-22_NIA_CASE_QUERY_DECOMPOSITION_PLAN.md)
+- [구현 계획 — 성분 식별 정규화 및 확정 별칭 조회](RAG_YK/2026-09-22_INGREDIENT_ALIAS_RESOLUTION_PLAN.md)
 - [구현 계획 — NIA Case 런타임 Claim 추출](RAG_YK/2026-09-21_0219_RUNTIME_CASE_CLAIM_EXTRACTION_PLAN.md)
 - [현재 작업 합본 — NIA Case 기반 2-Layer RAG 통합](RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md)
 - [완료 이력 — 2-Layer RAG Agent 작업일지](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
