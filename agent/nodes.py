@@ -19,6 +19,7 @@ from agent.rag.schemas import (
     IngredientResolveRequest,
     LookupStatus,
     ProductCandidate,
+    ProductCandidateLimitation,
     ProductCandidateSet,
     ProductGetRequest,
     ProductRecord,
@@ -64,8 +65,8 @@ CANDIDATE_REFERENCE_QUESTION = (
 )
 ROUTINE_REFERENCE_QUESTION = "참조한 루틴 버전을 현재 방에서 찾을 수 없습니다. 다시 선택해 주세요."
 NO_RESULT_MESSAGE = "현재 상품 데이터에서 조건을 만족하는 제품을 찾지 못했습니다."
-EVIDENCE_PRODUCT_LIMITATION = "성분 근거이며 완제품 자체의 임상 효과를 입증하지 않습니다."
-CLAIM_ONLY_PRODUCT_LIMITATION = "현재 연결된 공인 근거로 Claim을 충분히 확인하지 못했습니다."
+EVIDENCE_PRODUCT_LIMITATION = ProductCandidateLimitation.INGREDIENT_EVIDENCE_ONLY.value
+CLAIM_ONLY_PRODUCT_LIMITATION = ProductCandidateLimitation.CLAIM_NOT_VERIFIED.value
 
 
 class AgentNodes:
@@ -253,6 +254,11 @@ class AgentNodes:
                 parsed.unsupported_product_conditions + validated_filters.unsupported_conditions
             )
         )
+        parsed.unsupported_product_conditions = [
+            condition
+            for condition in parsed.unsupported_product_conditions
+            if self._is_current_user_product_condition(condition, turn.message)
+        ]
         state.parsed_request = parsed
         state.task_context.excluded_weekdays = list(
             dict.fromkeys(state.task_context.excluded_weekdays + parsed.excluded_weekdays)
@@ -849,10 +855,23 @@ class AgentNodes:
 
     def _product_limitations(self, product: ProductRecord) -> list[str]:
         return (
-            ["개발용 상품 데이터이며 실제 제품 검증 결과가 아님"] if product.is_demo else []
-        ) + (["제품 사용법 미상"] if product.directions is None else []) + (
-            ["제품 버전 미상"] if product.version is None else []
+            [ProductCandidateLimitation.DEMO_DATA.value] if product.is_demo else []
+        ) + (
+            [ProductCandidateLimitation.DIRECTIONS_UNKNOWN.value]
+            if product.directions is None
+            else []
+        ) + (
+            [ProductCandidateLimitation.VERSION_UNKNOWN.value]
+            if product.version is None
+            else []
         )
+
+    def _is_current_user_product_condition(self, condition: str, message: str) -> bool:
+        internal_limitations = {item.value for item in ProductCandidateLimitation}
+        if condition not in internal_limitations:
+            return True
+        # 사용자가 내부 한계 문구 자체를 인용해 물은 경우에는 의도를 지우지 않는다.
+        return condition.casefold() in message.casefold()
 
     async def _search_products(
         self,
