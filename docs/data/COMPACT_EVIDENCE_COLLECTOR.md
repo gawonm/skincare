@@ -64,14 +64,16 @@ uv run python -m data.scripts.compact_evidence_collector --source pubmed \
   6. **claim topic**: abstract 가 지지하는 topic 만 연결(제목만으로는 안 됨). topic 이 비면 임의로 만들지 않고 자동 selected 도 하지 않는다
      (candidate `no_claim_topic`). `cytotoxicity`·일반 `safety` 단어는 precaution 이 아니다
   점수는 성분 언급, RCT·SR, 근거 topic 수가 올리고 복합 제형이 내린다. 동점은 최신 → PMID 순.
-  **등급 우선 정렬**: 단일 성분 직접(`direct_single_topical_human`) → 리뷰 → 복합 제형(`combination_topical_human`) 순으로 뽑고,
+  **등급 우선 정렬**: 단일 성분 직접(`direct_single_topical_human`) → 리뷰 순으로 뽑는다. 복합 제형은
+  현재 성분 하나에 자동 귀속하지 않고 `combination_requires_association_mapping` candidate로 보내 복수 표준 ID를 검수한다.
   상위 N편(≤3)만 SELECTED, 나머지는 `over_budget` candidate(성분당 최대 10). route/study_design/ingredient_role/skin_relevance/
   evidence_grade 는 candidate JSONL 에만 남고 DB 컬럼은 없다.
 - **alias 계약**: `CollectionIngredient.aliases` 는 exact-equivalent 표기(철자·구 INCI 명칭)만 담는다. universe export 는
   IngredientMaster 의 구 영문명만 넣고, family expansion 용어·파생형·계열명(BHA/AHA 등)은 넣지 않는다. family 용어 결과를 원형 성분에
   귀속하지 않기 위해서다. 모호한 계열 용어의 일반화 처리는 Agent 쪽 정책이며 여기서 성분별로 하드코딩하지 않는다.
-- 복합 제형: 제목에서 성분명에 붙은 `and/with/plus/+/,` 또는 combination/combined 를 감지해
-  `formulation_type=combination_formulation` 으로 표시하고 감점한다.
+- 복합 제형: 제목에서 성분명에 붙은 `and/with/plus/+/,`, `chitin-glucan` 같은 하이픈 결합명 또는
+  combination/combined를 감지해 `formulation_type=combination_formulation`으로 표시한다. 자동 SELECTED로
+  만들지 않고, 모든 정확한 성분 ID를 검수해 association으로 연결하기 전까지 candidate로 보존한다.
 - Chunk: 1 PMID = document 1건, abstract 원문 전체 = chunk 1건(`section="abstract"`,
   `chunk_index=0`, `chunk_id="PMID:{pmid}:abstract:0"`). authors 는 저장 컬럼이 없어 draft 에 넣지
   않는다(`PubmedRecord` 에만 있음).

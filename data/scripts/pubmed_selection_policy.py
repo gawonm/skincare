@@ -107,6 +107,20 @@ _GRADE_ORDER = {
 # "X and its effects" 의 and 는 다른 성분을 잇는 접속이 아니므로 its/their/the 앞은 제외한다
 _COMBINATION_CONNECTOR = r"(?:,|\band\b(?!\s+(?:its|their|the)\b)|\bplus\b|\bwith\b|\+|/)"
 _COMBINATION_KEYWORD_PATTERN = re.compile(r"\bcombination\b|\bcombined\b", re.IGNORECASE)
+_NON_INGREDIENT_HYPHEN_SUFFIXES = frozenset(
+    {
+        "associated",
+        "based",
+        "containing",
+        "derived",
+        "enriched",
+        "induced",
+        "loaded",
+        "mediated",
+        "related",
+        "treated",
+    }
+)
 _NON_ASCII_LETTER_PATTERN = re.compile(r"[^\x00-\x7f]")
 
 
@@ -226,11 +240,22 @@ class PubmedSelectionPolicy:
         score = self._score(record, names, study_type, formulation, topics, title_mentioned)
 
         disposition, reason = self._decide(
-            record, names, design, route, role, skin, topics, title_mentioned, score
+            record,
+            names,
+            design,
+            route,
+            role,
+            skin,
+            formulation,
+            topics,
+            title_mentioned,
+            score,
         )
         grade = EvidenceGrade.NOT_GRADED
         if disposition is PubmedSelectionDisposition.SELECTED:
             grade = self._grade(design, formulation)
+        elif reason is PubmedSelectionReason.COMBINATION_REQUIRES_ASSOCIATION_MAPPING:
+            grade = EvidenceGrade.COMBINATION_TOPICAL_HUMAN
         return PubmedAssessment(
             ingredient_id=ingredient.ingredient_id,
             record=record,
@@ -263,6 +288,7 @@ class PubmedSelectionPolicy:
         route: AdministrationRoute,
         role: IngredientRole,
         skin: SkinRelevance,
+        formulation: EvidenceFormulationType,
         topics: list[EvidenceClaimTopic],
         title_mentioned: bool,
         score: int,
@@ -296,6 +322,10 @@ class PubmedSelectionPolicy:
             return candidate, PubmedSelectionReason.NO_CLAIM_TOPIC
         if score < _MIN_SELECT_SCORE:
             return candidate, PubmedSelectionReason.STUDY_TYPE_NOT_SELECTABLE
+        if formulation is EvidenceFormulationType.COMBINATION_FORMULATION:
+            # 자동 수집 입력은 현재 성분 ID만 알기 때문에 여기서 selected로 만들면 Backend가
+            # 단일 성분 Evidence로 오해한다. 복수 표준 ID를 사람이 확정한 뒤 association으로 적재한다.
+            return candidate, PubmedSelectionReason.COMBINATION_REQUIRES_ASSOCIATION_MAPPING
         return PubmedSelectionDisposition.SELECTED, None
 
     def _score(
@@ -347,7 +377,25 @@ class PubmedSelectionPolicy:
             )
             if re.search(pattern, title, re.IGNORECASE):
                 return EvidenceFormulationType.COMBINATION_FORMULATION
+            if self._has_hyphenated_compound(title, escaped):
+                return EvidenceFormulationType.COMBINATION_FORMULATION
         return EvidenceFormulationType.SINGLE_INGREDIENT
+
+    def _has_hyphenated_compound(self, title: str, escaped_name: str) -> bool:
+        trailing = re.search(
+            rf"{escaped_name}\s*[-–—]\s*(?P<term>[A-Za-z][A-Za-z0-9]*)",
+            title,
+            re.IGNORECASE,
+        )
+        if trailing is not None:
+            return trailing.group("term").casefold() not in _NON_INGREDIENT_HYPHEN_SUFFIXES
+        return bool(
+            re.search(
+                rf"[A-Za-z][A-Za-z0-9]*\s*[-–—]\s*{escaped_name}",
+                title,
+                re.IGNORECASE,
+            )
+        )
 
     def _mentions(self, names: list[str], *texts: str) -> bool:
         haystack = " ".join(texts)
