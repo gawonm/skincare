@@ -44,6 +44,14 @@ class IngredientAliasEntry(RagModel):
         return self
 
 
+class IngredientMentionDetectionRequest(RagModel):
+    text: str = Field(min_length=1)
+
+
+class IngredientMentionDetectionResult(RagModel):
+    mentions: list[str] = Field(default_factory=list)
+
+
 class CommonIngredientAliasMapper:
     """확정 가능한 동의어만 단일 ID 조회로 보내고 성분군은 모호 상태로 보존한다."""
 
@@ -74,6 +82,31 @@ class CommonIngredientAliasMapper:
         if entry is None or entry.kind is not IngredientAliasKind.AMBIGUOUS_FAMILY:
             return []
         return list(entry.candidate_standard_names_ko)
+
+    def detect_mentions(
+        self, request: IngredientMentionDetectionRequest
+    ) -> IngredientMentionDetectionResult:
+        normalized_text = self._normalize(request.text)
+        matched_keys: list[str] = []
+        mentions: list[str] = []
+        for key, entry in sorted(
+            self._entries.items(), key=lambda item: len(item[0]), reverse=True
+        ):
+            if key not in normalized_text or any(key in matched for matched in matched_keys):
+                continue
+            if self._is_derivative_reference(normalized_text, key):
+                continue
+            if self._has_embedded_latin_match(normalized_text, key):
+                continue
+            matched_keys.append(key)
+            mention = (
+                entry.standard_name_ko
+                if entry.kind is IngredientAliasKind.EXACT_EQUIVALENT
+                else entry.consumer_term
+            )
+            if mention is not None and mention not in mentions:
+                mentions.append(mention)
+        return IngredientMentionDetectionResult(mentions=mentions)
 
     def validate_result(
         self, request: IngredientResolveRequest, result: IngredientResolveResult
@@ -124,6 +157,28 @@ class CommonIngredientAliasMapper:
     def _normalize(self, name: str) -> str:
         # 공백과 대소문자만 정규화하고 괄호 내용은 별칭 의미의 일부로 보존한다.
         return "".join(unicodedata.normalize("NFKC", name).casefold().split())
+
+    def _is_derivative_reference(self, normalized_text: str, key: str) -> bool:
+        # 계열·유도체 질문을 대표 성분 하나로 축소하면 다른 물질의 근거를 붙일 수 있다.
+        return any(
+            marker in normalized_text
+            for marker in (f"{key}유도체", f"{key}derivative", f"{key}계열")
+        )
+
+    def _has_embedded_latin_match(self, normalized_text: str, key: str) -> bool:
+        if not key.isascii():
+            return False
+        start = normalized_text.find(key)
+        while start >= 0:
+            previous = normalized_text[start - 1] if start > 0 else ""
+            end = start + len(key)
+            following = normalized_text[end] if end < len(normalized_text) else ""
+            if not (
+                previous and previous.isascii() and previous.isalnum()
+            ) and not (following and following.isascii() and following.isalnum()):
+                return False
+            start = normalized_text.find(key, start + 1)
+        return True
 
     def _defaults(self) -> list[IngredientAliasEntry]:
         exact_entries = [

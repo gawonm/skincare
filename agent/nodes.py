@@ -12,7 +12,10 @@ from agent.rag.claim_schemas import (
     RecommendationBasis,
     RecommendationProductMatch,
 )
-from agent.rag.retrieval.ingredient_alias_mapper import CommonIngredientAliasMapper
+from agent.rag.retrieval.ingredient_alias_mapper import (
+    CommonIngredientAliasMapper,
+    IngredientMentionDetectionRequest,
+)
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.schemas import (
     EvidenceConditions,
@@ -230,6 +233,11 @@ class AgentNodes:
             )
         elif not parsed.pending_answer:
             state.pending_question = None
+        if not parsed.ingredient_mentions:
+            detected_mentions = self._ingredient_aliases.detect_mentions(
+                IngredientMentionDetectionRequest(text=turn.message)
+            )
+            parsed.ingredient_mentions = detected_mentions.mentions
         if Intent.PRODUCT_DISCOVERY in parsed.intents:
             if parsed.is_modification or parsed.pending_answer:
                 filters = state.task_context.search_filters
