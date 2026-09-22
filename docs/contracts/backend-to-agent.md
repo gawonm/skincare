@@ -194,6 +194,25 @@ DB 마이그레이션·재임베딩을 주도하여 수정하면 된다.** 최�
    `config.yaml`의 `agent.embedding.provider: local`로 변경하고, BGE-M3 기준의
    `agent.retrieval.free_text_min_vector_similarity` 검증값을 반영한다.
 
+### 운영 조립 구현 현황 (2026-09-22, backend 제안 — Agent 확인 필요)
+
+7절의 미합의 항목 중 아래 세 가지는 `backend/services/agent_assembly.py`, `backend/main.py`에서
+실제로 구현해 쓰고 있다. 합의된 계약은 아니고, 문제가 있으면 알려달라는 backend의 제안이다.
+
+- **조립 위치**: `Application._lifespan`에서 DB·Redis 초기화 직후, 프로세스 수명 동안 한 번만
+  조립한다. 요청마다 조립하면 로컬 임베딩·리랭커 모델을 매번 다시 불러온다.
+- **조립 실패 정책**: 조립이 실패해도 서버 전체를 죽이지 않는다. 로그인 같은 다른 기능이 채팅
+  설정 문제 때문에 함께 막히면 안 되기 때문이다. 실패 원인은 `logger.exception`으로 남기고,
+  `POST /chat`은 `app.state`에 서비스가 없으면 `503`을 반환한다.
+- **실행 제한(`ExecutionLimits`)**: `timeout_seconds=180, max_tool_calls=50, recursion_limit=80`.
+  Agent 기본값(10초)은 첫 요청에서 로컬 임베딩·리랭커 모델을 올리고 LLM을 여러 번 호출하는
+  경로에 항상 부족해 `TimeoutError`가 났다(실측 확인, `tests/agent/interactive_two_layer_rag_cli.py`와
+  동일 값). `ChatHistoryRepository.stale_after`도 `실행 제한 + 60초 여유`로 맞춰, 정상 처리 중인
+  요청을 서버가 죽은 것으로 오판하지 않게 했다.
+
+로컬 모델 캐시 볼륨(BGE-M3·bge-reranker 모델 파일을 컨테이너 재생성 때마다 다시 받지 않게 하는 것)은
+아직 미정이다. `docker-compose.yml` 공용 설정 변경이라 별도로 논의한다.
+
 ## 3. 사용자 요청 호출
 
 ### 부르는 대상
@@ -356,11 +375,18 @@ NIA Q&A는 현재 Agent에 대응하는 변환 계약이 없다. 기존 로더�
 
 ## 7. 아직 합의가 필요한 항목
 
-- `config.yaml`에 OpenAI 키가 없을 때 서버 전체 기동을 막을지 Agent 기능만 비활성화할지
+- `config.yaml`에 OpenAI 키가 없을 때(`chat.provider: openai`인데 `openai` 블록 누락) 서버 전체
+  기동을 막을지 Agent 기능만 비활성화할지: 이미 구현은 후자다. `AgentConfigurationAssembler`가
+  `RuntimeError`를 던지고, `_assemble_agent`가 이를 잡아 로그만 남긴 뒤 서버는 정상 기동한다.
+  `POST /chat`만 503이고 로그인 등 나머지 기능은 영향받지 않는다. 이견 있으면 알려달라는 상태다.
 - 향후 로컬 BGE-M3로 전환할 경우의 1024차원 ERD·마이그레이션·재색인 계획과 검증 임계값
-- Agent 조립 객체의 lifespan 위치와 로컬 모델 캐시 볼륨
+- Agent 조립 객체의 lifespan 위치, 실패 정책, 실행 제한: 2절 "운영 조립 구현 현황"에 backend
+  제안을 적었다. 실제 구현은 이미 merge됐고(#62), 문제가 있으면 알려달라는 상태다.
+- 로컬 모델(BGE-M3·bge-reranker) 캐시 볼륨: 여전히 미정
 - NIA Q&A의 유지 여부와, 유지한다면 data→agent DTO
-- `ChatTurnOutput`을 외부 HTTP 응답으로 노출할 backend→front 계약
+- ~~`ChatTurnOutput`을 외부 HTTP 응답으로 노출할 backend→front 계약~~ → 확정 및 구현·연동
+  완료(2026-09-22). [front → backend: AI 채팅](front-to-backend.md#front--backend-ai-채팅-로그인-사용자-서버-저장형)
+  참고.
 
 ## 8. 완료 조건
 
