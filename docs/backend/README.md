@@ -176,8 +176,9 @@ uv run python -m backend.services.nia_case_ingestion_service
 - [Agent 통합 검토](../agent/AGENT_INTEGRATION_REVIEW.md)
 - [2-Layer RAG Agent 통합 작업계획 및 작업 일지](../agent/TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
 - [Claim → Evidence RAG 인터페이스 계약](../contracts/claim-evidence-rag-interface.md)
-- [front → backend 계약](../contracts/front-to-backend.md): AI 채팅(미정), 회원가입 확장
-  (성별·연령대·약관동의 — 확정 및 구현 완료. `models/user.py`, `backend/schemas/auth.py`)
+- [front → backend 계약](../contracts/front-to-backend.md): 홈 화면(`GET /home`, 초안),
+  AI 채팅(미정), 회원가입 확장(성별·연령대·약관동의 — 확정 및 구현 완료.
+  `models/user.py`, `backend/schemas/auth.py`)
 
 ## Evidence RAG `document_status` 매핑 보류 (2026-09-17)
 
