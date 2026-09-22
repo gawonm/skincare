@@ -15,7 +15,6 @@ from agent.rag.schemas import (
     ChatModelConfig,
     ConstraintSource,
     DayPeriod,
-    EvidenceReviewStatus,
     LlmProvider,
     ProductRecord,
     RoutineConstraint,
@@ -162,15 +161,11 @@ class RoutineRuleSourceBuilder:
             ]
             if not applicable_product_ids:
                 continue
-            source_kind = (
-                RoutineRuleSourceKind.VERIFIED_EVIDENCE
-                if evidence.review_status is EvidenceReviewStatus.VERIFIED
-                else RoutineRuleSourceKind.UNREVIEWED_EVIDENCE
-            )
             sources.append(
                 RoutineRuleSource(
                     source_id=f"evidence:{evidence.evidence_id}",
-                    source_kind=source_kind,
+                    # document_status는 문서 생명주기 메타데이터이므로 Rule 강제 수준에 관여시키지 않는다.
+                    source_kind=RoutineRuleSourceKind.EVIDENCE,
                     text=evidence.text,
                     applicable_product_ids=applicable_product_ids,
                 )
@@ -339,11 +334,7 @@ class DeterministicRoutineValidator:
         source: RoutineRuleSource,
     ) -> RoutineRuleEnforcement:
         if (
-            source.source_kind
-            in {
-                RoutineRuleSourceKind.UNREVIEWED_EVIDENCE,
-                RoutineRuleSourceKind.CASE_USAGE_GUIDANCE,
-            }
+            source.source_kind is RoutineRuleSourceKind.CASE_USAGE_GUIDANCE
             or candidate.rule_type is RoutineRuleType.WARNING
         ):
             return RoutineRuleEnforcement.WARNING

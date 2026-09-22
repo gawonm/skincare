@@ -65,7 +65,7 @@
 
 Claim과 Evidence 저장소는 실제 Agent 경로에 연결됐다. 피부 고민형 질의는 Claim을 먼저 찾고
 `matching_status=matched`인 성분만 `EvidenceQueryAnchor`로 변환한다. 명시 성분 질의는 기존
-Evidence 직행 경로를 유지한다. Evidence가 없거나 미검수여도 오류·상반 상태가 아니라면 Claim은
+Evidence 직행 경로를 유지한다. 허용 출처 Evidence가 없어도 오류·상반 상태가 아니라면 Claim은
 `CLAIM_ONLY` 상품 후보로 남는다.
 
 ---
@@ -343,7 +343,7 @@ Backend 어댑터가 각각 기존 `EvidenceSourceType`과 `RagConfidenceTier`�
 | unresolved 성분 재추론 금지 | 완료 |
 | 3개 지원 Claim 타입 매핑 | 완료 |
 | LangGraph Claim → Evidence → Product 배선 | 완료 |
-| Evidence 미검수/부족 시 Claim-only 유지 | 완료 |
+| 허용 출처 Evidence 부족 시 Claim-only 유지 | 완료 |
 | `evidence_chunk` 전용 Backend 조회 | 완료(기존 Evidence DTO 호환 방식) |
 | 구조화된 전용 `EvidenceCitation` DTO | 미구현·후속 계약 필요 |
 | 한 번 계산한 query embedding의 Claim/Evidence 공동 재사용 | 부분 구현·호출부 공동 캐시 미구현 |
@@ -368,7 +368,7 @@ sequenceDiagram
     Adapter-->>Workflow: EvidenceQueryAnchor 또는 None
     Workflow->>Evidence: EvidenceSearchRequest(anchor 기반)
     Evidence-->>Workflow: EvidenceSearchResult
-    Note over Workflow: 미검수·근거 없음은 INSUFFICIENT, Claim-only 유지
+    Note over Workflow: 허용 출처 근거 없음은 INSUFFICIENT, Claim-only 유지
     Workflow->>Product: 확정 성분 ID로 상품 조회
     Product-->>Workflow: 중복 제거된 상품 후보
     Workflow-->>User: Claim/Evidence 구분 응답 + 메타데이터 기반 Citation

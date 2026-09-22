@@ -172,7 +172,7 @@ class TestSourceBoundRoutinePlanner:
         assert plan.rules == []
         assert any("출처 원문과 일치하지 않는" in warning for warning in validation.warnings)
 
-    async def test_미검수_Evidence_Rule은_강제하지_않고_경고로_내린다(self) -> None:
+    async def test_document_status와_무관하게_Evidence_Rule을_강제한다(self) -> None:
         harness = RoutinePlannerHarness()
         product = harness.product(directions=None)
         evidence = harness.evidence()
@@ -187,7 +187,7 @@ class TestSourceBoundRoutinePlanner:
                     ]
                 )
             ),
-            FixedRoutineDraftGenerator(harness.draft(period=DayPeriod.MORNING)),
+            FixedRoutineDraftGenerator(harness.draft(period=DayPeriod.EVENING)),
         )
         request = harness.request(product, evidence=[evidence])
 
@@ -197,8 +197,8 @@ class TestSourceBoundRoutinePlanner:
         )
 
         assert validation.valid is True
-        assert plan.rules[0].enforcement is RoutineRuleEnforcement.WARNING
-        assert "레티놀 제품은 저녁에만 배치" in validation.warnings
+        assert validation.violations == []
+        assert plan.rules[0].enforcement is RoutineRuleEnforcement.REQUIRED
 
     async def test_Case_사용법은_성분이_겹치는_상품에만_경고로_전달한다(self) -> None:
         harness = RoutinePlannerHarness()

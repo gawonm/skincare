@@ -422,7 +422,8 @@ class RagResponseAssembler:
     def _unverifiable_message(self, reason: UnverifiableReason) -> str:
         messages = {
             UnverifiableReason.NO_EVIDENCE_FOUND: "확인할 근거를 찾지 못했습니다.",
-            UnverifiableReason.UNREVIEWED_EVIDENCE: "검수된 근거가 없어 답변을 보류합니다.",
+            # 과거 결과를 역직렬화해도 document_status를 사용자 경고로 노출하지 않는다.
+            UnverifiableReason.UNREVIEWED_EVIDENCE: "답변에 사용할 수 있는 공인 출처 근거가 없습니다.",
             UnverifiableReason.NOT_RELEVANT_TO_QUESTION: "질문 항목을 뒷받침할 근거가 부족합니다.",
             UnverifiableReason.MISSING_COMBINATION_EVIDENCE: "대상을 함께 다루는 병용 근거가 없습니다.",
             UnverifiableReason.CITATION_VALIDATION_FAILED: (

@@ -762,7 +762,7 @@ LLM 결과는 Evidence 검색 전에 Agent 규칙 계층이 전부 검증한다.
 | Claim 추출 | `ERROR` | 오류를 State에 남기고 Evidence/Product 단계를 건너뜀 |
 | Claim 규칙 검증 | 일부 실패 | 실패 Claim만 제외하고 사유를 남김 |
 | 성분 Resolution | unresolved/ambiguous | Claim 문구는 보존하고 Evidence/Product anchor에서 제외 |
-| Evidence | 없음/미검수 | 기존 정책대로 Claim-only 상품 후보 유지 |
+| Evidence | 허용 출처 근거 없음 | 기존 정책대로 Claim-only 상품 후보 유지 |
 
 현재 production Claim index가 없으므로 전역 Claim RAG를 자동 fallback으로 사용하지 않는다.
 향후 offline Claim index를 운영에 채택하면 별도 정책과 골든 셋 검증 후 fallback을 다시 계약한다.

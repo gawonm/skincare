@@ -267,6 +267,8 @@ class ConstraintSource(StrEnum):
 
 class RoutineRuleSourceKind(StrEnum):
     PRODUCT_DIRECTIONS = "product_directions"
+    EVIDENCE = "evidence"
+    # 기존 직렬화 값을 읽을 수 있어야 과거 루틴 요청과의 호환성이 깨지지 않는다.
     VERIFIED_EVIDENCE = "verified_evidence"
     UNREVIEWED_EVIDENCE = "unreviewed_evidence"
     CASE_USAGE_GUIDANCE = "case_usage_guidance"

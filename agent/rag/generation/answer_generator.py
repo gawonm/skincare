@@ -102,7 +102,8 @@ class AnswerGenerator:
             and not hit.chunk.evidence.is_demo
         ]
         if not eligible:
-            return self._missing(UnverifiableReason.UNREVIEWED_EVIDENCE)
+            # 사용 불가 사유는 허용 출처·demo 여부이며 document_status와 무관하다.
+            return self._missing(UnverifiableReason.NO_EVIDENCE_FOUND)
         axes = set(intents) - {QuestionIntent.COMBINATION}
         relevant = [hit for hit in eligible if not axes or axes.intersection(hit.chunk.intents)]
         # 복합 질문에서 지원하지 않는 축을 다른 축 근거로 덮어쓰지 않는다.

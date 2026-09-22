@@ -60,7 +60,7 @@ class EvidenceApplicabilityEvaluator:
             evidence_id=record.evidence_id,
             status=status,
             reasons=reasons
-            or ["검수된 해당 근거의 명시 조건과 일치; 제품 병용 안전성 확정은 아님"],
+            or ["해당 근거의 명시 조건과 일치; 제품 병용 안전성 확정은 아님"],
         )
 
 
