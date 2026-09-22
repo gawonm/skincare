@@ -381,7 +381,7 @@ class CompactTwoLayerTurnPresenter:
             print("\n[상품 후보]")
             for candidate in candidates:
                 basis = (
-                    "Claim 기반·근거 미확인"
+                    "Claim 기반"
                     if CLAIM_ONLY_PRODUCT_LIMITATION in candidate.unresolved
                     else "Evidence 기반"
                 )
@@ -489,7 +489,7 @@ class VerboseTwoLayerTurnPresenter:
             print("\n[상품 후보]")
             for candidate in candidates:
                 basis = (
-                    "Claim 기반·근거 미확인"
+                    "Claim 기반"
                     if CLAIM_ONLY_PRODUCT_LIMITATION in candidate.unresolved
                     else "Evidence 기반"
                 )

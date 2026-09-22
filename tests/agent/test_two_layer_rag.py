@@ -368,7 +368,7 @@ class TestTwoLayerRagWorkflow:
         assert "공인 Evidence가 확인된 성분 포함: ingredient:niacinamide" in (
             candidate.reasons
         )
-        assert "유사 사용자 사례에서 발굴된 탐색 성분 포함: ingredient:retinol" in (
+        assert "Claim 기반 성분 포함: ingredient:retinol" in (
             candidate.reasons
         )
         assert EVIDENCE_PRODUCT_LIMITATION in candidate.unresolved
@@ -404,10 +404,10 @@ class TestTwoLayerRagWorkflow:
         assert len(candidate_set.candidates) == 1
         candidate = candidate_set.candidates[0]
         assert candidate.product.product_id == "product:shared-serum"
-        assert "유사 사용자 사례에서 발굴된 탐색 성분 포함: ingredient:niacinamide" in (
+        assert "Claim 기반 성분 포함: ingredient:niacinamide" in (
             candidate.reasons
         )
-        assert "유사 사용자 사례에서 발굴된 탐색 성분 포함: ingredient:retinol" in (
+        assert "Claim 기반 성분 포함: ingredient:retinol" in (
             candidate.reasons
         )
         assert EVIDENCE_PRODUCT_LIMITATION not in candidate.unresolved
@@ -444,7 +444,7 @@ class TestTwoLayerRagWorkflow:
             "product:retinol-serum",
         ]
         assert "공인 근거가 확인된 성분 기반 제품 후보" in output.message
-        assert "유사 사용자 사례에서 발굴된 탐색 제품 후보" in output.message
+        assert "Claim 기반 제품 후보" in output.message
         assert [citation.evidence_id for citation in output.citations] == [
             "evidence:verified-niacinamide"
         ]

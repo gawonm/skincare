@@ -8,6 +8,10 @@ from agent.ports import IngredientRepository, LlmClient, ProductRepository, Rout
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.query_planning import IntentQueryPlanner
 from agent.rag.routine_planner import RoutineFrequencyInterpreter
+from agent.rag.routine_product_selector import (
+    RoutineProductSelectionRequest,
+    RoutineProductSelector,
+)
 from agent.rag.claim_schemas import (
     IngredientRecommendationCandidate,
     RecommendationBasis,
@@ -107,6 +111,7 @@ class AgentNodes:
         self._evidence_query_policy = evidence_query_policy
         self._query_planner = IntentQueryPlanner()
         self._routine_frequency = RoutineFrequencyInterpreter()
+        self._routine_product_selector = RoutineProductSelector()
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
         self._require_turn_fields(state)
@@ -819,7 +824,7 @@ class AgentNodes:
                 for ingredient_id in match.evidence_supported_ingredient_ids
             )
             reasons.extend(
-                f"유사 사용자 사례에서 발굴된 탐색 성분 포함: {ingredient_id}"
+                f"Claim 기반 성분 포함: {ingredient_id}"
                 for ingredient_id in match.claim_only_ingredient_ids
             )
             limitations = self._product_limitations(match.product)
@@ -859,8 +864,7 @@ class AgentNodes:
             )
         if claim_only_lines:
             state.response_parts.append(
-                "유사 사용자 사례에서 발굴된 탐색 제품 후보:\n"
-                + "\n".join(claim_only_lines)
+                "Claim 기반 제품 후보:\n" + "\n".join(claim_only_lines)
             )
 
     def _product_limitations(self, product: ProductRecord) -> list[str]:
@@ -1050,6 +1054,14 @@ class AgentNodes:
                 if candidate and candidate.product.product_id not in rejected_ids
                 else []
             )
+        if Intent.PRODUCT_DISCOVERY in parsed.intents and state.candidate_set is not None:
+            selection = self._routine_product_selector.select(
+                RoutineProductSelectionRequest(
+                    products=[candidate.product for candidate in state.candidate_set.candidates],
+                    rejected_product_ids=sorted(rejected_ids),
+                )
+            )
+            return selection.products
         if state.resolved_entities.products:
             return [
                 product
