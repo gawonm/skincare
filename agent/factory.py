@@ -18,7 +18,10 @@ import agent.rag.schemas as rag_schemas
 import agent.schemas as agent_schemas
 from agent.adapters import (
     FakeLlmClient,
-    FixtureClaimRetriever,
+    FixtureCaseClaimExtractor,
+    FixtureCaseEmbedder,
+    FixtureCaseReranker,
+    FixtureCaseRetriever,
     FixtureEvidenceRetriever,
     FixtureIngredientRepository,
     FixtureProductRepository,
@@ -41,21 +44,28 @@ from agent.ports import (
     RoutinePlanner,
 )
 from agent.prompts import PromptCatalog
-from agent.rag import claim_schemas
+from agent.rag import case_claim_schemas, case_schemas, claim_schemas
+from agent.rag.case_claim_extractor import CaseClaimExtractorFactory
 from agent.rag.claim_schemas import DEVELOPMENT_CLAIM_ANNOTATION_VERSION
 from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.generation.evidence_statement_generator import EvidenceStatementGeneratorFactory
 from agent.rag.pipeline import EvidenceApplicabilityEvaluator, EvidencePipeline
 from agent.rag.ports import (
+    CaseClaimExtractor,
+    CaseReranker,
+    CaseRetriever,
     ClaimRetriever,
     EvidenceReranker,
     EvidenceRetriever,
     HybridSearchBackend,
     TextEmbedder,
 )
+from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
+from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.retrieval.local_reranker import LocalBgeRerankerV2M3
+from agent.rag.routine_planner import RoutinePlannerFactory
 from agent.rag.schemas import (
     ChatModelConfig,
     EmbeddingProvider,
@@ -84,6 +94,8 @@ class CheckpointSerializerFactory:
             self._module_types(agent_schemas)
             + self._module_types(rag_schemas)
             + self._module_types(claim_schemas)
+            + self._module_types(case_schemas)
+            + self._module_types(case_claim_schemas)
         )
         return JsonPlusSerializer(allowed_msgpack_modules=allowed_types)
 
@@ -105,8 +117,13 @@ class AgentDependencies(AgentModel):
     product_taxonomy: ProductTaxonomy
     ingredients: IngredientRepository
     routine_planner: RoutinePlanner
-    claim_retriever: ClaimRetriever
-    claim_annotation_version: str = Field(min_length=1)
+    case_retriever: CaseRetriever
+    case_reranker: CaseReranker
+    case_claim_extractor: CaseClaimExtractor
+    case_embedder: TextEmbedder
+    claim_retriever: ClaimRetriever | None = None
+    claim_annotation_version: str | None = Field(default=None, min_length=1)
+    use_offline_claim_path: bool = False
     evidence_pipeline: EvidencePipeline
     checkpointer: BaseCheckpointSaver
 
@@ -134,6 +151,11 @@ class AgentFactory:
             evidence_query_policy=evidence_query_policy,
         )
         rag_nodes = RagWorkflowNodes(
+            case_retriever=dependencies.case_retriever,
+            case_reranker=dependencies.case_reranker,
+            case_claim_extractor=dependencies.case_claim_extractor,
+            case_embedder=dependencies.case_embedder,
+            ingredient_repository=dependencies.ingredients,
             claim_retriever=dependencies.claim_retriever,
             claim_annotation_version=dependencies.claim_annotation_version,
             evidence_pipeline=dependencies.evidence_pipeline,
@@ -152,6 +174,7 @@ class AgentFactory:
             router=AgentGraphRouter(),
             rag_router=RagWorkflowRouter(),
             checkpointer=dependencies.checkpointer,
+            use_offline_claim_path=dependencies.use_offline_claim_path,
         ).create()
         return ChatService(
             graph=graph,
@@ -171,7 +194,7 @@ class ProductionAgentConfig(AgentModel):
     embedding: TextEmbeddingConfig
     reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
     retrieval_policy: RagRetrievalPolicy
-    claim_annotation_version: str = Field(min_length=1)
+    claim_annotation_version: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def validate_chat_config(self) -> Self:
@@ -200,8 +223,9 @@ class ProductionAgentDependencies(AgentModel):
     products: ProductRepository
     product_taxonomy: ProductTaxonomy
     ingredients: IngredientRepository
-    routine_planner: RoutinePlanner
-    claim_retriever: ClaimRetriever
+    routine_planner: RoutinePlanner | None = None
+    case_retriever: CaseRetriever
+    claim_retriever: ClaimRetriever | None = None
     search_backend: HybridSearchBackend
     checkpointer: BaseCheckpointSaver
 
@@ -215,7 +239,10 @@ class ProductionAgentApplication(AgentModel):
     embedder: TextEmbedder
     reranker: EvidenceReranker
     evidence_retriever: EvidenceRetriever
-    claim_retriever: ClaimRetriever
+    case_retriever: CaseRetriever
+    case_reranker: CaseReranker
+    case_claim_extractor: CaseClaimExtractor
+    claim_retriever: ClaimRetriever | None = None
 
 
 class ProductionAgentFactory:
@@ -228,10 +255,19 @@ class ProductionAgentFactory:
         execution_limits: ExecutionLimits | None = None,
         context_limits: ContextLimits | None = None,
     ) -> ProductionAgentApplication:
-        if dependencies.claim_retriever.embedding_model is not LocalEmbeddingModel.BGE_M3:
+        if (
+            dependencies.claim_retriever is not None
+            and dependencies.claim_retriever.embedding_model is not LocalEmbeddingModel.BGE_M3
+        ):
             raise ValueError("Claim 검색기는 BAAI/bge-m3 색인을 사용해야 합니다.")
         embedder = TextEmbedderFactory().create(config.embedding)
-        reranker = LocalBgeRerankerV2M3(config.reranker)
+        reranker_scorer = LocalBgeCrossEncoderScorer(config.reranker)
+        reranker = LocalBgeRerankerV2M3(config.reranker, scorer=reranker_scorer)
+        case_reranker = LocalBgeCaseRerankerV2M3(
+            config.reranker,
+            scorer=reranker_scorer,
+        )
+        case_claim_extractor = CaseClaimExtractorFactory().create(config.chat)
         evidence_retriever = HybridEvidenceRetriever(
             backend=dependencies.search_backend,
             embedder=embedder,
@@ -243,6 +279,9 @@ class ProductionAgentFactory:
             evaluator=EvidenceApplicabilityEvaluator(),
             generator=AnswerGenerator(EvidenceStatementGeneratorFactory().create(config.chat)),
         )
+        routine_planner = dependencies.routine_planner or RoutinePlannerFactory().create(
+            config.chat
+        )
         service = AgentFactory().create(
             AgentDependencies(
                 llm=LlmClientFactory().create(config.chat),
@@ -250,7 +289,11 @@ class ProductionAgentFactory:
                 products=dependencies.products,
                 product_taxonomy=dependencies.product_taxonomy,
                 ingredients=dependencies.ingredients,
-                routine_planner=dependencies.routine_planner,
+                routine_planner=routine_planner,
+                case_retriever=dependencies.case_retriever,
+                case_reranker=case_reranker,
+                case_claim_extractor=case_claim_extractor,
+                case_embedder=embedder,
                 claim_retriever=dependencies.claim_retriever,
                 claim_annotation_version=config.claim_annotation_version,
                 evidence_pipeline=evidence_pipeline,
@@ -264,6 +307,9 @@ class ProductionAgentFactory:
             embedder=embedder,
             reranker=reranker,
             evidence_retriever=evidence_retriever,
+            case_retriever=dependencies.case_retriever,
+            case_reranker=case_reranker,
+            case_claim_extractor=case_claim_extractor,
             claim_retriever=dependencies.claim_retriever,
         )
 
@@ -276,7 +322,8 @@ class DevelopmentAgentApplication(AgentModel):
     service: ChatService
     history: InMemoryChatHistoryRepository
     evidence_retriever: EvidenceRetriever
-    claim_retriever: ClaimRetriever
+    case_retriever: CaseRetriever
+    claim_retriever: ClaimRetriever | None = None
     checkpointer: InMemorySaver
 
 
@@ -290,31 +337,42 @@ class DevelopmentAgentFactory:
         history: InMemoryChatHistoryRepository | None = None,
         llm: LlmClient | None = None,
         ingredient_repository: IngredientRepository | None = None,
+        case_retriever: CaseRetriever | None = None,
+        case_reranker: CaseReranker | None = None,
+        case_claim_extractor: CaseClaimExtractor | None = None,
+        case_embedder: TextEmbedder | None = None,
         claim_retriever: ClaimRetriever | None = None,
         claim_annotation_version: str = DEVELOPMENT_CLAIM_ANNOTATION_VERSION,
         evidence_retriever: EvidenceRetriever | None = None,
         answer_generator: AnswerGenerator | None = None,
         product_repository: ProductRepository | None = None,
         product_taxonomy: ProductTaxonomy | None = None,
+        routine_planner: RoutinePlanner | None = None,
     ) -> None:
         self._execution_limits = execution_limits or ExecutionLimits()
         self._context_limits = context_limits or ContextLimits()
         self._history = history
         self._llm = llm
         self._ingredient_repository = ingredient_repository
+        self._case_retriever = case_retriever
+        self._case_reranker = case_reranker
+        self._case_claim_extractor = case_claim_extractor
+        self._case_embedder = case_embedder
         self._claim_retriever = claim_retriever
         self._claim_annotation_version = claim_annotation_version
         self._evidence_retriever = evidence_retriever
         self._answer_generator = answer_generator
         self._product_repository = product_repository
         self._product_taxonomy = product_taxonomy
+        self._routine_planner = routine_planner
         if product_repository is not None and product_taxonomy is None:
             raise ValueError("상품 조회 구현을 교체할 때 지원 분류 목록도 함께 전달해야 합니다.")
 
     def create(self) -> DevelopmentAgentApplication:
         history = self._history or InMemoryChatHistoryRepository()
         evidence_retriever = self._evidence_retriever or FixtureEvidenceRetriever()
-        claim_retriever = self._claim_retriever or FixtureClaimRetriever()
+        case_retriever = self._case_retriever or FixtureCaseRetriever()
+        claim_retriever = self._claim_retriever
         checkpointer = InMemorySaver(serde=CheckpointSerializerFactory().create())
         evidence_pipeline = EvidencePipeline(
             retriever=evidence_retriever,
@@ -328,10 +386,17 @@ class DevelopmentAgentFactory:
                 products=self._product_repository or FixtureProductRepository(),
                 product_taxonomy=self._product_taxonomy or FixtureProductTaxonomy().create(),
                 ingredients=self._ingredient_repository or FixtureIngredientRepository(),
+                case_retriever=case_retriever,
+                case_reranker=self._case_reranker or FixtureCaseReranker(),
+                case_claim_extractor=(
+                    self._case_claim_extractor or FixtureCaseClaimExtractor()
+                ),
+                case_embedder=self._case_embedder or FixtureCaseEmbedder(),
                 claim_retriever=claim_retriever,
                 claim_annotation_version=self._claim_annotation_version,
+                use_offline_claim_path=claim_retriever is not None,
                 evidence_pipeline=evidence_pipeline,
-                routine_planner=FixtureRoutinePlanner(),
+                routine_planner=self._routine_planner or FixtureRoutinePlanner(),
                 checkpointer=checkpointer,
             ),
             execution_limits=self._execution_limits,
@@ -341,6 +406,7 @@ class DevelopmentAgentFactory:
             service=service,
             history=history,
             evidence_retriever=evidence_retriever,
+            case_retriever=case_retriever,
             claim_retriever=claim_retriever,
             checkpointer=checkpointer,
         )

@@ -1,6 +1,7 @@
 """최신 2-Layer DB 조회를 기존 Agent 포트로 변환하는 읽기 전용 어댑터."""
 
 from collections.abc import Sequence
+from hashlib import sha256
 from typing import ClassVar
 from uuid import UUID
 
@@ -9,6 +10,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agent.ports import IngredientRepository, ProductRepository
+from agent.rag.case_schemas import (
+    CaseDatasetSplit,
+    CaseMetadata,
+    CaseProvenance,
+    CaseSearchHit,
+    CaseSearchRequest,
+    CaseSearchResult,
+)
 from agent.rag.claim_schemas import (
     ClaimHit,
     ClaimIngestionDecision,
@@ -19,7 +28,7 @@ from agent.rag.claim_schemas import (
     ClaimStatementType,
     ClaimSupportStatus,
 )
-from agent.rag.ports import ClaimRetriever, HybridSearchBackend, TextEmbedder
+from agent.rag.ports import CaseRetriever, ClaimRetriever, HybridSearchBackend, TextEmbedder
 from agent.rag.schemas import (
     BGE_M3_EMBEDDING_DIMENSIONS,
     EmbeddingRequest,
@@ -43,6 +52,7 @@ from agent.rag.schemas import (
     ProductRecord,
     ProductSearchRequest,
     ProductSearchResult,
+    ProductTaxonomy,
     QuestionIntent,
     RagChunkDraft,
     RagConfidenceTier,
@@ -55,6 +65,8 @@ from backend.repositories.agent_ingredient_repository import (
 from backend.repositories.agent_product_repository import (
     AgentProductReadRepository,
     AgentProductRow,
+    AgentProductSearchRequest,
+    AgentProductTaxonomyRow,
 )
 from backend.repositories.claim_search_repository import (
     ClaimIngredientRow,
@@ -68,6 +80,81 @@ from backend.repositories.evidence_search_repository import (
     EvidenceTextSearchRequest,
     EvidenceVectorSearchRequest,
 )
+from backend.repositories.nia_case_document_repository import (
+    NiaCaseDocumentRepository,
+    NiaCaseSearchRow,
+    NiaCaseVectorSearchRequest,
+)
+
+
+class BackendNiaCaseRetriever(CaseRetriever):
+    """저장소의 NIA Case 벡터 검색 결과를 Agent 계약으로 변환한다."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def search(self, request: CaseSearchRequest) -> CaseSearchResult:
+        unsupported = self._unsupported_reason(request)
+        if unsupported is not None:
+            return CaseSearchResult(
+                status=LookupStatus.UNSUPPORTED,
+                error_message=unsupported,
+            )
+        try:
+            async with self._session_factory() as session:
+                rows = await NiaCaseDocumentRepository(session).search_by_vector(
+                    NiaCaseVectorSearchRequest(
+                        query_vector=request.query_embedding.values,
+                        text_version=request.text_version,
+                        embedding_model=request.embedding_model,
+                        limit=request.candidate_limit,
+                    )
+                )
+            hits = [self._to_hit(row) for row in rows]
+        except (SQLAlchemyError, RuntimeError, ValueError, ValidationError) as error:
+            return CaseSearchResult(
+                status=LookupStatus.ERROR,
+                error_message=f"NIA Case 검색 또는 DTO 변환에 실패했습니다: {error}",
+            )
+        if not hits:
+            return CaseSearchResult(status=LookupStatus.NO_RESULTS)
+        return CaseSearchResult(status=LookupStatus.SUCCESS, hits=hits)
+
+    def _unsupported_reason(self, request: CaseSearchRequest) -> str | None:
+        if request.embedding_model != LocalEmbeddingModel.BGE_M3.value:
+            return (
+                "NIA Case 저장 벡터와 질의 임베딩 모델이 다릅니다: "
+                f"expected={LocalEmbeddingModel.BGE_M3.value}, "
+                f"actual={request.embedding_model}"
+            )
+        if len(request.query_embedding.values) != BGE_M3_EMBEDDING_DIMENSIONS:
+            return (
+                "NIA Case 저장 벡터와 질의 임베딩 차원이 다릅니다: "
+                f"expected={BGE_M3_EMBEDDING_DIMENSIONS}, "
+                f"actual={len(request.query_embedding.values)}"
+            )
+        return None
+
+    def _to_hit(self, row: NiaCaseSearchRow) -> CaseSearchHit:
+        return CaseSearchHit(
+            case_id=row.case_id,
+            page_content=row.page_content,
+            text_version=row.text_version,
+            dataset_split=CaseDatasetSplit(row.dataset_split.value),
+            metadata=CaseMetadata(
+                target_concern=row.target_concern,
+                gender=row.gender,
+                age=row.age,
+                skin_type=row.skin_type,
+                skin_concerns=row.skin_concerns,
+            ),
+            provenance=CaseProvenance(
+                archive_name=row.source_archive_name,
+                member_name=row.source_member_name,
+                line_number=row.source_line_number,
+            ),
+            vector_similarity=row.vector_similarity,
+        )
 
 
 class TwoLayerClaimRetriever(ClaimRetriever):
@@ -180,6 +267,9 @@ class EvidenceTopicIntentMapper:
         "regulation": QuestionIntent.REGULATION,
         "usage": QuestionIntent.USAGE_FREQUENCY,
         "combination": QuestionIntent.COMBINATION,
+        # MFDS 등의 규제/사용법 claim_topics를 Agent 질문 축으로 지원
+        "concentration_regulation": QuestionIntent.REGULATION,
+        "usage_instruction": QuestionIntent.USAGE_FREQUENCY,
     }
 
     def map(self, topics: list[str]) -> list[QuestionIntent]:
@@ -200,8 +290,17 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
         "mfds": EvidenceSourceType.MFDS,
         "cir": EvidenceSourceType.CIR,
     }
+    _DATABASE_SOURCE_TYPES: ClassVar[dict[EvidenceSourceType, str]] = {
+        EvidenceSourceType.PAPER: "pubmed_abstract",
+        EvidenceSourceType.MFDS: "mfds",
+        EvidenceSourceType.CIR: "cir",
+    }
+    _CONFIDENCE_TIERS: ClassVar[dict[str, RagConfidenceTier]] = {
+        "official_regulatory": RagConfidenceTier.OFFICIAL_REGULATORY,
+        "expert_reviewed": RagConfidenceTier.STRUCTURED_KNOWLEDGE,
+        "peer_reviewed_study": RagConfidenceTier.STRUCTURED_KNOWLEDGE,
+    }
     _VERIFIED_STATUS: ClassVar[str] = "verified"
-    _PEER_REVIEWED_LEVEL: ClassVar[str] = "peer_reviewed_study"
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -216,6 +315,7 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
             )
         try:
             target_ids = [UUID(target_id) for target_id in request.request.target_ids]
+            source_types = self._database_source_types(request)
             async with self._session_factory() as session:
                 repository = EvidenceSearchRepository(session)
                 vector_rows = await repository.search_by_vector(
@@ -223,6 +323,7 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
                         query_vector=request.vector.values,
                         embedding_model=request.embedding_model,
                         target_ids=target_ids,
+                        source_types=source_types,
                         limit=request.request.limit,
                     )
                 )
@@ -231,6 +332,7 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
                         query_text=request.request.query,
                         embedding_model=request.embedding_model,
                         target_ids=target_ids,
+                        source_types=source_types,
                         limit=request.request.limit,
                     )
                 )
@@ -265,18 +367,38 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
                 UUID(target_id)
         except ValueError:
             return "Evidence 대상 ID는 UUID여야 합니다."
+        source_plan = request.request.source_plan
+        if source_plan is not None:
+            unsupported = [
+                source_type.value
+                for source_type in source_plan.primary_source_types
+                if source_type not in self._DATABASE_SOURCE_TYPES
+            ]
+            if unsupported:
+                return "현재 DB가 지원하지 않는 Evidence 출처 유형입니다: " + ", ".join(
+                    unsupported
+                )
         return None
+
+    def _database_source_types(self, request: HybridSearchRequest) -> list[str] | None:
+        source_plan = request.request.source_plan
+        if source_plan is None:
+            return None
+        return [
+            self._DATABASE_SOURCE_TYPES[source_type]
+            for source_type in source_plan.primary_source_types
+        ]
 
     def _to_retrieved(self, row: EvidenceSearchRow, vector: bool) -> RetrievedChunk:
         record = self._to_record(row)
-        confidence = (
-            RagConfidenceTier.STRUCTURED_KNOWLEDGE
-            if row.evidence_level == self._PEER_REVIEWED_LEVEL
-            else RagConfidenceTier.UNKNOWN
+        confidence = self._CONFIDENCE_TIERS.get(
+            row.evidence_level.casefold(),
+            RagConfidenceTier.UNKNOWN,
         )
         draft = RagChunkDraft(
             chunk_id=row.chunk_id,
-            field_id=row.section,
+            # MFDS 청크처럼 section이 NULL인 경우 기본 필드 식별자 'content'를 지정한다
+            field_id=row.section or "content",
             content=row.content,
             evidence=record,
             intents=self._intent_mapper.map(row.claim_topics),
@@ -311,7 +433,8 @@ class TwoLayerEvidenceSearchBackend(HybridSearchBackend):
             source_id=row.source_id,
             source_title=row.source_title,
             text=row.content,
-            locator=f"{row.section}:{row.chunk_index}",
+            # section이 없는 MFDS 청크는 chunk index 기반 locator를 조립한다
+            locator=f"{row.section}:{row.chunk_index}" if row.section else f"chunk:{row.chunk_index}",
             target_ids=target_ids,
             conditions=EvidenceConditions(
                 formulation=row.formulation_type,
@@ -386,6 +509,62 @@ class TwoLayerIngredientRepository(IngredientRepository):
         )
 
 
+class TwoLayerProductTaxonomyProvider:
+    """DB에 실제 적재된 상품 분류를 Agent의 동적 Taxonomy로 변환한다."""
+
+    VERSION_PREFIX: ClassVar[str] = "product-taxonomy/db-v1"
+    VERSION_DIGEST_LENGTH: ClassVar[int] = 12
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def load(self) -> ProductTaxonomy:
+        try:
+            async with self._session_factory() as session:
+                rows = await AgentProductReadRepository(session).list_taxonomy()
+        except (SQLAlchemyError, RuntimeError, ValueError, ValidationError) as error:
+            raise RuntimeError(f"상품 Taxonomy 조회에 실패했습니다: {error}") from error
+        if not rows:
+            raise RuntimeError("상품 Taxonomy로 사용할 DB 분류값이 없습니다.")
+
+        categories = [
+            ProductCategory(
+                code=service_category,
+                name=service_category,
+                aliases=self._aliases(rows, service_category),
+            )
+            for service_category in sorted({row.service_category for row in rows})
+        ]
+        return ProductTaxonomy(
+            version=self._version(rows),
+            categories=categories,
+            # DB의 세부 제품 유형을 제형·사용감으로 추측하지 않기 위해 두 축은 비워 둔다.
+            textures=[],
+            skin_feels=[],
+        )
+
+    def _aliases(
+        self,
+        rows: list[AgentProductTaxonomyRow],
+        service_category: str,
+    ) -> list[str]:
+        return sorted(
+            {
+                row.product_type_normalized
+                for row in rows
+                if row.service_category == service_category
+            }
+        )
+
+    def _version(self, rows: list[AgentProductTaxonomyRow]) -> str:
+        signature = "|".join(
+            f"{row.service_category}:{row.product_type_normalized}:{row.product_count}"
+            for row in rows
+        )
+        digest = sha256(signature.encode("utf-8")).hexdigest()[: self.VERSION_DIGEST_LENGTH]
+        return f"{self.VERSION_PREFIX}:{digest}"
+
+
 class TwoLayerProductRepository(ProductRepository):
     """confirmed 성분 연결이 있는 상품만 Agent 추천 후보로 노출한다."""
 
@@ -407,9 +586,16 @@ class TwoLayerProductRepository(ProductRepository):
             )
         try:
             async with self._session_factory() as session:
-                rows = await AgentProductReadRepository(session).search_by_ingredients(
-                    ingredient_ids,
-                    request.limit,
+                rows = await AgentProductReadRepository(session).search(
+                    AgentProductSearchRequest(
+                        ingredient_ids=ingredient_ids,
+                        service_category=(
+                            request.filters.category.code
+                            if request.filters.category is not None
+                            else None
+                        ),
+                        limit=request.limit,
+                    )
                 )
             products = [self._to_record(row) for row in rows]
         except (SQLAlchemyError, RuntimeError, ValueError, ValidationError) as error:

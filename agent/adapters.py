@@ -19,6 +19,23 @@ from agent.ports import (
     RoutinePlanner,
     TurnStorageError,
 )
+from agent.rag.case_claim_schemas import (
+    CaseClaimExtractionRequest,
+    CaseClaimExtractionResult,
+    CaseClaimType,
+    ExtractedCaseClaim,
+    ExtractedIngredientMention,
+)
+from agent.rag.case_schemas import (
+    CaseDatasetSplit,
+    CaseMetadata,
+    CaseProvenance,
+    CaseRerankRequest,
+    CaseRerankResult,
+    CaseSearchHit,
+    CaseSearchRequest,
+    CaseSearchResult,
+)
 from agent.rag.claim_schemas import (
     ClaimHit,
     ClaimIngestionDecision,
@@ -29,12 +46,23 @@ from agent.rag.claim_schemas import (
     ClaimStatementType,
     ClaimSupportStatus,
 )
-from agent.rag.ports import ClaimRetriever, EvidenceRetriever
+from agent.rag.ports import (
+    CaseClaimExtractor,
+    CaseReranker,
+    CaseRetriever,
+    ClaimRetriever,
+    EvidenceRetriever,
+    TextEmbedder,
+)
 from agent.rag.retrieval.ingredient_mention_resolver import IngredientMentionResolver
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.schemas import (
+    BGE_M3_EMBEDDING_DIMENSIONS,
     ConstraintSource,
     DayPeriod,
+    EmbeddingRequest,
+    EmbeddingResult,
+    EmbeddingVector,
     EvidenceConditions,
     EvidenceRecord,
     EvidenceReviewStatus,
@@ -45,6 +73,7 @@ from agent.rag.schemas import (
     IngredientResolveRequest,
     IngredientResolveResult,
     LocalEmbeddingModel,
+    LocalRerankerModel,
     LookupStatus,
     ProductCandidateSet,
     ProductCategory,
@@ -514,6 +543,100 @@ class FixtureClaimRetriever(ClaimRetriever):
                     annotation_version=request.annotation_version,
                     decision=ClaimIngestionDecision.INGESTIBLE_STRUCTURED,
                     support_status=ClaimSupportStatus.UNVERIFIED,
+                )
+            ],
+        )
+
+
+class FixtureCaseEmbedder(TextEmbedder):
+    """개발 그래프에서 외부 모델 없이 Case 검색 계약을 실행한다."""
+
+    async def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
+        return EmbeddingResult(
+            model=LocalEmbeddingModel.BGE_M3.value,
+            vectors=[
+                EmbeddingVector(values=[1.0] * BGE_M3_EMBEDDING_DIMENSIONS)
+                for _ in request.texts
+            ],
+        )
+
+
+class FixtureCaseRetriever(CaseRetriever):
+    """피부 고민형 개발 질문에 출처가 있는 NIA Case 한 건을 반환한다."""
+
+    async def search(self, request: CaseSearchRequest) -> CaseSearchResult:
+        query = request.query.casefold()
+        if not any(keyword in query for keyword in ("피지", "좁쌀", "여드름", "모공")):
+            return CaseSearchResult(status=LookupStatus.NO_RESULTS)
+        return CaseSearchResult(
+            status=LookupStatus.SUCCESS,
+            hits=[
+                CaseSearchHit(
+                    case_id="fixture-nia-case-1",
+                    page_content=(
+                        "[질문]\n피지가 많고 좁쌀 여드름이 고민입니다.\n"
+                        "[답변]\n나이아신아마이드는 피지 조절 관련 사례에서 언급됩니다."
+                    ),
+                    text_version=request.text_version,
+                    dataset_split=CaseDatasetSplit.TRAINING,
+                    metadata=CaseMetadata(
+                        target_concern="피지",
+                        gender="여성",
+                        age=25,
+                        skin_type="지성",
+                        skin_concerns=["피지", "여드름"],
+                    ),
+                    provenance=CaseProvenance(
+                        archive_name="fixture-training.zip",
+                        member_name="fixture.jsonl",
+                        line_number=1,
+                    ),
+                    vector_similarity=1.0,
+                )
+            ],
+        )
+
+
+class FixtureCaseReranker(CaseReranker):
+    """개발 Case 후보의 벡터 순서를 유지하면서 rerank 점수를 명시한다."""
+
+    async def rerank(self, request: CaseRerankRequest) -> CaseRerankResult:
+        hits = [
+            hit.model_copy(update={"rerank_score": hit.vector_similarity})
+            for hit in request.candidates[: request.limit]
+        ]
+        return CaseRerankResult(
+            model=LocalRerankerModel.BGE_RERANKER_V2_M3.value,
+            hits=hits,
+        )
+
+
+class FixtureCaseClaimExtractor(CaseClaimExtractor):
+    """개발 Case 원문에서 고정 exact quote Claim을 반환한다."""
+
+    _QUOTE = "나이아신아마이드는 피지 조절 관련 사례에서 언급됩니다."
+
+    async def extract(
+        self,
+        request: CaseClaimExtractionRequest,
+    ) -> CaseClaimExtractionResult:
+        case = next((item for item in request.cases if self._QUOTE in item.page_content), None)
+        if case is None:
+            return CaseClaimExtractionResult(
+                status=LookupStatus.NO_RESULTS,
+                model="fixture-case-claim-extractor",
+            )
+        return CaseClaimExtractionResult(
+            status=LookupStatus.SUCCESS,
+            model="fixture-case-claim-extractor",
+            claims=[
+                ExtractedCaseClaim(
+                    case_id=case.case_id,
+                    claim_type=CaseClaimType.INGREDIENT_EFFECT,
+                    ingredients=[
+                        ExtractedIngredientMention(raw_name="나이아신아마이드")
+                    ],
+                    source_quote=self._QUOTE,
                 )
             ],
         )

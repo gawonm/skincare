@@ -1,38 +1,65 @@
-"""`nia_qa_10s_30s.jsonl`에는 없는 `source_archive`/`dataset_split`을,
-`data/manual_review/nia/nia_structural_audit_9000.jsonl`(9,000건 전체 구조 감사 결과)에서
-`record_id`로 join해 보강한다. 원본 zip을 다시 파싱하지 않는다.
+"""NIA 원본 record_id를 annotation provenance와 연결한다.
+
+과거 구조 감사 JSONL과 새 production corpus provenance JSONL을 같은 검증 경계로 읽는다.
 """
 
-import json
+from enum import StrEnum
 from pathlib import Path
-from typing import NamedTuple
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from data.scripts.nia_labeling_schemas import NiaDatasetSplit
 
 _AUDIT_PATH = Path("data/manual_review/nia/nia_structural_audit_9000.jsonl")
 
 
-class NiaRecordProvenance(NamedTuple):
-    dataset_split: str
-    source_archive: str
-    info_target_concern: str
+class NiaRecordRiskLevel(StrEnum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+    UNASSESSED = "UNASSESSED"
+
+
+class NiaRecordProvenance(BaseModel):
+    # 새 provenance의 원본 위치 필드는 production processor가 아직 사용하지 않으므로 보존하되
+    # 이 호환 모델에서는 무시한다. 권위 있는 전체 형식은 annotation_corpus_schemas가 소유한다.
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    record_id: str = Field(min_length=1)
+    dataset_split: NiaDatasetSplit
+    source_archive: str = Field(min_length=1)
+    info_target_concern: str = Field(min_length=1)
     archive_mismatch: bool
-    risk_level: str
-    review_reasons: tuple[str, ...]
+    risk_level: NiaRecordRiskLevel = NiaRecordRiskLevel.UNASSESSED
+    review_reasons: tuple[str, ...] = ()
+
+
+class NiaRecordProvenanceError(RuntimeError):
+    pass
 
 
 class NiaRecordProvenanceIndex:
     def __init__(self, audit_path: Path = _AUDIT_PATH) -> None:
         self._by_record_id: dict[str, NiaRecordProvenance] = {}
-        with audit_path.open("r", encoding="utf-8") as file:
-            for line in file:
-                row = json.loads(line)
-                self._by_record_id[row["record_id"]] = NiaRecordProvenance(
-                    dataset_split=row["dataset_split"],
-                    source_archive=row["source_archive"],
-                    info_target_concern=row["info_target_concern"],
-                    archive_mismatch=row["archive_mismatch"],
-                    risk_level=row["risk_level"],
-                    review_reasons=tuple(row["review_reasons"]),
-                )
+        try:
+            with audit_path.open("r", encoding="utf-8") as input_file:
+                for line_number, line in enumerate(input_file, start=1):
+                    try:
+                        provenance = NiaRecordProvenance.model_validate_json(line)
+                    except ValidationError as exc:
+                        raise NiaRecordProvenanceError(
+                            f"provenance 스키마 오류: {audit_path}:{line_number}: {exc}"
+                        ) from exc
+                    if provenance.record_id in self._by_record_id:
+                        raise NiaRecordProvenanceError(
+                            f"provenance record_id 중복: {audit_path}:{line_number}: "
+                            f"{provenance.record_id}"
+                        )
+                    self._by_record_id[provenance.record_id] = provenance
+        except OSError as exc:
+            raise NiaRecordProvenanceError(
+                f"provenance 파일을 읽지 못했습니다: {audit_path}: {exc}"
+            ) from exc
 
     def get(self, record_id: str) -> NiaRecordProvenance | None:
         return self._by_record_id.get(record_id)

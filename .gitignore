@@ -68,6 +68,8 @@ data/
 !/data/scripts/
 /data/scripts/*
 !/data/scripts/*.py
+!/data/scripts/nia_case_rag/
+!/data/scripts/nia_case_rag/*.py
 uploads/
 models_cache/
 *.faiss

@@ -15,6 +15,8 @@ from pydantic import (
 
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_ROUTINE_FREQUENCY = 2
+MAX_ROUTINE_RULES = 32
+MAX_ROUTINE_PLACEMENTS = 64
 DEFAULT_EMBEDDING_BATCH_SIZE = 16
 DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE = 100
 DEFAULT_OPENAI_EMBEDDING_DIMENSIONS = 1536
@@ -39,6 +41,7 @@ class LookupStatus(StrEnum):
 
 class EvidenceQueryOrigin(StrEnum):
     CLAIM_HIT = "claim_hit"
+    CASE_CLAIM = "case_claim"
     DIRECT_QUERY = "direct_query"
 
 
@@ -100,7 +103,10 @@ class EvidenceQueryAnchor(RagModel):
 
     @model_validator(mode="after")
     def validate_origin_and_scope(self) -> Self:
-        if self.origin is EvidenceQueryOrigin.CLAIM_HIT and self.origin_ref is None:
+        if self.origin in (
+            EvidenceQueryOrigin.CLAIM_HIT,
+            EvidenceQueryOrigin.CASE_CLAIM,
+        ) and self.origin_ref is None:
             raise ValueError("Claim 유래 Evidence 질의에는 origin_ref가 필수입니다.")
         if self.origin is EvidenceQueryOrigin.DIRECT_QUERY and self.origin_ref is not None:
             raise ValueError("직접 Evidence 질의의 origin_ref는 반드시 None이어야 합니다.")
@@ -193,6 +199,30 @@ class EvidenceSourceType(StrEnum):
     HETIONET = "hetionet"
 
 
+class EvidenceSourceLane(StrEnum):
+    EFFICACY = "efficacy"
+    SAFETY = "safety"
+    REGULATION = "regulation"
+
+
+class EvidenceSourcePlan(RagModel):
+    lane: EvidenceSourceLane
+    primary_source_types: list[EvidenceSourceType] = Field(min_length=1)
+    fallback_source_types: list[EvidenceSourceType] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_source_types(self) -> Self:
+        primary = set(self.primary_source_types)
+        fallback = set(self.fallback_source_types)
+        if len(primary) != len(self.primary_source_types):
+            raise ValueError("주 출처 목록에 중복된 출처 유형이 있습니다.")
+        if len(fallback) != len(self.fallback_source_types):
+            raise ValueError("보완 출처 목록에 중복된 출처 유형이 있습니다.")
+        if primary.intersection(fallback):
+            raise ValueError("주 출처와 보완 출처는 중복될 수 없습니다.")
+        return self
+
+
 class EvidenceTextKind(StrEnum):
     EXCERPT = "excerpt"
     SUMMARY = "summary"
@@ -229,8 +259,32 @@ class Weekday(StrEnum):
 
 class ConstraintSource(StrEnum):
     PRODUCT_DIRECTIONS = "product_directions"
+    EVIDENCE = "evidence"
+    CASE_USAGE_GUIDANCE = "case_usage_guidance"
     USER = "user"
     SERVICE_POLICY = "service_policy"
+
+
+class RoutineRuleSourceKind(StrEnum):
+    PRODUCT_DIRECTIONS = "product_directions"
+    EVIDENCE = "evidence"
+    # 기존 직렬화 값을 읽을 수 있어야 과거 루틴 요청과의 호환성이 깨지지 않는다.
+    VERIFIED_EVIDENCE = "verified_evidence"
+    UNREVIEWED_EVIDENCE = "unreviewed_evidence"
+    CASE_USAGE_GUIDANCE = "case_usage_guidance"
+
+
+class RoutineRuleType(StrEnum):
+    ALLOWED_PERIOD = "allowed_period"
+    MAX_FREQUENCY_PER_WEEK = "max_frequency_per_week"
+    AVOID_SAME_PERIOD = "avoid_same_period"
+    ORDER_BEFORE = "order_before"
+    WARNING = "warning"
+
+
+class RoutineRuleEnforcement(StrEnum):
+    REQUIRED = "required"
+    WARNING = "warning"
 
 
 class IngredientResolveRequest(RagModel):
@@ -340,6 +394,7 @@ class EvidenceSearchRequest(RagModel):
     query: str = Field(min_length=1)
     target_ids: list[str] = Field(default_factory=list)
     limit: int = Field(default=DEFAULT_SEARCH_LIMIT, ge=1)
+    source_plan: EvidenceSourcePlan | None = None
     # 제품과 전성분을 한 집합으로 합치면 병용 대상 두 개를 복원할 수 없다.
     combination_target_ids: list[str] = Field(default_factory=list)
 
@@ -662,6 +717,84 @@ class RoutineConstraint(RagModel):
     source_id: str | None = None
 
 
+class CaseUsageGuidance(RagModel):
+    """NIA Case의 사용법 구간 중 표준 성분과 연결된 참고 정보."""
+
+    source_id: str = Field(min_length=1)
+    case_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    ingredient_ids: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_ingredient_ids(self) -> Self:
+        if len(self.ingredient_ids) != len(set(self.ingredient_ids)):
+            raise ValueError("Case 사용법의 성분 ID는 중복될 수 없습니다.")
+        return self
+
+
+class RoutineRuleSource(RagModel):
+    source_id: str = Field(min_length=1)
+    source_kind: RoutineRuleSourceKind
+    text: str = Field(min_length=1)
+    applicable_product_ids: list[str] = Field(min_length=1)
+
+
+class RoutineRuleCandidate(RagModel):
+    rule_type: RoutineRuleType
+    product_ids: list[str] = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+    source_quote: str = Field(min_length=1)
+    rationale: str = Field(min_length=1)
+    allowed_periods: list[DayPeriod] = Field(default_factory=list)
+    max_frequency_per_week: int | None = Field(default=None, ge=1, le=7)
+    related_product_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_rule_payload(self) -> Self:
+        if self.rule_type is RoutineRuleType.ALLOWED_PERIOD and not self.allowed_periods:
+            raise ValueError("allowed_period 규칙에는 허용 시간대가 필요합니다.")
+        if (
+            self.rule_type is RoutineRuleType.MAX_FREQUENCY_PER_WEEK
+            and self.max_frequency_per_week is None
+        ):
+            raise ValueError("max_frequency_per_week 규칙에는 주당 횟수가 필요합니다.")
+        if self.rule_type in {
+            RoutineRuleType.AVOID_SAME_PERIOD,
+            RoutineRuleType.ORDER_BEFORE,
+        } and not self.related_product_ids:
+            raise ValueError(f"{self.rule_type.value} 규칙에는 상대 제품이 필요합니다.")
+        return self
+
+
+class RoutineRule(RoutineRuleCandidate):
+    source_kind: RoutineRuleSourceKind
+    enforcement: RoutineRuleEnforcement
+
+
+class RoutineRuleModelOutput(RagModel):
+    rules: list[RoutineRuleCandidate] = Field(
+        default_factory=list,
+        max_length=MAX_ROUTINE_RULES,
+    )
+
+
+class RoutineRuleGenerationRequest(RagModel):
+    user_request: str = Field(min_length=1)
+    products: list[ProductRecord] = Field(min_length=1)
+    sources: list[RoutineRuleSource] = Field(default_factory=list)
+
+
+class RoutineRuleCompilationRequest(RagModel):
+    products: list[ProductRecord] = Field(min_length=1)
+    sources: list[RoutineRuleSource] = Field(default_factory=list)
+    candidates: list[RoutineRuleCandidate] = Field(default_factory=list)
+
+
+class RoutineRuleCompilationResult(RagModel):
+    rules: list[RoutineRule] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RoutinePlacement(RagModel):
     weekday: Weekday
     period: DayPeriod
@@ -676,24 +809,56 @@ class RoutinePlan(RagModel):
     version: int = Field(ge=1)
     placements: list[RoutinePlacement] = Field(default_factory=list)
     constraints: list[RoutineConstraint] = Field(default_factory=list)
+    rules: list[RoutineRule] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     changes: list[str] = Field(default_factory=list)
     is_demo: bool = True
+
+
+class RoutineDraftPlacement(RagModel):
+    product_id: str = Field(min_length=1)
+    weekday: Weekday
+    period: DayPeriod
+    order: int = Field(ge=1)
+    reason: str = Field(min_length=1)
+
+
+class RoutineDraftModelOutput(RagModel):
+    placements: list[RoutineDraftPlacement] = Field(
+        default_factory=list,
+        max_length=MAX_ROUTINE_PLACEMENTS,
+    )
+
+
+class RoutineDraftGenerationRequest(RagModel):
+    user_request: str = Field(min_length=1)
+    products: list[ProductRecord] = Field(min_length=1)
+    excluded_weekdays: list[Weekday] = Field(default_factory=list)
+    frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
+    rules: list[RoutineRule] = Field(default_factory=list)
+    current_plan: RoutinePlan | None = None
 
 
 class RoutinePlanRequest(RagModel):
     chat_room_id: str = Field(min_length=1)
     request_id: str = Field(min_length=1)
     products: list[ProductRecord] = Field(min_length=1)
+    user_request: str = Field(min_length=1)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
     frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
+    evidence_records: list[EvidenceRecord] = Field(default_factory=list)
+    case_usage_guidance: list[CaseUsageGuidance] = Field(default_factory=list)
     current_plan: RoutinePlan | None = None
 
 
 class RoutineValidationRequest(RagModel):
     plan: RoutinePlan
+    products: list[ProductRecord] = Field(min_length=1)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
+    frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
 
 
 class RoutineValidationResult(RagModel):
     valid: bool
     violations: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

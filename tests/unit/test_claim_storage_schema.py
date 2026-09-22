@@ -132,9 +132,12 @@ def test_claim_chunk_has_no_matched_ingredient_unique_constraint_yet() -> None:
 
 
 _CLAIM_MIGRATION_REVISION = "3165318c750d"
+_CHAT_MIGRATION_REVISION = "2063ce3feae3"
+_NIA_CASE_MIGRATION_REVISION = "a7d3c91e5f42"
+_SCHEMA_MERGE_REVISION = "9f4c2a7d8e61"
 
 
-def test_alembic_single_head_after_claim_migration() -> None:
+def test_alembic_single_head_after_chat_and_nia_case_merge() -> None:
     config = Config(str(_REPO_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(_REPO_ROOT / "migrations"))
     script = ScriptDirectory.from_config(config)
@@ -142,7 +145,14 @@ def test_alembic_single_head_after_claim_migration() -> None:
     assert len(heads) == 1, f"단일 head가 아니다: {heads}"
 
     # head 를 특정 리비전에 고정하면 이후 migration 이 하나만 추가돼도 실패한다.
-    # 그래서 claim migration 이 여전히 기대한 부모 위에 있는지만 확인한다
+    # 대신 merge 지점이 Chat과 NIA 양쪽을 모두 부모로 보존하는지 확인한다.
+    merge_revision = script.get_revision(_SCHEMA_MERGE_REVISION)
+    assert merge_revision is not None
+    assert set(merge_revision.down_revision) == {
+        _CHAT_MIGRATION_REVISION,
+        _NIA_CASE_MIGRATION_REVISION,
+    }
+
     claim_revision = script.get_revision(_CLAIM_MIGRATION_REVISION)
     assert claim_revision is not None
     assert claim_revision.down_revision == "11cdc111cf27"

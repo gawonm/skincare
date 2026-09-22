@@ -5,11 +5,11 @@ from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import SecretStr, ValidationError
 
 from agent.adapters import (
+    FixtureCaseRetriever,
     FixtureClaimRetriever,
     FixtureIngredientRepository,
     FixtureProductRepository,
     FixtureProductTaxonomy,
-    FixtureRoutinePlanner,
     InMemoryChatHistoryRepository,
 )
 from agent.factory import (
@@ -147,7 +147,7 @@ class TestAgentLlmConfigAndAssembly:
             products=FixtureProductRepository(),
             product_taxonomy=FixtureProductTaxonomy().create(),
             ingredients=FixtureIngredientRepository(),
-            routine_planner=FixtureRoutinePlanner(),
+            case_retriever=FixtureCaseRetriever(),
             claim_retriever=FixtureClaimRetriever(),
             search_backend=DummyHybridSearchBackend(),
             checkpointer=InMemorySaver(),
@@ -156,6 +156,9 @@ class TestAgentLlmConfigAndAssembly:
         assert app.service is not None
         assert app.embedder is not None
         assert app.evidence_retriever is not None
+        assert app.case_retriever is not None
+        assert app.case_reranker is not None
+        assert app.case_claim_extractor is not None
 
 
 class TestAgentConfigurationAssembler:
@@ -242,7 +245,7 @@ class TestAgentConfigurationAssembler:
         assert config.claim_annotation_version == "fixture-claim-v1"
         assert config.embedding.output_dimensions() == 1024
 
-    def test_assembler_rejects_missing_claim_annotation_version(self) -> None:
+    def test_assembler_allows_missing_claim_annotation_version_for_case_path(self) -> None:
         from backend.services.agent_configuration import AgentConfigurationAssembler
         from core.config import (
             AgentSettings,
@@ -261,6 +264,7 @@ class TestAgentConfigurationAssembler:
             retrieval=RagRetrievalSettings(free_text_min_vector_similarity=0.45),
         )
 
-        with pytest.raises(RuntimeError, match="claim_annotation_version"):
-            AgentConfigurationAssembler().create(openai=None, agent=agent_settings)
+        config = AgentConfigurationAssembler().create(openai=None, agent=agent_settings)
+
+        assert config.claim_annotation_version is None
 

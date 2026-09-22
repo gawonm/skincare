@@ -434,3 +434,227 @@ backend 구현이 끝나면 data 파트가 `data/scripts/ingest_product_catalog.
   결정하며, 상품 조회 API 형태가 정해지면 별도 backend→front 계약에 반영한다.
 - 합의 후 검증: 기존 CSV 호환성, 애매한 상품명, 구체적 표현 우선순위, 모든 유형의 그룹 매핑,
   두 필드의 신규·갱신 저장, 재실행 무변경, 분류 전용 갱신 시 다른 상품 정보 보존.
+
+## NIA Case Document 적재 계약 — 2026-09-20 구현 반영
+
+> 상태: **사용자 승인 완료, Model·Migration·Repository·Service/CLI 구현 완료**
+
+이 절은 Data가 생성한 NIA Case JSONL을 Backend가 BGE-M3로 임베딩해 DB에 적재하는 경계를
+정의한다. 기존 상품 카탈로그 저장 계약과 실행 흐름은 분리한다.
+
+### 부르는 대상
+
+```python
+class NiaCaseIngestionService:
+    async def ingest_jsonl(
+        self,
+        request: NiaCaseIngestionRequest,
+    ) -> NiaCaseIngestionResult: ...
+```
+
+- 소유 위치: `backend/services/nia_case_ingestion_service.py`
+- DB 읽기·쓰기: `backend/repositories/nia_case_document_repository.py`
+- 임베딩: Agent의 기존 `TextEmbedder` 포트를 주입받아 사용
+- 임베딩 모델: `BAAI/bge-m3`
+- 차원: 1,024
+
+### 입력과 출력
+
+Backend 입력·출력 타입 소유 위치는 `backend/services/nia_case_ingestion_schemas.py`로 제안한다.
+Data의 `NiaCaseExportRecord`를 직접 import하지 않고 JSONL 경계에서 같은 계약을 검증한다.
+
+```python
+from enum import StrEnum
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class NiaCaseIngestionMode(StrEnum):
+    UPSERT = "upsert"
+
+
+class NiaCaseIngestionRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    input_path: Path
+    manifest_path: Path
+    mode: NiaCaseIngestionMode = NiaCaseIngestionMode.UPSERT
+    batch_size: int = Field(default=16, ge=1)
+
+
+class NiaCaseIngestionResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    total_count: int = Field(ge=0)
+    inserted_count: int = Field(ge=0)
+    updated_count: int = Field(ge=0)
+    unchanged_count: int = Field(ge=0)
+    embedded_count: int = Field(ge=0)
+    text_version: str = Field(min_length=1)
+    embedding_model: str = Field(min_length=1)
+```
+
+삭제·전체 교체 모드는 이번 계약에 넣지 않는다. 재실행은
+`(case_id, text_version, embedding_model)` 자연키 기준 upsert이며, `content_hash`가 같은 행은
+기존 임베딩을 재사용한다.
+
+### 저장 매핑
+
+| Data JSONL | `nia_case_document` | 규칙 |
+| --- | --- | --- |
+| `document.case_id` | `case_id` | 원문 ID 그대로 |
+| `dataset_split` | `dataset_split` | `training`/`validation`만 허용 |
+| `source.archive_name` | `source_archive_name` | 절대 경로 금지 |
+| `source.member_name` | `source_member_name` | 직접 JSONL이면 NULL 가능 |
+| `source.line_number` | `source_line_number` | 1 이상 |
+| `document.page_content` | `page_content` | 표시·문맥용 원문 |
+| `document.embedding_text` | `embedding_text` | BGE-M3 입력 |
+| `document.text_version` | `text_version` | 정확히 일치하는 버전만 검색 |
+| `document.metadata.*` | 명시 필터 컬럼 + `metadata` JSONB | 원본 metadata 전체도 보존 |
+| SHA-256(`embedding_text`) | `content_hash` | 변경·재임베딩 판정 |
+| 임베딩 결과 | `embedding` | `vector(1024)` |
+| 주입된 모델 식별자 | `embedding_model` | `BAAI/bge-m3` |
+
+`metadata.evidence_sources`는 JSONB에 보존하지만 Evidence 테이블로 복사하거나 Citation으로
+변환하지 않는다.
+
+### 트랜잭션과 실패 계약
+
+- Service가 batch별 트랜잭션 경계를 소유하고 Repository는 `commit`하지 않는다.
+- manifest의 SHA-256, 건수, `text_version`이 JSONL과 다르면 임베딩 전에 실패한다.
+- BGE-M3가 아닌 모델 또는 1,024가 아닌 벡터는 저장하지 않는다.
+- 한 batch에서 검증·임베딩·저장 중 오류가 나면 그 batch는 rollback하고 원인을 포함한 예외를
+  올린다. 이전에 완료된 batch 수는 실행 결과 로그로 명확히 남긴다.
+- 중복 자연키가 한 JSONL 안에 있으면 마지막 값을 덮어쓰지 않고 입력 오류로 실패한다.
+- DB 스키마가 없거나 Alembic revision이 맞지 않으면 자동 생성하지 않고 실행을 중단한다.
+
+### 운영/평가 분리
+
+- 런타임 Case 검색은 `training`과 `validation`을 합친 3,581건 전체를 사용한다.
+- `dataset_split`은 provenance와 분석용 metadata로 보존하되 운영 검색 제외 조건으로 쓰지 않는다.
+- 검색 평가는 corpus 문서를 빼두는 방식이 아니라 별도 골든 질의·정답 세트를 만들어 수행한다.
+- 후속 offline Claim index를 사용할 때 Case와 Claim 연결은 FK가 아니라
+  `nia_case_document.case_id = claim_document.source_record_id` 동등 조건을 사용한다.
+- 후속 Claim 조회에는 명시적인 `annotation_version`을 추가 조건으로 사용한다.
+
+## NIA Claim production 산출물 적재 계약 — 2026-09-21 02:19 KST
+
+> 상태: **구현 자산 보존, 현재 P3 기본 경로에서는 실행 보류**
+
+이 절은 AI Hub 원본에서 생성한 오프라인 Claim annotation을 Data가 파일 산출물로 내보내고,
+Backend가 BGE-M3로 임베딩하여 기존 `claim_document` / `claim_chunk` /
+`claim_chunk_ingredient`에 적재하는 선택 경계를 정의한다.
+
+2026-09-21 P3 방향 변경으로 피부 고민형 기본 경로는 Case Top-3 원문에서 런타임 LLM이
+exact quote 기반 Claim을 추출한다. 따라서 이 offline 계약은 삭제하지 않지만 P3의 선행 조건이나
+기본 런타임 의존성이 아니다. 런타임 비용·지연·재현성 평가 후 offline index가 필요할 때 다시
+사용한다.
+
+### 선행 corpus 검증
+
+Data는 annotation 전에 다음 세 파일을 생성한다.
+
+- `data/processed/nia_qa_10s_30s.jsonl`: 10~39세 원본 Q-CoT-A 레코드 3,581건
+- `data/processed/nia_qa_10s_30s.provenance.jsonl`: split·archive·원본 위치 정보
+- `data/processed/nia_qa_10s_30s.manifest.json`: 건수와 SHA-256
+
+원본 corpus의 `info.id` 집합은 기존
+`data/processed/nia_case_documents_10s_30s.jsonl`의 `document.case_id` 집합과 정확히 같아야
+한다. 누락·추가·중복 ID가 한 건이라도 있으면 LLM 호출 전에 실패한다. Training 3,177건과
+Validation 404건은 모두 annotation·검색 corpus에 포함하고, 평가용 골든 질의는 문서 split을
+빼는 방식이 아니라 별도 질의 세트로 관리한다.
+
+### 안전한 annotation 실행 규칙
+
+- 기본 실행은 전체 3,581건을 즉시 호출하지 않는다.
+- `--dry-run`은 corpus·provenance·기존 출력의 무결성과 처리 대상만 계산한다.
+- `--limit N` 또는 반복 가능한 `--record-id`로 소량 실행할 수 있다.
+- 제한 없는 전체 실행은 `--approve-full-run`을 명시한 경우에만 허용한다.
+- 완료 판정은 production annotation JSONL에 실제로 저장된 `record_id`만 사용한다.
+- 성공 건은 한 건마다 append·flush·fsync하고, 재실행은 미완료 ID만 이어서 처리한다.
+- annotation version과 provider/model 조합이 기존 canonical 값과 다르면 실행하지 않는다.
+
+### Data Claim export
+
+Data는 annotation JSONL과 statement별 ingestion decision JSONL을 결합하여 다음 논리 구조를
+JSONL과 manifest로 내보낸다. Data 타입 소유 위치는
+`data/scripts/nia_case_rag/claim_export_schemas.py`다.
+
+```python
+from enum import StrEnum
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
+
+
+class ClaimExportDecision(StrEnum):
+    BLOCKED = "blocked"
+    HUMAN_REVIEW = "human_review"
+    INGESTIBLE_STRUCTURED = "ingestible_structured"
+    INGESTIBLE_FREE_TEXT = "ingestible_free_text"
+
+
+class ClaimExportIngredientRef(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    ingredient_id: UUID | None
+    raw_name: str | None
+    matching_status: str
+    role: str
+
+
+class ClaimExportStatement(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    statement_id: str
+    statement_type: str
+    content: str
+    source_spans: list[dict[str, object]]
+    decision: ClaimExportDecision
+    priority: str
+    support_status: str
+    ingredient_refs: list[ClaimExportIngredientRef]
+
+
+class ClaimExportRecord(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_record_id: str
+    annotation_version: str
+    schema_version: str
+    dataset_split: str
+    skin_concerns_raw: list[str]
+    production_ready: bool
+    statements: list[ClaimExportStatement]
+```
+
+모든 statement와 decision은 export에 보존한다. Backend 적재는 운영 검색 정책과 동일하게
+`ingestible_structured`와 `ingestible_free_text`만 저장하며 `blocked`와 `human_review`는
+제외한다. 따라서 전체 Case가 성공적으로 annotation되어도 모든 Case에 검색 가능한 Claim이
+생긴다고 보장하지 않는다. 현재 P3 Agent는 이 offline Claim index를 자동 fallback으로 사용하지
+않는다. 후속 도입 시 별도 검색 정책과 골든 셋 검증을 먼저 계약한다.
+
+### Backend Claim 적재
+
+```python
+class ClaimIngestionService:
+    async def ingest_jsonl(
+        self,
+        request: ClaimIngestionRequest,
+    ) -> ClaimIngestionResult: ...
+```
+
+- Backend 입력 타입 소유: `backend/services/claim_ingestion_schemas.py`
+- DB 쓰기: `backend/repositories/claim_document_repository.py`,
+  `backend/repositories/claim_chunk_repository.py`
+- 임베딩: Agent의 기존 `TextEmbedder` 포트를 주입받아 사용
+- 임베딩 모델: `BAAI/bge-m3`, 차원 1,024
+- 자연키: `claim_document(source_record_id, annotation_version)` 및
+  `claim_chunk(claim_document_id, statement_id)`
+- 동일 document 재적재는 해당 document의 chunk와 성분 연결을 입력과 정확히 동기화한다.
+- Repository는 commit하지 않고 Service가 batch 단위 commit·rollback을 담당한다.
+- manifest SHA-256·건수·annotation version 불일치, 중복 document/statement ID,
+  잘못된 성분 연결, BGE-M3가 아닌 모델 또는 1,024가 아닌 벡터는 저장 전에 실패한다.
+
+DB 테이블은 이미 존재하므로 이 단계에서 새 모델이나 마이그레이션은 만들지 않는다.

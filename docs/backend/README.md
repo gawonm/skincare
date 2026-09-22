@@ -145,9 +145,33 @@ uv run python -m tests.agent.two_layer_rag_dump_smoke
 - Agent는 DB와 Backend를 직접 import하지 않는다.
 - 읽기 전용 DB 통합 smoke와 기존 Agent 회귀 테스트가 모두 통과한다.
 
+## NIA Case Document DB 적재 (2026-09-20)
+
+Data exporter가 만든 JSONL과 manifest를 먼저 전체 검증한 뒤, 변경된 사례만
+`BAAI/bge-m3` 1,024차원 벡터로 만들어 `nia_case_document`에 batch upsert한다.
+Repository는 commit하지 않고 Service가 batch별 transaction을 확정하므로 중간 실패 후 재실행할 수 있다.
+
+사용자가 실행할 순서:
+
+```powershell
+uv run alembic upgrade head
+uv run python -m backend.services.nia_case_ingestion_service
+```
+
+기본 입력은 다음 두 파일이다.
+
+- `data/processed/nia_case_documents_10s_30s.jsonl`
+- `data/processed/nia_case_documents_10s_30s.manifest.json`
+
+실행 전 `config.yaml`의 `agent.embedding.provider`는 `local`, `model`은 `BAAI/bge-m3`여야 한다.
+같은 `(case_id, text_version, embedding_model)`의 `content_hash`가 같으면 재임베딩하지 않는다.
+이 단계는 Case 검색 저장소만 만들며 Claim annotation이나 LangGraph 연결은 실행하지 않는다.
+
 ## 관련 문서
 
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
+- [DB 기반 Product Taxonomy 연동 상태](../agent/RAG_YK/2026-09-21_1832_DB_PRODUCT_TAXONOMY_INTEGRATION_STATUS.md)
+- [Data → Backend NIA Case 적재 계약](../contracts/data-to-backend.md)
 - [Backend → Data 채팅 히스토리 테이블 생성 요청](../contracts/backend-to-data.md)
 - [Agent 통합 검토](../agent/AGENT_INTEGRATION_REVIEW.md)
 - [2-Layer RAG Agent 통합 작업계획 및 작업 일지](../agent/TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
@@ -184,3 +208,89 @@ Evidence RAG 저장·검수 흐름을 구현하기 전까지는 다음 기준을
 상태일 뿐이라면 `review_status` 같은 별도 컬럼이 필요하며, 이 경우 ERD 문서 확인 후 모델과
 마이그레이션을 작성한다. 어느 경우든 `docs/contracts/backend-to-agent.md`의 현재 `verified` 예시는
 실제 저장 계약에 맞게 먼저 수정하고 통합 테스트를 추가한다.
+
+## NIA Claim 적재 연결 (2026-09-21)
+
+> 상태: **코드와 계약은 보존하되, 현재 P3 기본 경로에서는 실행 보류**
+
+Data가 생성한 `nia_claim_documents_production.jsonl`과 manifest를 검증하고, 검색 가능한
+`ingestible_structured`/`ingestible_free_text` statement만 BGE-M3 1,024차원으로 임베딩해
+기존 Claim 테이블에 동기화한다.
+
+2026-09-21 합의에 따라 피부 고민형 P3는 Case Top-3에서 Agent가 런타임 Claim을 추출한다.
+따라서 아래 명령은 현재 P3 준비·실행 절차에 포함하지 않는다. offline Claim index를 후속
+최적화로 다시 채택할 때 사용할 수 있도록 구현은 삭제하지 않는다.
+
+```powershell
+uv run python -m backend.services.claim_ingestion_service
+```
+
+- `claim_document`: annotation record 단위 provenance
+- `claim_chunk`: 검색 가능한 statement만 저장
+- `claim_chunk_ingredient`: matched 및 unresolved 성분 연결 보존
+- batch commit/rollback은 Service, SQL은 Repository가 담당
+- 기존 Claim 모델을 사용하므로 새 migration은 없다.
+
+입력 계약과 실패 규칙은 [data-to-backend.md](../contracts/data-to-backend.md)의
+`NIA Claim production 산출물 적재 계약` 절을 따른다.
+
+## NIA Case 런타임 검색 연결 (2026-09-21 10:20 KST)
+
+피부 고민형 Agent 기본 경로를 위해 기존 `nia_case_document`를 읽는
+`BackendNiaCaseRetriever`를 연결했다. 새 모델·마이그레이션은 없다.
+
+- Repository가 `text_version`과 `embedding_model`을 정확히 일치시켜 cosine 후보를 조회한다.
+- BGE-M3 1,024차원이 아니면 DB 조회 전에 `UNSUPPORTED`로 반환한다.
+- training/validation 3,581건 전체를 검색 대상으로 사용하고 `dataset_split`은 provenance로만
+  Agent에 반환한다.
+- NIA `evidence_sources`는 공식 Citation으로 오인되지 않도록 Agent Case DTO에서 제외한다.
+- Backend는 Case Claim을 생성·검증하지 않으며, 이 책임은 Agent에 있다.
+- Case 기본 경로에서는 offline Claim `annotation_version`이 없어도 운영 설정을 조립할 수 있다.
+
+읽기 전용 실제 DB 통합 테스트에서 후보 20건, 중복 Case ID 0건, 본문·버전 DTO 변환을 확인했다.
+
+## DB 기반 Product Taxonomy Agent 연동 (2026-09-21 18:34 KST)
+
+> 상태: **DB 조회·변환 및 2-Layer CLI 주입 완료 / Backend API 운영 조립은 추가 연결 필요**
+
+Backend는 `product` 테이블의 실제 `service_category`와 `product_type_normalized`를 집계해
+Agent 소유 `ProductTaxonomy`로 변환한다.
+
+```text
+AgentProductReadRepository.list_taxonomy()
+→ TwoLayerProductTaxonomyProvider.load()
+→ ProductTaxonomy
+```
+
+현재 일반 2-Layer CLI와 Trace CLI는 시작 시 Provider를 호출하고 그 결과를 Agent에 명시적으로
+주입한다. 따라서 두 CLI에서 실행되는 질문 해석과 상품 필터는 `FixtureProductTaxonomy`가 아니라
+DB의 최신 분류값을 사용한다.
+
+상품 검색에서 카테고리가 지정되면 `TwoLayerProductRepository`가 `ProductCategory.code`를
+`AgentProductReadRepository`에 전달한다. 저장소는 `product.service_category` 일치 조건을
+정렬과 `LIMIT`보다 먼저 SQL에 적용하므로, 앞선 다른 카테고리 상품 때문에 요청한 카테고리의
+후보가 누락되지 않는다. 카테고리가 없으면 기존처럼 확정 성분 연결만으로 조회한다.
+
+실행 배너에서는 다음 항목으로 확인할 수 있다.
+
+```text
+상품 taxonomy: product-taxonomy/db-v1:<digest>
+```
+
+`DevelopmentAgentFactory`의 fixture 기본값은 DB 없이 실행하는 단위 테스트와 개발 fallback을 위해
+유지한다. CLI는 `product_taxonomy`를 직접 넘기므로 이 fallback을 사용하지 않는다.
+
+실제 Backend API 운영 경로까지 완료하려면 애플리케이션 시작 또는 Agent 의존성 조립 시 다음
+연결을 추가해야 한다.
+
+```text
+DB session factory
+→ TwoLayerProductTaxonomyProvider.load()
+→ ProductionAgentDependencies.product_taxonomy
+→ ProductionAgentFactory.create()
+```
+
+Provider·DTO 계약을 새로 복제하지 않고 기존 구현을 재사용한다. Backend 운영 진입점이 확정되기
+전까지는 CLI 연동 완료와 API 연동 완료를 구분해서 표시한다. 전체 구현 위치와 확인 기준은
+[DB 기반 Product Taxonomy 연동 상태](../agent/RAG_YK/2026-09-21_1832_DB_PRODUCT_TAXONOMY_INTEGRATION_STATUS.md),
+호출 계약은 [Backend → Agent 호출 계약](../contracts/backend-to-agent.md) 11절을 따른다.

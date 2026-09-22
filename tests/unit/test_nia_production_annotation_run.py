@@ -7,11 +7,17 @@ LLM/DB 호출 없이 검증한다. 실제 라벨링 로직(processor/matcher/par
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 import data.scripts.nia_production_annotation_run as run_module
 from data.scripts.ingredient_name_matcher import IngredientNameMatcher
 from data.scripts.ingredient_name_normalizer import IngredientNameNormalizer
 from data.scripts.ingredient_schemas import IngredientCandidate
+from data.scripts.nia_case_rag.annotation_corpus_schemas import (
+    NiaAnnotationCorpusArchiveEntry,
+    NiaAnnotationCorpusManifest,
+)
+from data.scripts.nia_case_rag.export_schemas import NiaCaseDatasetSplit
 from data.scripts.nia_ingredient_matching_stage import NiaIngredientMatchingStage
 from data.scripts.nia_labeling_parser import NiaLabelingParser
 from data.scripts.nia_llm_label_schemas import (
@@ -21,10 +27,14 @@ from data.scripts.nia_llm_label_schemas import (
     LlmSourceQuote,
     LlmUsageInstructionStatement,
 )
+from data.scripts.nia_original_schemas import NiaOriginalRecord
 from data.scripts.nia_pilot_runner import NiaPilotRecordProcessor
 from data.scripts.nia_production_annotation_run import (
+    NiaProductionAnnotationApplication,
+    NiaProductionAnnotationRequest,
     NiaProductionAnnotationRunner,
     NiaProductionAnnotationStore,
+    NiaProductionInputBundle,
     NiaProductionOutputIntegrityError,
     regenerate_downstream,
 )
@@ -435,3 +445,87 @@ class TestMixedVersionDetection:
 
         with pytest.raises(NiaProductionOutputIntegrityError, match="annotation_version이 섞여"):
             store.load_completed_record_ids(set(ids))
+
+
+class TestSafeProductionRunSelection:
+    def test_제한_없는_실행은_명시적_승인_없이는_거부한다(self) -> None:
+        with pytest.raises(ValidationError, match="approve-full-run"):
+            NiaProductionAnnotationRequest()
+
+    def test_dry_run과_limit은_전체_실행_승인_없이_허용한다(self) -> None:
+        assert NiaProductionAnnotationRequest(dry_run=True).dry_run
+        assert NiaProductionAnnotationRequest(limit=5).limit == 5
+
+    def test_limit과_record_id는_동시에_선택할_수_없다(self) -> None:
+        with pytest.raises(ValidationError, match="동시에 사용할 수 없습니다"):
+            NiaProductionAnnotationRequest(limit=1, record_ids=("REC1",))
+
+    def test_dry_run_limit은_입력_순서의_미완료_건만_선택한다(self, tmp_path) -> None:
+        record_ids = ["REC1", "REC2", "REC3"]
+        provenance = NiaRecordProvenanceIndex(audit_path=_write_audit_file(tmp_path, record_ids))
+        bundle = NiaProductionInputBundle(
+            records={record_id: self._valid_record(record_id) for record_id in record_ids},
+            provenance=provenance,
+            manifest=NiaAnnotationCorpusManifest(
+                input_archive_count=1,
+                input_record_count=3,
+                output_record_count=3,
+                training_record_count=3,
+                validation_record_count=0,
+                archives=[
+                    NiaAnnotationCorpusArchiveEntry(
+                        archive_name="TL_test.zip",
+                        dataset_split=NiaCaseDatasetSplit.TRAINING,
+                        input_record_count=3,
+                        output_record_count=3,
+                    )
+                ],
+                corpus_sha256="0" * 64,
+                provenance_sha256="0" * 64,
+                case_documents_sha256="0" * 64,
+            ),
+        )
+        application = NiaProductionAnnotationApplication(reader=_FakeInputReader(bundle))
+
+        prepared = application.prepare(
+            NiaProductionAnnotationRequest(
+                annotations_path=tmp_path / "annotations.jsonl",
+                dry_run=True,
+                limit=2,
+            )
+        )
+
+        assert prepared.plan.selected_record_ids == ["REC1", "REC2"]
+        assert prepared.plan.pending_count == 3
+
+    def _valid_record(self, record_id: str) -> NiaOriginalRecord:
+        return NiaOriginalRecord.model_validate(
+            {
+                "info": {
+                    "id": record_id,
+                    "source_survey_id": record_id,
+                    "target_concern": "모공",
+                    "question": f"질문 {record_id}",
+                    "answer": f"답변 {record_id}",
+                    "evidence_sources": [],
+                },
+                "meta": {
+                    "gender": "여성",
+                    "age": 20,
+                    "initial_skin_condition": "상태",
+                    "skin_type": "지성",
+                    "skin_concerns": ["모공"],
+                    "image_filename": f"{record_id}.jpg",
+                },
+                "external": [],
+                "chain_of_thought": [{"step": 1, "title": "분석", "content": f"추론 {record_id}"}],
+            }
+        )
+
+
+class _FakeInputReader:
+    def __init__(self, bundle: NiaProductionInputBundle) -> None:
+        self._bundle = bundle
+
+    def read(self, request: NiaProductionAnnotationRequest) -> NiaProductionInputBundle:
+        return self._bundle

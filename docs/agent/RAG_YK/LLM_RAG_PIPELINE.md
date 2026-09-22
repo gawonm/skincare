@@ -1,5 +1,8 @@
 # 스킨케어 RAG 에이전트: Intent·멀티턴·처리 흐름
 
+> 초기 설계 문서: 현재 Case → Claim → Evidence → Product 흐름과 구현 상태는
+> [2026-09-20 작업 합본](2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md)을 우선한다.
+
 작성일: 2026-09-09
 
 상태: 구현 전 설계 제안. [프로젝트 재정의](PROJECT_REDEFINITION.md)를 구체화한다. 주요 도구명·상태명은 처리 계약을 설명하기 위한 초안이며 현재 API가 아니다.

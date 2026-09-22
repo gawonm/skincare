@@ -130,12 +130,58 @@ taxonomy만을 위해 data 파트가 backend 파일을 만들거나 `data/script
 기존에 합의된 트랜잭션 경계라 이번 작업에서 임의로 바꾸지 않았다. 바꾸려면 먼저 사용자·팀과
 논의한다(규칙 3, 8).
 
+## NIA Case Document exporter 실행 (2026-09-20)
+
+AI Hub Q-CoT-A 원본에서 만 10~39세 사례 검색 문서를 만들 때 다음 명령을 저장소 루트에서
+실행한다. 이 단계는 DB·임베딩·LLM을 사용하지 않는다.
+
+```powershell
+uv run python -m data.scripts.nia_case_rag.exporter `
+  --input-root "C:\Users\Admin\Documents\03.스킨케어 성분-효능 추천 데이터"
+```
+
+기본 산출물:
+
+- `data/processed/nia_case_documents_10s_30s.jsonl`
+- `data/processed/nia_case_documents_10s_30s.manifest.json`
+
+기존 산출물이 있으면 보호를 위해 실패한다. 내용을 확인한 뒤 의도적으로 다시 만들 때만
+`--overwrite`를 추가한다. 출력 경로를 바꾸려면 `--output`과 `--manifest`를 함께 지정한다.
+
+2026-09-20 실제 원본 smoke 기준: ZIP 15개, 입력 9,000건, 출력 3,581건
+(training 3,177건, validation 404건), 중복 `case_id` 0건이다. 동일 입력 재실행의 JSONL
+SHA-256도 일치했다.
+
 ## 관련 문서
 
 - 전체 스키마·품질 기준·담당 범위: [data.md](data.md)
 - DB 스키마 ERD: [docs/erd/app.md](../erd/app.md)
 - `product` 저장 계약(backend 파트에 넘긴 인터페이스): [docs/contracts/data-to-backend.md](../contracts/data-to-backend.md)
+- NIA Case 논리 산출물 계약: [docs/contracts/data-to-agent.md](../contracts/data-to-agent.md)
 - 채팅 히스토리 테이블 생성 요청(backend 파트가 넘긴 인터페이스): [docs/contracts/backend-to-data.md](../contracts/backend-to-data.md)
 - Tier A 핵심 성분용 compact Evidence(PubMed/CIR) collector: [COMPACT_EVIDENCE_COLLECTOR.md](COMPACT_EVIDENCE_COLLECTOR.md)
 - 올리브영 글로벌 키워드 검색 파이프라인 인수인계: [oliveyoung_global_pipeline_handoff.md](oliveyoung_global_pipeline_handoff.md)
 - 전성분 파싱·매칭·RAG 인수인계: [SKINCARE_DATA_RAG_HANDOFF.md](SKINCARE_DATA_RAG_HANDOFF.md)
+
+## NIA Claim production 준비·변환 (2026-09-21)
+
+NIA Case와 같은 10~39세 3,581건을 Claim annotation 입력으로 만들고 ID를 전수 대조한다. 이
+명령은 LLM을 호출하지 않는다.
+
+```powershell
+uv run python -m data.scripts.nia_case_rag.annotation_corpus_exporter `
+  --input-root "C:\Users\Admin\Documents\03.스킨케어 성분-효능 추천 데이터"
+
+uv run python -m data.scripts.nia_production_annotation_run --dry-run
+```
+
+실제 annotation은 `--limit N` 또는 `--record-id`로 소량 실행한다. 제한 없는 실행은
+`--approve-full-run`이 있어야 시작된다. annotation과 ingestion decision이 생성된 뒤 다음
+명령으로 Backend 적재용 Claim JSONL을 만든다.
+
+```powershell
+uv run python -m data.scripts.nia_case_rag.claim_exporter
+```
+
+상세 계약과 실행 순서는 [data-to-backend.md](../contracts/data-to-backend.md) 및
+[통합 작업일지](../agent/RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md) 13절을 따른다.

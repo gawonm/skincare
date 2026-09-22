@@ -362,14 +362,14 @@ class TestDataEvidence:
         )
         assert result.assessments[0].status is ApplicabilityStatus.NOT_APPLICABLE
 
-    def test_unknown_review_and_free_text_conditions_do_not_become_applicable(self) -> None:
+    def test_document_status_does_not_change_applicability(self) -> None:
         evaluator = EvidenceApplicabilityEvaluator()
         record = self.record()
         record.review_status = EvidenceReviewStatus.UNREVIEWED
-        unknown = evaluator.assess(
+        applicable = evaluator.assess(
             ApplicabilityRequest(evidence=record, known_conditions=record.conditions)
         )
-        assert unknown.status is ApplicabilityStatus.UNKNOWN
+        assert applicable.status is ApplicabilityStatus.APPLICABLE
         record.review_status = EvidenceReviewStatus.VERIFIED
         record.conditions = EvidenceConditions(concentration="0.5~7.0%")
         limited = evaluator.assess(
