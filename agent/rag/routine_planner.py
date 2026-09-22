@@ -1,6 +1,9 @@
 """출처 기반 LLM Rule 생성과 결정적 검증을 결합한 루틴 Planner."""
 
+import re
 from collections import defaultdict
+from enum import StrEnum
+from typing import ClassVar
 from uuid import NAMESPACE_URL, uuid5
 
 from httpx import HTTPError
@@ -61,6 +64,30 @@ class RoutineChatModelFactory:
         )
 
 
+class RoutineRuleGenerationFailureKind(StrEnum):
+    MODEL_INVOCATION = "model_invocation"
+    STRUCTURED_OUTPUT = "structured_output"
+
+
+class RoutineRuleGenerationError(RuntimeError):
+    """Rule 생성 실패를 외부 호출 실패와 구조화 응답 실패로 구분한다."""
+
+    def __init__(
+        self,
+        failure_kind: RoutineRuleGenerationFailureKind,
+        source_kinds: list[RoutineRuleSourceKind],
+        detail: str,
+    ) -> None:
+        self.failure_kind = failure_kind
+        self.source_kinds = list(dict.fromkeys(source_kinds))
+        self.detail = detail
+        source_labels = ",".join(source_kind.value for source_kind in self.source_kinds)
+        super().__init__(
+            "루틴 Rule 생성 실패: "
+            f"kind={failure_kind.value}, source_kinds={source_labels or 'none'}, detail={detail}"
+        )
+
+
 class ChatModelRoutineRuleGenerator(RoutineRuleGenerator):
     """제품 사용법과 Evidence 원문에서 구조화된 Rule 후보만 추출한다."""
 
@@ -78,6 +105,7 @@ class ChatModelRoutineRuleGenerator(RoutineRuleGenerator):
         prompt = self._prompt_catalog.get(
             PromptRequest(purpose=PromptPurpose.ROUTINE_RULE_EXTRACTION)
         )
+        source_kinds = [source.source_kind for source in request.sources]
         try:
             result = await self._client.ainvoke(
                 [
@@ -85,18 +113,29 @@ class ChatModelRoutineRuleGenerator(RoutineRuleGenerator):
                     HumanMessage(content=request.model_dump_json()),
                 ]
             )
+        except (TypeError, ValueError, ValidationError) as error:
+            raise RoutineRuleGenerationError(
+                failure_kind=RoutineRuleGenerationFailureKind.STRUCTURED_OUTPUT,
+                source_kinds=source_kinds,
+                detail=f"{type(error).__name__}: {error}",
+            ) from error
         except (
             HTTPError,
             OpenAIError,
             OSError,
             RuntimeError,
-            TypeError,
-            ValueError,
-            ValidationError,
         ) as error:
-            raise RuntimeError(f"루틴 Rule 추출에 실패했습니다: {error}") from error
+            raise RoutineRuleGenerationError(
+                failure_kind=RoutineRuleGenerationFailureKind.MODEL_INVOCATION,
+                source_kinds=source_kinds,
+                detail=f"{type(error).__name__}: {error}",
+            ) from error
         if not isinstance(result, RoutineRuleModelOutput):
-            raise TypeError("루틴 Rule 생성기가 계약된 구조화 응답을 반환하지 않았습니다.")
+            raise RoutineRuleGenerationError(
+                failure_kind=RoutineRuleGenerationFailureKind.STRUCTURED_OUTPUT,
+                source_kinds=source_kinds,
+                detail="계약된 RoutineRuleModelOutput이 반환되지 않았습니다.",
+            )
         return result
 
 
@@ -195,6 +234,13 @@ class RoutineRuleSourceBuilder:
 
 class DeterministicRoutineValidator:
     """LLM Rule의 출처와 최종 일정의 기계적 제약만 판정한다."""
+
+    _WEEKLY_FREQUENCY_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:일주일(?:에|동안)?|주)\s*"
+        r"(?P<minimum>[1-7])"
+        r"(?:\s*(?:~|-|에서)\s*(?P<maximum>[1-7]))?\s*"
+        r"(?:회|번|일)"
+    )
 
     def compile_rules(
         self,
@@ -326,6 +372,30 @@ class DeterministicRoutineValidator:
             return f"출처 적용 범위를 벗어난 루틴 Rule을 제외했습니다: {candidate.source_id}"
         if set(candidate.product_ids).intersection(candidate.related_product_ids):
             return f"동일 제품을 상호 제약으로 사용한 루틴 Rule을 제외했습니다: {candidate.source_id}"
+        frequency_rejection = self._frequency_rejection(candidate)
+        if frequency_rejection is not None:
+            return frequency_rejection
+        return None
+
+    def _frequency_rejection(self, candidate: RoutineRuleCandidate) -> str | None:
+        if candidate.rule_type is not RoutineRuleType.MAX_FREQUENCY_PER_WEEK:
+            return None
+        expected_frequency = candidate.max_frequency_per_week
+        if expected_frequency is None:
+            return (
+                "주당 횟수가 없는 최대 사용 빈도 Rule을 제외했습니다: "
+                f"{candidate.source_id}"
+            )
+        grounded_frequencies = {
+            int(match.group("maximum") or match.group("minimum"))
+            for match in self._WEEKLY_FREQUENCY_PATTERN.finditer(candidate.source_quote)
+        }
+        if expected_frequency not in grounded_frequencies:
+            # 일일 사용 횟수를 주간 배치 일수로 바꾸면 원문보다 강하거나 약한 제약이 생길 수 있다.
+            return (
+                "출처에 같은 주당 횟수가 명시되지 않은 루틴 Rule을 제외했습니다: "
+                f"{candidate.source_id}"
+            )
         return None
 
     def _enforcement(
@@ -391,6 +461,10 @@ class DeterministicRoutineValidator:
 class SourceBoundRoutinePlanner(RoutinePlanner):
     """LLM은 Rule·초안을 제안하고 코드는 출처와 최종 배치를 검증한다."""
 
+    _CASE_RULE_PARSE_WARNING: ClassVar[str] = (
+        "유사 사례의 사용법 Rule을 구조화하지 못해 일정 제약에서 제외했습니다."
+    )
+
     def __init__(
         self,
         rule_generator: RoutineRuleGenerator,
@@ -406,14 +480,21 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
     async def plan(self, request: RoutinePlanRequest) -> RoutinePlan:
         sources = self._source_builder.build(request)
         candidates = RoutineRuleModelOutput()
+        generation_warnings: list[str] = []
         if sources:
-            candidates = await self._rule_generator.generate(
-                RoutineRuleGenerationRequest(
-                    user_request=request.user_request,
-                    products=request.products,
-                    sources=sources,
+            try:
+                candidates = await self._rule_generator.generate(
+                    RoutineRuleGenerationRequest(
+                        user_request=request.user_request,
+                        products=request.products,
+                        sources=sources,
+                    )
                 )
-            )
+            except RoutineRuleGenerationError as error:
+                if not self._can_continue_without_generated_rules(error, sources):
+                    raise
+                # Case 사용법은 원래 warning 수준이므로 구조화 실패 시 필수 제약처럼 전체를 막지 않는다.
+                generation_warnings.append(self._CASE_RULE_PARSE_WARNING)
         compilation = self._validator.compile_rules(
             RoutineRuleCompilationRequest(
                 products=request.products,
@@ -459,13 +540,27 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
             placements=placements,
             constraints=self._constraints(compilation.rules, request.excluded_weekdays),
             rules=compilation.rules,
-            warnings=compilation.warnings,
+            warnings=list(dict.fromkeys(generation_warnings + compilation.warnings)),
             changes=(
                 ["사용자 요청과 검증된 Rule을 반영해 루틴 초안을 다시 생성함"]
                 if request.current_plan is not None
                 else []
             ),
             is_demo=False,
+        )
+
+    def _can_continue_without_generated_rules(
+        self,
+        error: RoutineRuleGenerationError,
+        sources: list[RoutineRuleSource],
+    ) -> bool:
+        return (
+            error.failure_kind is RoutineRuleGenerationFailureKind.STRUCTURED_OUTPUT
+            and bool(sources)
+            and all(
+                source.source_kind is RoutineRuleSourceKind.CASE_USAGE_GUIDANCE
+                for source in sources
+            )
         )
 
     async def validate(self, request: RoutineValidationRequest) -> RoutineValidationResult:
