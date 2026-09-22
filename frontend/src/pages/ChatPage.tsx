@@ -12,7 +12,7 @@ import { ChatComposer } from "../components/ChatComposer";
 import { ChatEmptyState } from "../components/ChatEmptyState";
 import { ChatHeader } from "../components/ChatHeader";
 import { ChatMessageList } from "../components/ChatMessageList";
-import { ChatStatus } from "../constants/chat";
+import { ChatStatus, NavTabKey } from "../constants/chat";
 import { useChat } from "../hooks/useChat";
 
 export function ChatPage() {
@@ -56,7 +56,7 @@ export function ChatPage() {
         />
       </div>
 
-      <BottomTabBar />
+      <BottomTabBar activeTab={NavTabKey.Chat} />
     </div>
   );
 }
