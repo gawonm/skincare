@@ -264,7 +264,7 @@ class RagWorkflowNodes:
             anchor = self._case_claim_anchor_adapter.adapt(
                 resolved,
                 request_id=request_id,
-                user_query=self._evidence_query(state),
+                evidence_query=self._evidence_query(state),
             )
             if anchor is not None:
                 anchor_key = (

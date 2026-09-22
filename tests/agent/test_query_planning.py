@@ -86,3 +86,26 @@ class TestIntentQueryPlanner:
 
         assert result.case_query is None
         assert result.evidence_query == parsed.query
+
+    def test_Case_경로의_Evidence_질의가_없으면_고민과_검증축만_사용한다(self) -> None:
+        original = (
+            "30대 남성, 환절기라 힘들다. 피지가 많고 여드름도 많은데 뭘 써야 하지? "
+            "추천 상품으로 3일간 스킨케어 루틴 짜줘"
+        )
+        parsed = ParsedRequest(
+            intents=[Intent.PRODUCT_DISCOVERY, Intent.ROUTINE_PLANNING],
+            query=original,
+            skin_concerns=["피지", "여드름"],
+            rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+        )
+
+        result = IntentQueryPlanner().build(
+            QueryPlanningRequest(original_message=original, parsed_request=parsed)
+        )
+
+        assert result.evidence_query == "피지 여드름 관련 효능 및 주의사항"
+        assert "30대" not in result.evidence_query
+        assert "남성" not in result.evidence_query
+        assert "환절기" not in result.evidence_query
+        assert "상품" not in result.evidence_query
+        assert "루틴" not in result.evidence_query

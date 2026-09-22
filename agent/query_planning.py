@@ -24,6 +24,13 @@ class ExplicitCaseContext(StrEnum):
     SENSITIVE = "민감성"
 
 
+class EvidenceQueryAxis(StrEnum):
+    """Case Claim을 검증할 때 사용자 지시 대신 유지할 Evidence 검색 축."""
+
+    EFFICACY = "효능"
+    PRECAUTION = "주의사항"
+
+
 class IntentQueryPlanner:
     """LLM의 질의 분리를 보완하되 사용자가 명시한 Case 문맥은 삭제하지 않는다."""
 
@@ -49,9 +56,26 @@ class IntentQueryPlanner:
         case_query = self._case_query(request)
         return IntentQueryPlan(
             case_query=case_query,
-            evidence_query=self._effective_query(draft.evidence_query, parsed.query),
+            evidence_query=self._evidence_query(request),
             product_query=self._effective_query(draft.product_query, parsed.query),
             routine_query=self._effective_query(draft.routine_query, parsed.query),
+        )
+
+    def _evidence_query(self, request: QueryPlanningRequest) -> str | None:
+        parsed = request.parsed_request
+        preferred = self._normalize(parsed.query_plan.evidence_query or "")
+        if preferred:
+            return preferred
+        if parsed.rag_route is not RagRoute.CLAIM_THEN_EVIDENCE:
+            return self._effective_query(None, parsed.query)
+
+        concerns = list(dict.fromkeys(parsed.skin_concerns + request.profile_concerns))
+        subject = " ".join(concerns) if concerns else "피부 고민"
+        # 나이·성별·계절·상품·루틴 지시는 Case 검색에만 필요하다. Evidence 검색은
+        # 성분 ID hard filter와 효능·주의 축에 집중해야 관련 청크가 지시문에 밀리지 않는다.
+        return self._normalize(
+            f"{subject} 관련 {EvidenceQueryAxis.EFFICACY.value} 및 "
+            f"{EvidenceQueryAxis.PRECAUTION.value}"
         )
 
     def _case_query(self, request: QueryPlanningRequest) -> str | None:
