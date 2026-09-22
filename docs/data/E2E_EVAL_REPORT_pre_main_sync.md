@@ -1,12 +1,5 @@
 # E2E 품질 평가 리포트 — NIA → Evidence → Product
 
-> **이 문서는 `feature/data-evidence-coverage`에 `origin/main`을 merge(commit
-> `48f6761`)한 뒤 재실행한 결과다.** merge 전 결과는
-> `E2E_EVAL_REPORT_pre_main_sync.md` / `e2e_eval_results_pre_main_sync.csv`에
-> 보존돼 있고, 두 결과의 차이는 [E2E_EVAL_MAIN_SYNC_COMPARISON.md](E2E_EVAL_MAIN_SYNC_COMPARISON.md)에
-> 정리했다. **pass/fail 비율과 3개 critical blocker는 main sync 전후로
-> 동일하다** - 아래 표는 merge 후 재실행 기준으로 갱신됐다.
-
 ## 범위와 방법
 
 canonical `skincare_reference_2026-09-22_v5.dump`를 별도 read-only 평가
@@ -55,7 +48,7 @@ BACKEND-REPOSITORY 0 / PRODUCT-DATA 0 / UNKNOWN 0
 
 ## 🔴 Critical blocker 1 — Evidence Applicability 단계가 유효 근거를 대량 반려
 
-9개 시나리오(#1 일부, 2, 3, 5, 7, 8, 9 일부, 14)에서 공통 패턴이 나타났다:
+9개 시나리오(#1, 2, 3, 5, 7, 8, 9 일부, 14 일부)에서 공통 패턴이 나타났다:
 
 1. NIA case 검색(해당되는 경우) — 정상
 2. 성분 선택 및 `ingredient_id` canonical resolution — 정상
@@ -67,15 +60,11 @@ BACKEND-REPOSITORY 0 / PRODUCT-DATA 0 / UNKNOWN 0
 
 즉 검색(retrieval)은 정확한데, 그 뒤 인용문·적용조건을 검증하는
 `EvidenceApplicabilityEvaluator`(또는 answer generator의 citation 검증 로직)
-단계에서 대부분의 유효 evidence가 탈락한다. 성공한 케이스(#1의 살리실릭애씨드,
-#4)는 공통적으로 CIR "Conclusion"/"Clinical Studies" 성격의 짧고 명확한
+단계에서 거의 모든 유효 evidence가 탈락한다. 유일하게 성공한 두 케이스(#4,
+#14의 Retinol 쪽)는 공통적으로 CIR "Conclusion" 성격의 짧고 명확한 결론
 문장을 인용했다 — PubMed abstract 근거는 이 세션에서 단 한 번도 citation에
 성공하지 못했다. PubMed abstract 형식(초록 전문)과 CIR Conclusion 형식(요약
-결론 문장)의 차이가 이 단계의 통과 여부와 상관관계가 있어 보인다. main sync
-전에는 #14의 Retinol 쪽도 성공했었지만, main sync 후 재실행에서는 동일
-chunk임에도 반려로 바뀌었다(재현성이 완벽하지 않다는 뜻이기도 하다) - 자세한
-전/후 비교는 [E2E_EVAL_MAIN_SYNC_COMPARISON.md](E2E_EVAL_MAIN_SYNC_COMPARISON.md)
-참고.
+결론 문장)의 차이가 이 단계의 통과 여부와 상관관계가 있어 보인다.
 
 **코드는 고치지 않았다.** 이 단계(`EvidenceApplicabilityEvaluator` 등)를
 Agent 파트가 직접 확인해야 한다.
@@ -139,17 +128,12 @@ Salicylic Acid/Betaine Salicylate가 전혀 없고 literal `BHA` 링크 1건만 
 
 - `data/outputs/evidence_coverage/e2e_eval_results.csv` (15 rows, Notion
   기록 템플릿 필드 기준)
-- `data/outputs/evidence_coverage/e2e_eval_raw_post_main_sync.json` (각
-  케이스의 전체 `ChatTurnOutput` + 단계별 trace 원본 - 재검토용. 1.6MB로
-  pre-commit의 500KB 제한을 넘어 로컬에만 남기고 git에는 커밋하지 않았다.
-  위 critical blocker 3건의 구체적 근거(PMID, ingredient_id, product_id,
-  NIA case_id 등)는 전부 이 문서에 직접 옮겨 적었으므로 원본 없이도
-  재현·검증 가능하다)
-- `docs/data/E2E_EVAL_REPORT.md` (이 문서, main sync 후 최신 기준)
-- `docs/data/E2E_EVAL_MAIN_SYNC_COMPARISON.md` (main sync 전/후 비교, commit
-  SHA·conflict 여부·달라진 케이스 정리)
-- `data/outputs/evidence_coverage/e2e_eval_results_pre_main_sync.csv` /
-  `docs/data/E2E_EVAL_REPORT_pre_main_sync.md` (main sync **전** 결과, 보존)
+- `data/outputs/evidence_coverage/e2e_eval_raw.json` (각 케이스의 전체
+  `ChatTurnOutput` + 단계별 trace 원본 - 재검토용. 1.6MB로 pre-commit의
+  500KB 제한을 넘어 로컬에만 남기고 git에는 커밋하지 않았다. 위 critical
+  blocker 3건의 구체적 근거(PMID, ingredient_id, product_id, NIA case_id
+  등)는 전부 이 문서에 직접 옮겨 적었으므로 원본 없이도 재현·검증 가능하다)
+- `docs/data/E2E_EVAL_REPORT.md` (이 문서)
 
 ## 판정
 
