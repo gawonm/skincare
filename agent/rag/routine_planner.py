@@ -18,6 +18,7 @@ from agent.rag.schemas import (
     ChatModelConfig,
     ConstraintSource,
     DayPeriod,
+    DEFAULT_ROUTINE_FREQUENCY,
     LlmProvider,
     ProductRecord,
     RoutineConstraint,
@@ -40,6 +41,53 @@ from agent.rag.schemas import (
     RoutineValidationResult,
     Weekday,
 )
+
+
+class RoutineFrequencyInterpreter:
+    """사용자의 루틴 기간과 출처의 사용 횟수를 주간 배치 횟수로 제한적으로 해석한다."""
+
+    _EXPLICIT_WEEKLY_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:일주일(?:에|동안)?|주)\s*"
+        r"(?P<minimum>[1-7])"
+        r"(?:\s*(?:~|-|에서)\s*(?P<maximum>[1-7]))?\s*"
+        r"(?:회|번|일)"
+    )
+    _BARE_COUNT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<!\d)(?P<count>[1-7])\s*(?:회|번)"
+    )
+    _ROUTINE_DURATION_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<!\d)(?P<count>[1-7])\s*일간"
+    )
+    _DAILY_CONTEXT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:하루|매일|일일|1일)|(?:아침\s*(?:과|및|,|·|/)?\s*저녁)|아침저녁|"
+        r"(?:저녁\s*(?:과|및|,|·|/)?\s*아침)"
+    )
+
+    def requested_frequency(self, user_request: str) -> int:
+        explicit = self._frequencies(self._EXPLICIT_WEEKLY_PATTERN, user_request)
+        if explicit:
+            return max(explicit)
+        duration = self._ROUTINE_DURATION_PATTERN.search(user_request)
+        if duration is not None:
+            return int(duration.group("count"))
+        bare = self._bare_frequencies(user_request)
+        return max(bare) if bare else DEFAULT_ROUTINE_FREQUENCY
+
+    def grounded_source_frequencies(self, source_quote: str) -> set[int]:
+        explicit = self._frequencies(self._EXPLICIT_WEEKLY_PATTERN, source_quote)
+        return explicit.union(self._bare_frequencies(source_quote))
+
+    def _bare_frequencies(self, text: str) -> set[int]:
+        if self._DAILY_CONTEXT_PATTERN.search(text):
+            # 일일 횟수를 7배 하거나 주간 사용일로 축소하면 원문과 다른 제약이 되므로 제외한다.
+            return set()
+        return {int(match.group("count")) for match in self._BARE_COUNT_PATTERN.finditer(text)}
+
+    def _frequencies(self, pattern: re.Pattern[str], text: str) -> set[int]:
+        return {
+            int(match.groupdict().get("maximum") or match.groupdict().get("minimum") or "0")
+            for match in pattern.finditer(text)
+        }
 
 
 class RoutineChatModelFactory:
@@ -235,12 +283,11 @@ class RoutineRuleSourceBuilder:
 class DeterministicRoutineValidator:
     """LLM Rule의 출처와 최종 일정의 기계적 제약만 판정한다."""
 
-    _WEEKLY_FREQUENCY_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?:일주일(?:에|동안)?|주)\s*"
-        r"(?P<minimum>[1-7])"
-        r"(?:\s*(?:~|-|에서)\s*(?P<maximum>[1-7]))?\s*"
-        r"(?:회|번|일)"
-    )
+    def __init__(
+        self,
+        frequency_interpreter: RoutineFrequencyInterpreter | None = None,
+    ) -> None:
+        self._frequency_interpreter = frequency_interpreter or RoutineFrequencyInterpreter()
 
     def compile_rules(
         self,
@@ -386,10 +433,9 @@ class DeterministicRoutineValidator:
                 "주당 횟수가 없는 최대 사용 빈도 Rule을 제외했습니다: "
                 f"{candidate.source_id}"
             )
-        grounded_frequencies = {
-            int(match.group("maximum") or match.group("minimum"))
-            for match in self._WEEKLY_FREQUENCY_PATTERN.finditer(candidate.source_quote)
-        }
+        grounded_frequencies = self._frequency_interpreter.grounded_source_frequencies(
+            candidate.source_quote
+        )
         if expected_frequency not in grounded_frequencies:
             # 일일 사용 횟수를 주간 배치 일수로 바꾸면 원문보다 강하거나 약한 제약이 생길 수 있다.
             return (

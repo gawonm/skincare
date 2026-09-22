@@ -7,6 +7,7 @@ from agent.evidence_query_policy import EvidenceQueryPolicy
 from agent.ports import IngredientRepository, LlmClient, ProductRepository, RoutinePlanner
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.query_planning import IntentQueryPlanner
+from agent.rag.routine_planner import RoutineFrequencyInterpreter
 from agent.rag.claim_schemas import (
     IngredientRecommendationCandidate,
     RecommendationBasis,
@@ -105,6 +106,7 @@ class AgentNodes:
         self._rag_route_policy = rag_route_policy
         self._evidence_query_policy = evidence_query_policy
         self._query_planner = IntentQueryPlanner()
+        self._routine_frequency = RoutineFrequencyInterpreter()
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
         self._require_turn_fields(state)
@@ -972,13 +974,16 @@ class AgentNodes:
             return
 
         excluded_weekdays = self._merged_excluded_weekdays(state, parsed.excluded_weekdays)
+        user_request = parsed.query_plan.routine_query or parsed.query
+        frequency_per_week = self._routine_frequency.requested_frequency(user_request)
         plan = await self._routine_planner.plan(
             RoutinePlanRequest(
                 chat_room_id=state.chat_room_id,
                 request_id=self._require_turn(state).request_id,
                 products=products,
-                user_request=parsed.query_plan.routine_query or parsed.query,
+                user_request=user_request,
                 excluded_weekdays=excluded_weekdays,
+                frequency_per_week=frequency_per_week,
                 evidence_records=state.evidence,
                 case_usage_guidance=state.task_context.case_usage_guidance,
                 current_plan=state.routine,
@@ -991,6 +996,7 @@ class AgentNodes:
                 plan=plan,
                 products=products,
                 excluded_weekdays=excluded_weekdays,
+                frequency_per_week=frequency_per_week,
             )
         )
         if not validation.valid:

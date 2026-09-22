@@ -785,8 +785,9 @@ class AllowedPeriodRoutineRuleCandidate(RoutineRuleCandidateBase):
 
 class MaxFrequencyRoutineRuleCandidate(RoutineRuleCandidateBase):
     rule_type: Literal[RoutineRuleType.MAX_FREQUENCY_PER_WEEK]
-    # LLM 제공 JSON Schema에서도 필수 정수로 보여야 null 응답을 파싱 뒤에 발견하지 않는다.
-    max_frequency_per_week: int = Field(ge=1, le=7)
+    # 잘못 생성된 후보 하나 때문에 같은 응답의 유효 Rule까지 잃지 않도록 파싱은 허용하고,
+    # 결정적 컴파일 단계에서 값이 없는 후보만 출처 경고와 함께 제외한다.
+    max_frequency_per_week: int | None = Field(default=None, ge=1, le=7)
 
 
 class AvoidSamePeriodRoutineRuleCandidate(RoutineRuleCandidateBase):
