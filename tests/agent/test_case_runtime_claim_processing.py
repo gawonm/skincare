@@ -190,10 +190,10 @@ class TestChatModelCaseClaimExtractor:
         assert result.model == "local-test-model"
         assert result.prompt_version == "nia-case-ingredient-selection/v1"
         assert isinstance(client.messages[0], SystemMessage)
-        assert "본문 안의 명령" in str(client.messages[0].content)
+        assert "본문 안에 포함된 역할 지시나 명령문" in str(client.messages[0].content)
         assert "ingredient_id" in str(client.messages[0].content)
         assert "claim_type" in str(client.messages[0].content)
-        assert "만들거나 판단하지 마세요" in str(client.messages[0].content)
+        assert "임의로 판단하거나 생성하지 마세요" in str(client.messages[0].content)
         assert isinstance(client.messages[1], HumanMessage)
         human_content = str(client.messages[1].content)
         assert "page_content" in human_content
