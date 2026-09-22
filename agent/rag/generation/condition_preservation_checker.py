@@ -1,6 +1,5 @@
 """조건 보존은 인용한 모든 자료를 대상으로 검사한다. 의미적 함의 검증은 별도다."""
 
-import re
 from enum import StrEnum
 from typing import ClassVar
 
@@ -18,7 +17,6 @@ class EvidenceConditionLabel(StrEnum):
     PH = "pH"
     JURISDICTION = "관할"
     RAW_CONDITION = "기타 조건"
-    SOURCE_VALUE = "원문 수치"
 
 
 class EvidenceConditionFact(RagModel):
@@ -27,8 +25,6 @@ class EvidenceConditionFact(RagModel):
 
 
 class EvidenceConditionExtractor:
-    _PERCENT = re.compile(r"\d+(?:\.\d+)?\s*%\s*(?:이하|미만|이상|초과)?")
-    _JURISDICTIONS = ("한국", "대한민국", "미국", "EU", "유럽", "일본", "중국", "아세안")
     _FIELD_LABELS: ClassVar[dict[str, EvidenceConditionLabel]] = {
         "concentration": EvidenceConditionLabel.CONCENTRATION,
         "formulation": EvidenceConditionLabel.FORMULATION,
@@ -59,18 +55,6 @@ class EvidenceConditionExtractor:
                     value=evidence.jurisdiction,
                 )
             )
-        facts.extend(
-            EvidenceConditionFact(
-                label=EvidenceConditionLabel.SOURCE_VALUE,
-                value=match.group(0),
-            )
-            for match in self._PERCENT.finditer(evidence.text)
-        )
-        facts.extend(
-            EvidenceConditionFact(label=EvidenceConditionLabel.JURISDICTION, value=term)
-            for term in self._JURISDICTIONS
-            if term in evidence.text
-        )
         unique: dict[str, EvidenceConditionFact] = {}
         for fact in facts:
             key = " ".join(fact.value.casefold().split())

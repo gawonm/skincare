@@ -60,7 +60,7 @@ class TestConditionPreservationChecker:
         )
 
     def test_source_without_conditions_always_passes(self) -> None:
-        evidence = self._evidence("항산화 효과가 있는 성분이다.")
+        evidence = self._evidence("1%와 5%에서 항산화 효과를 비교한 자료다.")
         assert ConditionPreservationChecker().is_preserved(
             self._statement("이 성분은 항산화 효과가 있다."), evidence
         )
