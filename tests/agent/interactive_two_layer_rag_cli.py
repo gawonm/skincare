@@ -44,6 +44,11 @@ from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.generation.evidence_statement_generator import EvidenceStatementGeneratorFactory
 from agent.rag.ports import CaseClaimExtractor, CaseReranker, CaseRetriever, EvidenceRetriever
 from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
+from agent.rag.retrieval.case_result_fusion import (
+    CaseSearchContribution,
+    CaseSearchFusionRequest,
+    CaseSearchResultFusion,
+)
 from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.retrieval.ingredient_alias_mapper import CommonIngredientAliasMapper
@@ -540,6 +545,26 @@ class VerboseTwoLayerTurnPresenter:
                     f"  {index}. case_id={hit.case_id} "
                     f"vector_similarity={hit.vector_similarity:.4f}"
                 )
+        contributions = [
+            CaseSearchContribution(query=trace.request.query, result=trace.result)
+            for trace in snapshot.case_searches
+            if trace.result is not None
+        ]
+        if not contributions:
+            return
+        fusion = CaseSearchResultFusion().fuse(
+            CaseSearchFusionRequest(contributions=contributions)
+        )
+        print(
+            f"- RRF 융합 상태: {fusion.search_result.status.value}, "
+            f"후보: {len(fusion.candidates)}건"
+        )
+        for index, candidate in enumerate(fusion.candidates, start=1):
+            print(
+                f"  {index}. case_id={candidate.hit.case_id} "
+                f"rrf_score={candidate.reciprocal_rank_score:.6f} "
+                f"matched_queries={len(candidate.matched_queries)}"
+            )
 
     def _print_case_rerank(self, snapshot: TwoLayerFlowSnapshot) -> None:
         print("\n[2. BGE 리랭커 Top-3 Case]")

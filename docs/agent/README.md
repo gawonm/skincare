@@ -145,6 +145,7 @@ DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump
 
 ## 관련 문서
 
+- [NIA Case 복수 질의 검색·전용 리랭크·Recall@20 평가](RAG_YK/2026-09-23_1754_NIA_CASE_MULTI_QUERY_RETRIEVAL_PLAN.md)
 - [역할 기반 루틴 상품 선택·번호 일정 계획](RAG_YK/2026-09-23_ROUTINE_PRODUCT_ROLE_SELECTION_PLAN.md)
 - [NIA Case 의도별 질의 분리 및 메타데이터 리랭크 계획](RAG_YK/2026-09-22_NIA_CASE_QUERY_DECOMPOSITION_PLAN.md)
 - [구현 계획 — 성분 식별 정규화 및 확정 별칭 조회](RAG_YK/2026-09-22_INGREDIENT_ALIAS_RESOLUTION_PLAN.md)

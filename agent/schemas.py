@@ -203,10 +203,25 @@ class UserProfile(AgentModel):
     experiences: list[SourcedValue] = Field(default_factory=list)
 
 
+class CaseRetrievalQueryKind(StrEnum):
+    """같은 Case 의도를 서로 다른 회수 관점으로 표현하는 질의 종류."""
+
+    PROFILE = "profile"
+    CONCERN = "concern"
+    NATURAL_QUESTION = "natural_question"
+
+
+class CaseRetrievalQuery(AgentModel):
+    kind: CaseRetrievalQueryKind
+    text: str = Field(min_length=1)
+
+
 class IntentQueryPlan(AgentModel):
     """복합 사용자 요청을 각 실행 단계가 소비할 독립 질의로 분리한다."""
 
     case_query: str | None = Field(default=None, min_length=1)
+    case_retrieval_queries: list[CaseRetrievalQuery] = Field(default_factory=list)
+    case_rerank_query: str | None = Field(default=None, min_length=1)
     evidence_query: str | None = Field(default=None, min_length=1)
     product_query: str | None = Field(default=None, min_length=1)
     routine_query: str | None = Field(default=None, min_length=1)
