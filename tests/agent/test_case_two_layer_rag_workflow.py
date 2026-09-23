@@ -82,9 +82,11 @@ class TrackingCaseEmbedder(TextEmbedder):
     def __init__(self, calls: list[CaseWorkflowCall]) -> None:
         self._calls = calls
         self._delegate = FixtureCaseEmbedder()
+        self.requests: list[EmbeddingRequest] = []
 
     async def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         self._calls.append(CaseWorkflowCall.EMBEDDING)
+        self.requests.append(request.model_copy(deep=True))
         return await self._delegate.embed(request)
 
 
@@ -97,6 +99,20 @@ class TrackingCaseRetriever(CaseRetriever):
     async def search(self, request: CaseSearchRequest) -> CaseSearchResult:
         self._calls.append(CaseWorkflowCall.CASE_SEARCH)
         self.requests.append(request.model_copy(deep=True))
+        return await self._delegate.search(request)
+
+
+class PartiallyFailingCaseRetriever(CaseRetriever):
+    def __init__(self, calls: list[CaseWorkflowCall]) -> None:
+        self._calls = calls
+        self._delegate = FixtureCaseRetriever()
+        self.requests: list[CaseSearchRequest] = []
+
+    async def search(self, request: CaseSearchRequest) -> CaseSearchResult:
+        self._calls.append(CaseWorkflowCall.CASE_SEARCH)
+        self.requests.append(request.model_copy(deep=True))
+        if len(self.requests) == 2:
+            raise RuntimeError("두 번째 Case 검색 실패 테스트")
         return await self._delegate.search(request)
 
 
@@ -217,6 +233,7 @@ class CaseWorkflowHarness:
         invalid_quote: bool = False,
         llm: LlmClient | None = None,
         evidence_retriever: EvidenceRetriever | None = None,
+        case_embedder: TextEmbedder | None = None,
         case_retriever: CaseRetriever | None = None,
         case_reranker: CaseReranker | None = None,
         case_claim_extractor: CaseClaimExtractor | None = None,
@@ -232,7 +249,7 @@ class CaseWorkflowHarness:
         )
         app = DevelopmentAgentFactory(
             llm=effective_llm,
-            case_embedder=TrackingCaseEmbedder(calls),
+            case_embedder=case_embedder or TrackingCaseEmbedder(calls),
             case_retriever=case_retriever or TrackingCaseRetriever(calls),
             case_reranker=case_reranker or TrackingCaseReranker(calls),
             case_claim_extractor=(
@@ -269,12 +286,13 @@ class CaseWorkflowHarness:
 
 
 class TestCaseTwoLayerRagWorkflow:
-    async def test_복합_요청의_Case_전용_질의를_검색_리랭크_성분선별에_공통_사용한다(
+    async def test_복합_요청의_Case_의도를_단계별_질의로_사용한다(
         self,
     ) -> None:
         calls: list[CaseWorkflowCall] = []
         harness = CaseWorkflowHarness()
         case_query = "30대 남성 환절기 여드름 지성 피부에 좋은 성분과 주의사항"
+        embedder = TrackingCaseEmbedder(calls)
         retriever = TrackingCaseRetriever(calls)
         reranker = TrackingCaseReranker(calls)
         extractor = TrackingCaseClaimExtractor(calls)
@@ -299,6 +317,7 @@ class TestCaseTwoLayerRagWorkflow:
         app = harness.create(
             calls,
             llm=llm,
+            case_embedder=embedder,
             case_retriever=retriever,
             case_reranker=reranker,
             case_claim_extractor=extractor,
@@ -314,8 +333,15 @@ class TestCaseTwoLayerRagWorkflow:
             )
         )
 
-        assert retriever.requests[0].query == case_query
-        assert reranker.requests[0].query == case_query
+        retrieval_queries = [request.query for request in retriever.requests]
+        assert len(retrieval_queries) == 3
+        assert embedder.requests[0].texts == retrieval_queries
+        assert len(set(retrieval_queries)) == 3
+        assert all("상품" not in query for query in retrieval_queries)
+        assert all("루틴" not in query for query in retrieval_queries)
+        assert reranker.requests[0].query != case_query
+        assert "여드름" in reranker.requests[0].query
+        assert "구체적으로 설명한 사례를 우선한다" in reranker.requests[0].query
         assert extractor.requests[0].query == case_query
 
     async def test_Evidence가_없어도_Case_Claim_상품을_유지한다(self) -> None:
@@ -332,6 +358,8 @@ class TestCaseTwoLayerRagWorkflow:
         )
         assert calls == [
             CaseWorkflowCall.EMBEDDING,
+            CaseWorkflowCall.CASE_SEARCH,
+            CaseWorkflowCall.CASE_SEARCH,
             CaseWorkflowCall.CASE_SEARCH,
             CaseWorkflowCall.CASE_RERANK,
             CaseWorkflowCall.CLAIM_EXTRACTION,
@@ -359,6 +387,8 @@ class TestCaseTwoLayerRagWorkflow:
         assert calls == [
             CaseWorkflowCall.EMBEDDING,
             CaseWorkflowCall.CASE_SEARCH,
+            CaseWorkflowCall.CASE_SEARCH,
+            CaseWorkflowCall.CASE_SEARCH,
             CaseWorkflowCall.CASE_RERANK,
             CaseWorkflowCall.CLAIM_EXTRACTION,
         ]
@@ -385,7 +415,7 @@ class TestCaseTwoLayerRagWorkflow:
 
         assert calls == [CaseWorkflowCall.INGREDIENT]
 
-    async def test_reranker_실패는_벡터_Top3로_fallback한다(self) -> None:
+    async def test_reranker_실패는_RRF_융합_Top3로_fallback한다(self) -> None:
         calls: list[CaseWorkflowCall] = []
         harness = CaseWorkflowHarness()
         app = harness.create(calls, case_reranker=FailingCaseReranker(calls))
@@ -398,8 +428,27 @@ class TestCaseTwoLayerRagWorkflow:
         assert CaseWorkflowCall.EVIDENCE in calls
         assert CaseWorkflowCall.PRODUCT in calls
         assert output.status is ChatStatus.PARTIAL
-        assert "벡터 검색 순위 Top-3" in output.message
+        assert "복수 질의 RRF 융합 순위 Top-3" in output.message
         assert output.retryable is True
+
+    async def test_개별_Case_검색_실패는_나머지_질의로_계속한다(self) -> None:
+        calls: list[CaseWorkflowCall] = []
+        harness = CaseWorkflowHarness()
+        retriever = PartiallyFailingCaseRetriever(calls)
+        app = harness.create(calls, case_retriever=retriever)
+
+        output = await app.service.handle_turn(
+            harness.request("case-partial-search-1", "피지가 많고 좁쌀이 나는데 뭘 써야 해?")
+        )
+
+        assert len(retriever.requests) == 3
+        assert CaseWorkflowCall.CASE_RERANK in calls
+        assert CaseWorkflowCall.CLAIM_EXTRACTION in calls
+        assert output.retryable is True
+        assert any(
+            "NIA Case 복수 질의 검색 일부 실패" in unresolved.detail
+            for unresolved in output.unresolved
+        )
 
     async def test_Claim_추출_ERROR는_성분_Evidence_상품을_중단한다(self) -> None:
         calls: list[CaseWorkflowCall] = []
@@ -415,6 +464,8 @@ class TestCaseTwoLayerRagWorkflow:
 
         assert calls == [
             CaseWorkflowCall.EMBEDDING,
+            CaseWorkflowCall.CASE_SEARCH,
+            CaseWorkflowCall.CASE_SEARCH,
             CaseWorkflowCall.CASE_SEARCH,
             CaseWorkflowCall.CASE_RERANK,
             CaseWorkflowCall.CLAIM_EXTRACTION,
@@ -437,6 +488,8 @@ class TestCaseTwoLayerRagWorkflow:
 
         assert calls == [
             CaseWorkflowCall.EMBEDDING,
+            CaseWorkflowCall.CASE_SEARCH,
+            CaseWorkflowCall.CASE_SEARCH,
             CaseWorkflowCall.CASE_SEARCH,
             CaseWorkflowCall.CASE_RERANK,
             CaseWorkflowCall.CLAIM_EXTRACTION,
