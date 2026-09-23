@@ -305,6 +305,8 @@ class CommonIngredientAliasMapper:
                     "카라파 구아이아넨시스 씨드 오일",
                     "카라파 구아이아넨시스 씨 오일",
                     "CARAPA GUAIANENSIS SEED OIL",
+                    "안디로바 씨드 오일",
+                    "안디로바 씨 오일",
                 )
             ],
             *[
@@ -327,6 +329,7 @@ class CommonIngredientAliasMapper:
                 for term, standard_name in (
                     ("CHITIN", "키틴"),
                     ("MINERAL SALTS", "미네랄솔트"),
+                    ("미네랄 솔트", "미네랄솔트"),
                 )
             ],
         ]
