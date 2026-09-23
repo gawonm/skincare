@@ -83,6 +83,28 @@ class CommonIngredientAliasMapper:
             return []
         return list(entry.candidate_standard_names_ko)
 
+    def equivalent_terms(self, request: IngredientResolveRequest) -> list[str]:
+        entry = self._entry(request)
+        if entry is None or entry.kind is not IngredientAliasKind.EXACT_EQUIVALENT:
+            return [request.name]
+        standard_name = entry.standard_name_ko
+        if standard_name is None:
+            raise RuntimeError("확정 동의어에 표준 성분명이 없습니다.")
+        return list(
+            dict.fromkeys(
+                [
+                    request.name,
+                    standard_name,
+                    *[
+                        candidate.consumer_term
+                        for candidate in self._entries.values()
+                        if candidate.kind is IngredientAliasKind.EXACT_EQUIVALENT
+                        and candidate.standard_name_ko == standard_name
+                    ],
+                ]
+            )
+        )
+
     def detect_mentions(
         self, request: IngredientMentionDetectionRequest
     ) -> IngredientMentionDetectionResult:
@@ -270,6 +292,7 @@ class CommonIngredientAliasMapper:
                 )
                 for term in (
                     "알로에 베라 잎즙 파우더",
+                    "ALOE BARBADENSIS LEAF JUICE POWDER",
                 )
             ],
             *[
@@ -281,6 +304,7 @@ class CommonIngredientAliasMapper:
                 for term in (
                     "카라파 구아이아넨시스 씨드 오일",
                     "카라파 구아이아넨시스 씨 오일",
+                    "CARAPA GUAIANENSIS SEED OIL",
                 )
             ],
             *[
@@ -292,6 +316,17 @@ class CommonIngredientAliasMapper:
                 for term in (
                     "양고추냉이 뿌리 추출물",
                     "Cochlearia Armoracia Root Extract",
+                )
+            ],
+            *[
+                IngredientAliasEntry(
+                    consumer_term=term,
+                    standard_name_ko=standard_name,
+                    description="Case 영문 성분 표기를 확인된 표준 국문 명칭으로 연결하는 확정 동의어",
+                )
+                for term, standard_name in (
+                    ("CHITIN", "키틴"),
+                    ("MINERAL SALTS", "미네랄솔트"),
                 )
             ],
         ]

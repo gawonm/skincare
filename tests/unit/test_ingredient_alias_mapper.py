@@ -87,6 +87,14 @@ class TestCommonIngredientAliasMapper:
             ).name
             == "고추냉이뿌리추출물"
         )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="CHITIN")).name
+            == "키틴"
+        )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="MINERAL SALTS")).name
+            == "미네랄솔트"
+        )
 
     def test_unregistered_name_retains_original(
         self, mapper: CommonIngredientAliasMapper
