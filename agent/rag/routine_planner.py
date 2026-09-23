@@ -245,6 +245,22 @@ class ChatModelRoutineDraftGenerator(RoutineDraftGenerator):
         return result
 
 
+class RoutineDraftNormalizer:
+    """LLM의 상대 순서는 보존하고 슬롯별 order만 연속된 값으로 정규화한다."""
+
+    def normalize(self, draft: RoutineDraftModelOutput) -> RoutineDraftModelOutput:
+        placements = [item.model_copy(deep=True) for item in draft.placements]
+        indices_by_slot: defaultdict[tuple[Weekday, DayPeriod], list[int]] = defaultdict(list)
+        for index, placement in enumerate(placements):
+            indices_by_slot[(placement.weekday, placement.period)].append(index)
+        for indices in indices_by_slot.values():
+            # Python 정렬은 안정적이므로 같은 order에서는 모델이 반환한 상대 순서를 유지한다.
+            ordered_indices = sorted(indices, key=lambda index: placements[index].order)
+            for normalized_order, index in enumerate(ordered_indices, start=1):
+                placements[index].order = normalized_order
+        return RoutineDraftModelOutput(placements=placements)
+
+
 class RoutineRuleSourceBuilder:
     """Planner가 접근할 수 있는 제품·Evidence·Case 사용법을 제품 범위에 묶는다."""
 
@@ -553,11 +569,13 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
         draft_generator: RoutineDraftGenerator,
         validator: DeterministicRoutineValidator | None = None,
         source_builder: RoutineRuleSourceBuilder | None = None,
+        draft_normalizer: RoutineDraftNormalizer | None = None,
     ) -> None:
         self._rule_generator = rule_generator
         self._draft_generator = draft_generator
         self._validator = validator or DeterministicRoutineValidator()
         self._source_builder = source_builder or RoutineRuleSourceBuilder()
+        self._draft_normalizer = draft_normalizer or RoutineDraftNormalizer()
 
     async def plan(self, request: RoutinePlanRequest) -> RoutinePlan:
         sources = self._source_builder.build(request)
@@ -584,14 +602,16 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
                 candidates=candidates.rules,
             )
         )
-        draft = await self._draft_generator.generate(
-            RoutineDraftGenerationRequest(
-                user_request=request.user_request,
-                products=request.products,
-                excluded_weekdays=request.excluded_weekdays,
-                schedule=request.schedule,
-                rules=compilation.rules,
-                current_plan=request.current_plan,
+        draft = self._draft_normalizer.normalize(
+            await self._draft_generator.generate(
+                RoutineDraftGenerationRequest(
+                    user_request=request.user_request,
+                    products=request.products,
+                    excluded_weekdays=request.excluded_weekdays,
+                    schedule=request.schedule,
+                    rules=compilation.rules,
+                    current_plan=request.current_plan,
+                )
             )
         )
         products = {product.product_id: product for product in request.products}

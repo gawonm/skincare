@@ -6,6 +6,7 @@ import pytest
 
 from agent.ports import RoutineDraftGenerator, RoutineRuleGenerator
 from agent.rag.routine_planner import (
+    RoutineDraftNormalizer,
     RoutineFrequencyInterpreter,
     RoutineRuleGenerationError,
     RoutineRuleGenerationFailureKind,
@@ -250,6 +251,40 @@ class TestRoutineFrequencyInterpreter:
         assert schedule.periods == [DayPeriod.MORNING, DayPeriod.EVENING]
         assert schedule.duration_days == 3
         assert schedule.applications_per_week is None
+
+
+class TestRoutineDraftNormalizer:
+    def test_슬롯별_상대순서를_유지하며_order를_연속값으로_고친다(self) -> None:
+        draft = RoutineDraftModelOutput(
+            placements=[
+                RoutineDraftPlacement(
+                    product_id="product:first",
+                    weekday=Weekday.MONDAY,
+                    period=DayPeriod.EVENING,
+                    order=2,
+                    reason="첫 번째",
+                ),
+                RoutineDraftPlacement(
+                    product_id="product:second",
+                    weekday=Weekday.MONDAY,
+                    period=DayPeriod.EVENING,
+                    order=4,
+                    reason="두 번째",
+                ),
+                RoutineDraftPlacement(
+                    product_id="product:morning",
+                    weekday=Weekday.MONDAY,
+                    period=DayPeriod.MORNING,
+                    order=3,
+                    reason="다른 슬롯",
+                ),
+            ]
+        )
+
+        result = RoutineDraftNormalizer().normalize(draft)
+
+        assert [placement.order for placement in result.placements] == [1, 2, 1]
+        assert [placement.order for placement in draft.placements] == [2, 4, 3]
 
 
 class TestSourceBoundRoutinePlanner:
