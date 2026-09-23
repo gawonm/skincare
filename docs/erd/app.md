@@ -512,6 +512,7 @@ erDiagram
 | observed_at | timestamptz | N | - | 크롤러 관측 시각 |
 | match_status | text(enum) | N | - | 수집 직후 항상 `manual_review_required` |
 | review_reasons | text[] | N | `{}` | 검토 사유 목록 |
+| view_count | int | N | `0` | 상품 상세 조회수 카운터. 아래 "조회수 카운터 확장안" 참고. **코드 준비됨(migration `cdff29b164d8`), 로컬 DB 적용 대기** |
 | created_at / updated_at | timestamptz | N | `now()` | 공통 |
 
 키: PK `id`, UK `(source, source_product_id)`. FK 없음(아래 참고).
@@ -558,6 +559,39 @@ Enum(`ProductTypeNormalized` 27개 값, `ProductServiceCategory` 8개 값)이 �
 새 마이그레이션은 구현 시 head를 다시 확인하고 두 컬럼만 추가한다.
 기존 데이터 분류·갱신은 별도 실행으로 분리하며, 기존 RAG 인덱스와 테이블은 변경하지 않는다.
 (migration은 위 설계대로 적용됐고, 별도 실행인 분류 백필도 2026-09-20에 수행됐다.)
+
+#### 조회수 카운터 확장안 — 2026-09-23, data 파트 확인 완료. 코드 준비됨, 마이그레이션 적용 대기
+
+**진행 상태(2026-09-23)**: data 파트 확인을 받아 `models/product.py`에 `view_count` 컬럼을
+추가하고 마이그레이션(`migrations/versions/cdff29b164d8_add_product_view_count_column.py`,
+head `9f4c2a7d8e61` 뒤)을 만들었다. `backend/repositories/product_repository.py`(정렬·원자적
+증가), `backend/schemas/product.py`/`backend/services/product_query_service.py`(응답 필드),
+프론트(`frontend/src/api/product.ts`, `ProductDetailPage.tsx`)까지 코드는 전부 끝났다.
+**로컬 DB에 `alembic upgrade head`를 아직 실행하지 않았다** — 이 환경의 postgres 컨테이너가
+포트 충돌로 못 떠서, DB가 정상인 다른 로컬 환경에서 사용자가 직접 적용하기로 함. 적용 전까지는
+`ProductRepository`를 쓰는 모든 쿼리(적재 스크립트 포함)가 컬럼 불일치로 실패한다.
+
+**배경**: 홈 화면 "인기 상품" 섹션의 정렬 기준이 될 지표가 없었다(크롤링 소스에 조회수·판매량·찜 같은
+값이 없음). 크롤링으로 가져오는 대신, 서비스 자체에서 상품 상세를 조회할 때마다 쌓는 카운터로
+대체하기로 했다(2026-09-23 backend 담당자 확인).
+
+- `view_count int NOT NULL DEFAULT 0` 컬럼 하나만 추가한다. 새 테이블·FK·인덱스 없음.
+- 증가 시점: `GET /products/{id}` 상세 조회 API가 호출될 때마다 1 증가. 홈 카드 클릭이든 채팅
+  제품 링크 클릭이든 이 엔드포인트를 거치므로 출처 구분 없이 동일하게 집계된다.
+- 원자적 증가로 구현한다: `UPDATE product SET view_count = view_count + 1 WHERE id = :id`
+  (조회 후 애플리케이션에서 값을 더해 다시 쓰는 방식은 동시 요청 시 값이 누락될 수 있어 쓰지 않는다).
+- 같은 사용자가 새로고침을 반복해도 중복 제거하지 않는다(세션·쿠키 기준 중복 방지는 이번 범위 밖,
+  나중에 어뷰징이 문제되면 별도로 추가). 현재는 트래픽이 적어 실익보다 구현 비용이 크다고 판단.
+- 홈 "인기 상품" 정렬: `ORDER BY view_count DESC, observed_at DESC`. 서비스 초기라 대부분
+  `view_count = 0`인 동안은 사실상 `observed_at DESC`(최근 수집순)로 동작해 콜드 스타트 시
+  고정 정렬 역할을 자연히 대신한다 — 별도의 "집계 부족 시 폴백" 분기를 코드에 두지 않는다.
+- `product_ingredient_snapshot`처럼 `product`를 append-only로 바꾸지 않는다. 조회수는 현재
+  상태 한 값만 필요하고, 조회 이력(누가 언제 봤는지)이 필요해지면 그때 별도 이벤트 테이블로
+  분리한다(가격·재고 이력을 별도 테이블로 미룬 것과 같은 이유, 위 파일 주석 참고).
+
+구현 순서(규칙 14): 이 절을 data 파트 담당자에게 공유해 확인받는다 → `models/product.py`에
+컬럼 추가 → `config.yaml`의 `database.model_modules` 확인(이미 등록된 모듈이라 추가 불필요) →
+마이그레이션 생성 → `backend/repositories/`의 상세 조회 메서드에서 원자적 증가 쿼리 실행.
 
 ### product_ingredient_snapshot
 

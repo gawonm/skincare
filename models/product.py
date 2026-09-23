@@ -221,3 +221,10 @@ class Product(EntityBase):
         server_default="{}",
         comment="검토가 필요한 구체적 사유들(ReviewReason 값). 비어 있어도 검토 완료 아님",
     )
+    view_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="상품 상세 조회수 카운터. GET /products/{id} 호출마다 원자적으로 증가",
+    )
