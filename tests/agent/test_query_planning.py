@@ -1,5 +1,6 @@
 from agent.query_planning import IntentQueryPlanner
 from agent.schemas import (
+    CaseRetrievalQueryKind,
     Intent,
     IntentQueryPlan,
     ParsedRequest,
@@ -116,6 +117,35 @@ class TestIntentQueryPlanner:
         assert "추천" not in result.case_query
         assert "5일" not in result.case_query
         assert "루틴" not in result.case_query
+        assert [query.kind for query in result.case_retrieval_queries] == [
+            CaseRetrievalQueryKind.PROFILE,
+            CaseRetrievalQueryKind.CONCERN,
+            CaseRetrievalQueryKind.NATURAL_QUESTION,
+        ]
+        retrieval_text = " ".join(query.text for query in result.case_retrieval_queries)
+        assert "30살" in retrieval_text
+        assert "30대" in retrieval_text
+        assert "여성" in retrieval_text
+        assert "겨울" in retrieval_text
+        assert "건조" in retrieval_text
+        assert "민감" in retrieval_text
+        assert "보습" in retrieval_text
+        assert "수분 부족" in retrieval_text
+        assert "진정" in retrieval_text
+        assert "자극 주의" in retrieval_text
+        assert "홍조" not in retrieval_text
+        assert "가려움" not in retrieval_text
+        assert "아토피" not in retrieval_text
+        assert "제품" not in retrieval_text
+        assert "추천" not in retrieval_text
+        assert "5일" not in retrieval_text
+        assert "루틴" not in retrieval_text
+        assert result.case_rerank_query is not None
+        assert "건조·민감" in result.case_rerank_query
+        assert "보습·수분 부족·진정·자극 주의" in result.case_rerank_query
+        assert "구체적으로 설명한 사례를 우선한다" in result.case_rerank_query
+        assert "제품" not in result.case_rerank_query
+        assert "루틴" not in result.case_rerank_query
 
     def test_명시_성분_Evidence_직행에는_Case_질의를_만들지_않는다(self) -> None:
         parsed = ParsedRequest(
@@ -136,6 +166,8 @@ class TestIntentQueryPlanner:
         )
 
         assert result.case_query is None
+        assert result.case_retrieval_queries == []
+        assert result.case_rerank_query is None
         assert result.evidence_query == parsed.query
 
     def test_Case_경로의_Evidence_질의가_없으면_고민과_검증축만_사용한다(self) -> None:

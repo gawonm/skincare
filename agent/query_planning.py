@@ -5,7 +5,14 @@ from enum import StrEnum
 from typing import ClassVar
 
 from agent.rag_route_policy import SkinConcernCue
-from agent.schemas import Intent, IntentQueryPlan, QueryPlanningRequest, RagRoute
+from agent.schemas import (
+    CaseRetrievalQuery,
+    CaseRetrievalQueryKind,
+    Intent,
+    IntentQueryPlan,
+    QueryPlanningRequest,
+    RagRoute,
+)
 
 
 class ExplicitCaseContext(StrEnum):
@@ -47,6 +54,15 @@ class CaseQueryInstructionCue(StrEnum):
     WHAT_SHOULD_I_APPLY = "무엇을 발라"
 
 
+class CaseQueryExpansion(StrEnum):
+    """원문 피부 고민에서 안전하게 파생할 수 있는 검색용 도메인 표현."""
+
+    MOISTURIZING = "보습"
+    DEHYDRATION = "수분 부족"
+    SOOTHING = "진정"
+    IRRITATION_PRECAUTION = "자극 주의"
+
+
 class IntentQueryPlanner:
     """LLM의 질의 분리를 보완하되 사용자가 명시한 Case 문맥은 삭제하지 않는다."""
 
@@ -68,17 +84,139 @@ class IntentQueryPlanner:
         ExplicitCaseContext.NORMAL: ("중성",),
         ExplicitCaseContext.SENSITIVE: ("민감성",),
     }
+    _CONCERN_EXPANSIONS: ClassVar[dict[SkinConcernCue, tuple[CaseQueryExpansion, ...]]] = {
+        SkinConcernCue.DRYNESS: (
+            CaseQueryExpansion.MOISTURIZING,
+            CaseQueryExpansion.DEHYDRATION,
+        ),
+        SkinConcernCue.SENSITIVITY: (
+            CaseQueryExpansion.SOOTHING,
+            CaseQueryExpansion.IRRITATION_PRECAUTION,
+        ),
+    }
 
     def build(self, request: QueryPlanningRequest) -> IntentQueryPlan:
         parsed = request.parsed_request
         draft = parsed.query_plan
         case_query = self._case_query(request)
+        explicit_context = self._explicit_context(request.original_message)
+        concerns = self._evidence_concerns(request)
         return IntentQueryPlan(
             case_query=case_query,
+            case_retrieval_queries=self._case_retrieval_queries(
+                case_query,
+                explicit_context,
+                concerns,
+            ),
+            case_rerank_query=self._case_rerank_query(
+                case_query,
+                explicit_context,
+                concerns,
+            ),
             evidence_query=self._evidence_query(request),
             product_query=self._effective_query(draft.product_query, parsed.query),
             routine_query=self._effective_query(draft.routine_query, parsed.query),
         )
+
+    def _case_retrieval_queries(
+        self,
+        case_query: str | None,
+        explicit_context: list[str],
+        concerns: list[str],
+    ) -> list[CaseRetrievalQuery]:
+        if case_query is None:
+            return []
+
+        context_text = " ".join(explicit_context)
+        concern_text = " ".join(concerns) or "피부 고민"
+        expansions = self._case_query_expansions([*explicit_context, *concerns])
+        expansion_text = " ".join(expansion.value for expansion in expansions)
+        age_group_context = " ".join(
+            self._age_group(term) if self._AGE_PATTERN.fullmatch(term) else term
+            for term in explicit_context
+        )
+
+        candidates = [
+            CaseRetrievalQuery(
+                kind=CaseRetrievalQueryKind.PROFILE,
+                text=self._normalize(
+                    f"{context_text} {concern_text} 피부에 적합한 성분 및 주의사항"
+                ),
+            ),
+            CaseRetrievalQuery(
+                kind=CaseRetrievalQueryKind.CONCERN,
+                text=self._normalize(
+                    f"{concern_text} 피부 {expansion_text} 관련 성분 및 사용 주의사항"
+                ),
+            ),
+            CaseRetrievalQuery(
+                kind=CaseRetrievalQueryKind.NATURAL_QUESTION,
+                text=self._normalize(
+                    f"{age_group_context} {concern_text} 피부에 어떤 성분이 좋으며 "
+                    "무엇을 주의해야 하나"
+                ),
+            ),
+        ]
+        return self._deduplicate_case_queries(candidates)
+
+    def _case_rerank_query(
+        self,
+        case_query: str | None,
+        explicit_context: list[str],
+        concerns: list[str],
+    ) -> str | None:
+        if case_query is None:
+            return None
+        concern_text = "·".join(concerns) or "피부 고민"
+        context_text = " ".join(explicit_context) or "사용자"
+        expansions = self._case_query_expansions([*explicit_context, *concerns])
+        expansion_text = "·".join(expansion.value for expansion in expansions)
+        relevance = f"{expansion_text}에 관한 " if expansion_text else ""
+        return self._normalize(
+            f"{concern_text} 피부 고민과 관련된 사례를 찾는다. "
+            f"{context_text} 문맥과 유사하고 {relevance}성분 및 사용 주의사항을 "
+            "구체적으로 설명한 사례를 우선한다."
+        )
+
+    def _case_query_expansions(self, terms: list[str]) -> list[CaseQueryExpansion]:
+        normalized_terms = [term.casefold() for term in terms]
+        expansions: list[CaseQueryExpansion] = []
+        for concern, concern_expansions in self._CONCERN_EXPANSIONS.items():
+            aliases = [concern.value.casefold()]
+            if concern is SkinConcernCue.DRYNESS:
+                aliases.append(ExplicitCaseContext.DRY.value.casefold())
+            if concern is SkinConcernCue.SENSITIVITY:
+                aliases.append(ExplicitCaseContext.SENSITIVE.value.casefold())
+            if not any(
+                alias in term or term in alias for alias in aliases for term in normalized_terms
+            ):
+                continue
+            for expansion in concern_expansions:
+                if expansion not in expansions:
+                    expansions.append(expansion)
+        return expansions
+
+    def _deduplicate_case_queries(
+        self,
+        candidates: list[CaseRetrievalQuery],
+    ) -> list[CaseRetrievalQuery]:
+        queries: list[CaseRetrievalQuery] = []
+        normalized_texts: set[str] = set()
+        for candidate in candidates:
+            normalized = candidate.text.casefold()
+            if normalized in normalized_texts:
+                continue
+            normalized_texts.add(normalized)
+            queries.append(candidate)
+        return queries
+
+    def _age_group(self, age: str) -> str:
+        if age.endswith("대"):
+            return age
+        numeric = re.sub(r"\D", "", age)
+        if not numeric:
+            return age
+        return f"{int(numeric) // 10 * 10}대"
 
     def _evidence_query(self, request: QueryPlanningRequest) -> str | None:
         parsed = request.parsed_request

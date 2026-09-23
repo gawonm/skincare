@@ -64,6 +64,7 @@ class PromptCatalog:
             - `query`: 사용자의 전체 요청과 명시된 나이, 성별, 계절, 피부 상태를 빠뜨리지 않은 완전한 독립 질문으로 구성
             - `query_plan`: 실행 단계별 질의를 다음 기준에 맞춰 분리 (해당 Intent가 없으면 null 반환)
               - `case_query`: 피부 고민으로 성분을 찾는 요청. 나이, 성별, 계절, 피부 타입, 피부 고민, 성분·주의 질문만 보존 (상품 추천 조건, 루틴 기간·일정 지시 제외)
+              - `case_retrieval_queries`, `case_rerank_query`: 결정적 후처리기가 생성하므로 각각 빈 목록과 null로 반환
               - `evidence_query`: 효능·주의·안전성 질문만 포함
               - `product_query`: 상품 선택 요청과 조건만 포함
               - `routine_query`: 루틴 기간, 일정, 사용 요청만 포함
