@@ -24,6 +24,7 @@ from agent.rag.schemas import (
     EvidenceSourceType,
     EvidenceTextKind,
     MaxFrequencyRoutineRuleCandidate,
+    ProductCategory,
     ProductRecord,
     RoutineDraftGenerationRequest,
     RoutineDraftModelOutput,
@@ -172,7 +173,10 @@ class RoutinePlannerHarness:
             case_usage_guidance=case_usage_guidance or [],
         )
 
-    def evidence(self) -> EvidenceRecord:
+    def evidence(
+        self,
+        review_status: EvidenceReviewStatus = EvidenceReviewStatus.VERIFIED,
+    ) -> EvidenceRecord:
         return EvidenceRecord(
             source_type=EvidenceSourceType.PAPER,
             text_kind=EvidenceTextKind.EXCERPT,
@@ -183,7 +187,7 @@ class RoutinePlannerHarness:
             locator="abstract:0",
             target_ids=["ingredient:retinol"],
             conditions=EvidenceConditions(usage="저녁 사용"),
-            review_status=EvidenceReviewStatus.UNREVIEWED,
+            review_status=review_status,
             is_demo=False,
         )
 
@@ -248,13 +252,34 @@ class TestRoutineFrequencyInterpreter:
         assert schedule.duration_days == 3
         assert schedule.applications_per_week is None
 
-    def test_단독_횟수는_주당_횟수로_해석한다(self) -> None:
+    def test_일간이_생략된_5일_루틴도_기간으로_해석한다(self) -> None:
+        schedule = RoutineFrequencyInterpreter().schedule("추천 상품으로 5일 스킨케어 루틴")
+
+        assert schedule.duration_days == 5
+        assert schedule.occurrence_count is None
+        assert schedule.applications_per_week is None
+
+    def test_주_3일은_3일_루틴_기간으로_중복_해석하지_않는다(self) -> None:
+        schedule = RoutineFrequencyInterpreter().schedule("이 제품은 주 3일 사용")
+
+        assert schedule.duration_days is None
+        assert schedule.occurrence_count is None
+        assert schedule.applications_per_week == 3
+
+    def test_단독_횟수는_주당_횟수가_아닌_루틴_횟수로_해석한다(self) -> None:
         interpreter = RoutineFrequencyInterpreter()
 
         assert interpreter.grounded_source_frequencies("처음에는 3회 사용합니다.") == {3}
         schedule = interpreter.schedule("이 제품으로 4회 루틴 짜줘")
         assert schedule.duration_days is None
-        assert schedule.applications_per_week == 4
+        assert schedule.occurrence_count == 4
+        assert schedule.applications_per_week is None
+
+    def test_주당_횟수는_단독_루틴_횟수로_중복_해석하지_않는다(self) -> None:
+        schedule = RoutineFrequencyInterpreter().schedule("이 제품은 주 3회 사용")
+
+        assert schedule.occurrence_count is None
+        assert schedule.applications_per_week == 3
 
     @pytest.mark.parametrize("text", ["하루 2회 사용", "매일 2번 사용", "아침저녁 2회 사용"])
     def test_일일_표현은_주당_횟수로_해석하지_않는다(self, text: str) -> None:
@@ -304,6 +329,70 @@ class TestRoutineDraftNormalizer:
 
 
 class TestSourceBoundRoutinePlanner:
+    async def test_DraftGenerator가_없으면_결정적_스케줄러를_사용한다(self) -> None:
+        harness = RoutinePlannerHarness()
+        product = harness.product(directions=None).model_copy(
+            update={
+                "category": ProductCategory(
+                    code="에센스·세럼",
+                    name="에센스·세럼",
+                )
+            }
+        )
+        planner = SourceBoundRoutinePlanner(
+            FixedRoutineRuleGenerator(RoutineRuleModelOutput())
+        )
+        request = harness.request(
+            product,
+            schedule=RoutineScheduleConstraints(occurrence_count=3),
+        )
+
+        plan = await planner.plan(request)
+
+        assert len(plan.placements) == 3
+        assert {placement.period for placement in plan.placements} == {
+            DayPeriod.UNSPECIFIED
+        }
+
+    async def test_사용자_시간대와_필수_Rule이_충돌하면_대표_상품_누락을_거부한다(
+        self,
+    ) -> None:
+        harness = RoutinePlannerHarness()
+        product = harness.product().model_copy(
+            update={
+                "category": ProductCategory(
+                    code="에센스·세럼",
+                    name="에센스·세럼",
+                )
+            }
+        )
+        planner = SourceBoundRoutinePlanner(
+            FixedRoutineRuleGenerator(
+                RoutineRuleModelOutput(rules=[harness.rule()])
+            )
+        )
+        schedule = RoutineScheduleConstraints(
+            duration_days=1,
+            periods=[DayPeriod.MORNING],
+        )
+        request = harness.request(product, schedule=schedule)
+
+        plan = await planner.plan(request)
+        validation = await planner.validate(
+            RoutineValidationRequest(
+                plan=plan,
+                products=[product],
+                schedule=schedule,
+            )
+        )
+
+        assert plan.placements == []
+        assert validation.valid is False
+        assert any(
+            "기본 역할 대표 상품이 루틴에서 누락" in violation
+            for violation in validation.violations
+        )
+
     async def test_제품_사용법_exact_quote_Rule을_강제해_루틴을_확정한다(self) -> None:
         harness = RoutinePlannerHarness()
         product = harness.product()
@@ -346,7 +435,7 @@ class TestSourceBoundRoutinePlanner:
         assert plan.rules == []
         assert any("출처 원문과 일치하지 않는" in warning for warning in validation.warnings)
 
-    async def test_document_status와_무관하게_Evidence_Rule을_강제한다(self) -> None:
+    async def test_검수된_Evidence_Rule을_필수_규칙으로_강제한다(self) -> None:
         harness = RoutinePlannerHarness()
         product = harness.product(directions=None)
         evidence = harness.evidence()
@@ -377,6 +466,37 @@ class TestSourceBoundRoutinePlanner:
         assert validation.violations == []
         assert plan.rules[0].enforcement is RoutineRuleEnforcement.REQUIRED
         assert draft_generator.requests[0].rules[0].enforcement is RoutineRuleEnforcement.REQUIRED
+
+    async def test_미검수_Evidence_Rule은_경고로만_전달한다(self) -> None:
+        harness = RoutinePlannerHarness()
+        product = harness.product(directions=None)
+        evidence = harness.evidence(EvidenceReviewStatus.UNREVIEWED)
+        draft_generator = FixedRoutineDraftGenerator(
+            harness.draft(period=DayPeriod.MORNING)
+        )
+        planner = SourceBoundRoutinePlanner(
+            FixedRoutineRuleGenerator(
+                RoutineRuleModelOutput(
+                    rules=[
+                        harness.rule(
+                            source_id="evidence:evidence-1",
+                            source_quote="저녁에 사용",
+                        )
+                    ]
+                )
+            ),
+            draft_generator,
+        )
+
+        plan = await planner.plan(harness.request(product, evidence=[evidence]))
+        validation = await planner.validate(
+            RoutineValidationRequest(plan=plan, products=[product])
+        )
+
+        assert plan.rules[0].source_kind is RoutineRuleSourceKind.UNREVIEWED_EVIDENCE
+        assert plan.rules[0].enforcement is RoutineRuleEnforcement.WARNING
+        assert draft_generator.requests[0].rules == []
+        assert "레티놀 제품은 저녁에만 배치" in validation.warnings
 
     async def test_Case_사용법은_성분이_겹치는_상품에만_경고로_전달한다(self) -> None:
         harness = RoutinePlannerHarness()
@@ -434,7 +554,7 @@ class TestSourceBoundRoutinePlanner:
 
         assert validation.valid is False
         assert any("허용되지 않은 제품 ID" in item for item in validation.violations)
-        assert any("선택한 제품이 루틴에서 누락" in item for item in validation.violations)
+        assert not any("선택한 제품이 루틴에서 누락" in item for item in validation.violations)
 
     async def test_기간은_아침저녁_배치가_아니라_서로_다른_요일_수로_검증한다(self) -> None:
         harness = RoutinePlannerHarness()

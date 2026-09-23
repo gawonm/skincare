@@ -83,13 +83,13 @@ class TestCommonIngredientAliasMapper:
         )
         assert (
             mapper.map_request(IngredientResolveRequest(name="양고추냉이 뿌리 추출물")).name
-            == "고추냉이뿌리추출물"
+            == "호스래디시뿌리추출물"
         )
         assert (
             mapper.map_request(
                 IngredientResolveRequest(name="COCHLEARIA ARMORACIA ROOT EXTRACT")
             ).name
-            == "고추냉이뿌리추출물"
+            == "호스래디시뿌리추출물"
         )
         assert (
             mapper.map_request(IngredientResolveRequest(name="CHITIN")).name

@@ -108,9 +108,9 @@ class TestAgentChatService:
             artifact for artifact in continuation.artifacts if isinstance(artifact, RoutinePlan)
         ]
         assert plans
+        # 같은 보습 역할에서는 후보 순위가 높은 대표 상품 하나만 루틴에 배치한다.
         assert {placement.product_id for placement in plans[0].placements} == {
-            "product:ceramide-cream",
-            "product:panthenol-gel",
+            "product:ceramide-cream"
         }
 
     async def test_candidate_reference_and_schedule_change(self) -> None:

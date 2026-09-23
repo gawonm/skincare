@@ -149,6 +149,28 @@ class TestIngredientAliases:
         )
         assert mapped.name == "살리실릭애씨드"
 
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("알로에신", "알로에신"),
+            ("ALOESIN", "알로에신"),
+            ("Hexapeptide-2", "헥사펩타이드-2"),
+            ("hexapeptide 2", "헥사펩타이드-2"),
+            ("서양 고추냉이 뿌리 추출물", "호스래디시뿌리추출물"),
+            ("COCHLEARIA ARMORACIA ROOT EXTRACT", "호스래디시뿌리추출물"),
+        ],
+    )
+    def test_maps_confirmed_case_ingredient_aliases(
+        self,
+        name: str,
+        expected: str,
+    ) -> None:
+        mapped = CommonIngredientAliasMapper().map_request(
+            IngredientResolveRequest(name=name)
+        )
+
+        assert mapped.name == expected
+
     @pytest.mark.parametrize("name", ["BHA", "티트리 오일", "티트리오일", "TEA TREE OIL"])
     def test_preserves_ambiguous_families_without_single_id_mapping(self, name: str) -> None:
         mapper = CommonIngredientAliasMapper()

@@ -26,6 +26,7 @@ agent는 대화 해석, LangGraph 실행, 문서 청킹·임베딩, 검색 결�
 | `agent/adapters.py`, `agent/demo.py` | DB 없는 개발용 저장소·모델·계획기와 실행 예제 |
 | `agent/rag/schemas.py`, `agent/rag/ports.py` | RAG·상품 조회 DTO와 검색·임베딩·생성 계약 |
 | `agent/rag/claim_schemas.py` | NIA Claim 전용 DTO와 성분 anchor 계약 |
+| `agent/rag/routine_product_selector.py`, `agent/rag/deterministic_routine_scheduler.py` | 역할별 대표 상품 선택과 Rule 기반 번호 루틴 배치 |
 | `agent/rag/loaders/data_records.py` | 주입받은 데이터 DTO를 성분·근거 DTO로 변환 |
 | `agent/rag/chunking/field_chunker.py` | 입력 문서의 필드 단위 청킹 및 조건 보존 |
 | `agent/rag/embedding/` | 선택형 OpenAI·BGE-M3 비동기 임베딩 어댑터와 조립 팩토리 |
@@ -144,6 +145,7 @@ DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump
 
 ## 관련 문서
 
+- [역할 기반 루틴 상품 선택·번호 일정 계획](RAG_YK/2026-09-23_ROUTINE_PRODUCT_ROLE_SELECTION_PLAN.md)
 - [NIA Case 의도별 질의 분리 및 메타데이터 리랭크 계획](RAG_YK/2026-09-22_NIA_CASE_QUERY_DECOMPOSITION_PLAN.md)
 - [구현 계획 — 성분 식별 정규화 및 확정 별칭 조회](RAG_YK/2026-09-22_INGREDIENT_ALIAS_RESOLUTION_PLAN.md)
 - [구현 계획 — NIA Case 런타임 Claim 추출](RAG_YK/2026-09-21_0219_RUNTIME_CASE_CLAIM_EXTRACTION_PLAN.md)

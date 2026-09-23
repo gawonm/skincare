@@ -22,11 +22,14 @@ from agent.rag.retrieval.ingredient_alias_mapper import (
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.routine_planner import RoutineFrequencyInterpreter
 from agent.rag.routine_product_selector import (
+    RoutineProductSelection,
     RoutineProductSelectionRequest,
     RoutineProductSelector,
 )
 from agent.rag.schemas import (
+    DEFAULT_ROUTINE_DURATION_DAYS,
     DEFAULT_SEARCH_LIMIT,
+    DayPeriod,
     EvidenceConditions,
     IngredientMatchMode,
     IngredientResolveRequest,
@@ -39,8 +42,11 @@ from agent.rag.schemas import (
     ProductSearchFilters,
     ProductSearchRequest,
     ProductTaxonomy,
+    RoutinePlacement,
     RoutinePlan,
     RoutinePlanRequest,
+    RoutineProductRole,
+    RoutineScheduleConstraints,
     RoutineValidationRequest,
     Weekday,
 )
@@ -86,19 +92,17 @@ UNREVIEWED_EVIDENCE_PRODUCT_LIMITATION = ProductCandidateLimitation.EVIDENCE_UNR
 CLAIM_ONLY_PRODUCT_LIMITATION = ProductCandidateLimitation.CLAIM_NOT_VERIFIED.value
 
 
-class KoreanWeekdayLabel(StrEnum):
-    MONDAY = "월요일"
-    TUESDAY = "화요일"
-    WEDNESDAY = "수요일"
-    THURSDAY = "목요일"
-    FRIDAY = "금요일"
-    SATURDAY = "토요일"
-    SUNDAY = "일요일"
-
-
 class KoreanDayPeriodLabel(StrEnum):
     MORNING = "아침"
     EVENING = "저녁"
+
+
+class KoreanRoutineRoleLabel(StrEnum):
+    CARE = "케어"
+    MOISTURIZE = "보습"
+    CLEANSE = "세안"
+    SPECIAL_CARE = "특별 케어"
+    UNCLASSIFIED = "미분류"
 
 
 class AgentNodes:
@@ -106,6 +110,20 @@ class AgentNodes:
 
     _EVIDENCE_REFERENCES = ("이 성분", "그 성분", "해당 성분", "이 제품", "그 제품")
     _RECOMMENDATION_POOL_PER_INGREDIENT: ClassVar[int] = DEFAULT_SEARCH_LIMIT
+    _WEEKDAY_ORDER: ClassVar[tuple[Weekday, ...]] = (
+        Weekday.MONDAY,
+        Weekday.TUESDAY,
+        Weekday.WEDNESDAY,
+        Weekday.THURSDAY,
+        Weekday.FRIDAY,
+        Weekday.SATURDAY,
+        Weekday.SUNDAY,
+    )
+    _PERIOD_DISPLAY_ORDER: ClassVar[dict[DayPeriod, int]] = {
+        DayPeriod.MORNING: 0,
+        DayPeriod.EVENING: 1,
+        DayPeriod.UNSPECIFIED: 2,
+    }
 
     def __init__(
         self,
@@ -743,9 +761,8 @@ class AgentNodes:
         if recommendation_matches:
             self._append_recommendation_product_message(state, candidates, recommendation_matches)
         else:
-            lines = [f"{candidate.rank}번. {candidate.product.name}" for candidate in candidates]
             title = "개발용 제품 후보:" if candidate_set.is_demo else "조건에 맞는 제품 후보:"
-            state.response_parts.append(title + "\n" + "\n".join(lines))
+            self._append_role_product_message(state, title, candidates)
 
     async def _search_recommendation_products(
         self,
@@ -755,8 +772,6 @@ class AgentNodes:
         if recommendation_set is None or not recommendation_set.candidates:
             return []
         ingredient_ids = [candidate.ingredient_id for candidate in recommendation_set.candidates]
-        unresolved_count = len(state.unresolved)
-        previous_error_code = state.error_code
         primary = await self._search_products(
             state,
             ingredient_ids,
@@ -774,47 +789,11 @@ class AgentNodes:
                 products=products,
             )
         )
-        if (
-            state.error_code is not previous_error_code
-            or len(state.unresolved) != unresolved_count
-        ):
-            return selection.matches
-
-        for ingredient_id in selection.uncovered_ingredient_ids:
-            unresolved_count = len(state.unresolved)
-            previous_error_code = state.error_code
-            entities = await self._search_products(
-                state,
-                [ingredient_id],
-                GraphNode.PROCESS_TASK,
-                ingredient_match_mode=IngredientMatchMode.ANY,
-            )
-            if not entities.products:
-                if (
-                    len(state.unresolved) != unresolved_count
-                    or state.error_code is not previous_error_code
-                ):
-                    break
-                state.status = ChatStatus.PARTIAL
-                detail = (
-                    "추천 성분과 연결된 상품을 찾지 못했습니다: "
-                    f"{ingredient_id}"
-                )
-                state.unresolved.append(
-                    UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=detail)
-                )
-                continue
-            products.extend(entities.products)
         state.task_context.search_filters = state.task_context.search_filters.model_copy(
             deep=True,
             update={"ingredient_ids": ingredient_ids},
         )
-        return self._recommendation_product_selector.select(
-            RecommendationProductSelectionRequest(
-                ingredients=recommendation_set.candidates,
-                products=products,
-            )
-        ).matches
+        return selection.matches
 
     def _recommendation_product_candidates(
         self,
@@ -869,38 +848,52 @@ class AgentNodes:
         candidates: list[ProductCandidate],
         matches: list[RecommendationProductMatch],
     ) -> None:
-        verified_lines = [
-            f"{candidate.rank}번. {candidate.product.name}"
-            for candidate, match in zip(candidates, matches, strict=True)
-            if match.basis() is RecommendationBasis.VERIFIED_EVIDENCE
-        ]
-        limited_lines = [
-            f"{candidate.rank}번. {candidate.product.name}"
-            for candidate, match in zip(candidates, matches, strict=True)
-            if match.basis() is RecommendationBasis.LIMITED_EVIDENCE
-        ]
-        unreviewed_lines = [
-            f"{candidate.rank}번. {candidate.product.name}"
-            for candidate, match in zip(candidates, matches, strict=True)
-            if match.basis() is RecommendationBasis.UNREVIEWED_EVIDENCE
-        ]
-        claim_only_lines = [
-            f"{candidate.rank}번. {candidate.product.name}"
-            for candidate, match in zip(candidates, matches, strict=True)
-            if match.basis() is RecommendationBasis.CLAIM_ONLY
-        ]
-        if verified_lines:
-            state.response_parts.append("성분 근거 제품 후보:\n" + "\n".join(verified_lines))
-        if limited_lines:
-            state.response_parts.append("제한 근거 제품 후보:\n" + "\n".join(limited_lines))
-        if unreviewed_lines:
-            state.response_parts.append(
-                "미검수 근거 제품 후보:\n" + "\n".join(unreviewed_lines)
-            )
-        if claim_only_lines:
-            state.response_parts.append(
-                "Claim 기반 제품 후보:\n" + "\n".join(claim_only_lines)
-            )
+        matches_by_product_id = {
+            match.product.product_id: match for match in matches
+        }
+        self._append_role_product_message(
+            state,
+            "역할별 제품 후보:",
+            candidates,
+            matches_by_product_id,
+        )
+
+    def _append_role_product_message(
+        self,
+        state: AgentState,
+        title: str,
+        candidates: list[ProductCandidate],
+        matches_by_product_id: dict[str, RecommendationProductMatch] | None = None,
+    ) -> None:
+        lines = [title]
+        for role in self._routine_product_selector.DISPLAY_ROLE_ORDER:
+            role_candidates = [
+                candidate
+                for candidate in candidates
+                if self._routine_product_selector.role(candidate.product) is role
+            ]
+            if not role_candidates:
+                continue
+            lines.append(f"[{KoreanRoutineRoleLabel[role.name].value}]")
+            for candidate in role_candidates:
+                basis = ""
+                if matches_by_product_id is not None:
+                    match = matches_by_product_id.get(candidate.product.product_id)
+                    if match is not None:
+                        basis = f" ({self._recommendation_basis_label(match.basis())})"
+                lines.append(
+                    f"{candidate.rank}번. {candidate.product.name}{basis}"
+                )
+        state.response_parts.append("\n".join(lines))
+
+    def _recommendation_basis_label(self, basis: RecommendationBasis) -> str:
+        if basis is RecommendationBasis.VERIFIED_EVIDENCE:
+            return "검수 근거"
+        if basis is RecommendationBasis.LIMITED_EVIDENCE:
+            return "적용 제한 근거"
+        if basis is RecommendationBasis.UNREVIEWED_EVIDENCE:
+            return "미검수 근거"
+        return "Claim 기반"
 
     def _product_limitations(self, product: ProductRecord) -> list[str]:
         return (
@@ -1016,23 +1009,27 @@ class AgentNodes:
 
     async def _process_routine(self, state: AgentState) -> None:
         parsed = self._require_parsed(state)
-        products = await self._routine_products(state)
+        selection = await self._routine_products(state)
+        products = selection.products
+        user_request = parsed.query_plan.routine_query or parsed.query
+        schedule_constraints = self._routine_frequency.schedule(user_request)
         if not products:
             state.status = ChatStatus.PARTIAL
             state.unresolved.append(
                 UnresolvedItem(
                     kind=UnresolvedKind.MISSING_INFORMATION,
-                    detail="루틴에 배치할 제품을 복구할 수 없습니다.",
+                    detail="이번 검색 결과에서 루틴 역할을 맡길 상품 후보가 없습니다.",
                 )
             )
-            state.response_parts.append("루틴에 배치할 제품을 확인하지 못했습니다.")
+            state.response_parts.append(
+                "루틴 대표 상품을 선택하지 못했습니다.\n"
+                + "\n".join(self._missing_role_lines(selection.missing_roles))
+            )
             return
         if not self._reserve_tool_call(state, GraphNode.PROCESS_TASK):
             return
 
         excluded_weekdays = self._merged_excluded_weekdays(state, parsed.excluded_weekdays)
-        user_request = parsed.query_plan.routine_query or parsed.query
-        schedule = self._routine_frequency.schedule(user_request)
         plan = await self._routine_planner.plan(
             RoutinePlanRequest(
                 chat_room_id=state.chat_room_id,
@@ -1040,7 +1037,7 @@ class AgentNodes:
                 products=products,
                 user_request=user_request,
                 excluded_weekdays=excluded_weekdays,
-                schedule=schedule,
+                schedule=schedule_constraints,
                 evidence_records=state.evidence,
                 case_usage_guidance=state.task_context.case_usage_guidance,
                 current_plan=state.routine,
@@ -1053,7 +1050,7 @@ class AgentNodes:
                 plan=plan,
                 products=products,
                 excluded_weekdays=excluded_weekdays,
-                schedule=schedule,
+                schedule=schedule_constraints,
             )
         )
         if not validation.valid:
@@ -1072,19 +1069,21 @@ class AgentNodes:
         if validation.warnings:
             # 출처가 불확실한 Rule을 일정에 강제하지 않았음을 최종 상태에서도 드러낸다.
             state.status = ChatStatus.PARTIAL
-
         state.routine = plan
         state.artifacts.append(plan)
-        schedule = [
-            (
-                f"{KoreanWeekdayLabel[placement.weekday.name].value} "
-                f"{KoreanDayPeriodLabel[placement.period.name].value}: "
-                f"{placement.product_name}"
-            )
-            for placement in plan.placements
-        ]
         title = "개발용 루틴 초안:" if plan.is_demo else "루틴 초안:"
-        state.response_parts.append(title + "\n" + "\n".join(schedule))
+        state.response_parts.append(
+            title
+            + "\n"
+            + "\n".join(
+                self._routine_response_lines(
+                    plan,
+                    selection,
+                    schedule_constraints,
+                    excluded_weekdays,
+                )
+            )
+        )
         if any(product.is_demo and "retinol" in product.product_id for product in products):
             state.unresolved.append(
                 UnresolvedItem(
@@ -1093,7 +1092,7 @@ class AgentNodes:
                 )
             )
 
-    async def _routine_products(self, state: AgentState) -> list[ProductRecord]:
+    async def _routine_products(self, state: AgentState) -> RoutineProductSelection:
         parsed = self._require_parsed(state)
         rejected_ids = set(state.task_context.rejected_product_ids)
         rejected_ids.update(
@@ -1106,27 +1105,31 @@ class AgentNodes:
             parsed.referenced_candidate_number not in parsed.rejected_candidate_numbers
         ):
             candidate = self._candidate_by_rank(state, parsed.referenced_candidate_number)
-            return (
-                [candidate.product]
-                if candidate and candidate.product.product_id not in rejected_ids
-                else []
+            if candidate is None or candidate.product.product_id in rejected_ids:
+                return RoutineProductSelection()
+            return self._routine_product_selector.select(
+                RoutineProductSelectionRequest(
+                    products=[candidate.product],
+                    rejected_product_ids=sorted(rejected_ids),
+                )
             )
-        if Intent.PRODUCT_DISCOVERY in parsed.intents and state.candidate_set is not None:
+        if state.candidate_set is not None:
             selection = self._routine_product_selector.select(
                 RoutineProductSelectionRequest(
                     products=[candidate.product for candidate in state.candidate_set.candidates],
                     rejected_product_ids=sorted(rejected_ids),
                 )
             )
-            return selection.products
+            return selection
         if state.resolved_entities.products:
-            return [
-                product
-                for product in state.resolved_entities.products
-                if product.product_id not in rejected_ids
-            ]
+            return self._routine_product_selector.select(
+                RoutineProductSelectionRequest(
+                    products=state.resolved_entities.products,
+                    rejected_product_ids=sorted(rejected_ids),
+                )
+            )
         if state.routine is None:
-            return []
+            return RoutineProductSelection()
 
         products: list[ProductRecord] = []
         product_ids = list(
@@ -1136,15 +1139,144 @@ class AgentNodes:
             if product_id in rejected_ids:
                 continue
             if not self._reserve_tool_call(state, GraphNode.PROCESS_TASK):
-                return products
+                return RoutineProductSelection()
             result = await self._product_repository.get(ProductGetRequest(product_id=product_id))
             if result.status is LookupStatus.ERROR:
                 self._add_tool_failure(state, result.error_message)
-                return []
+                return RoutineProductSelection()
             if result.product is None:
-                return []
+                return RoutineProductSelection()
             products.append(result.product)
-        return products
+        if not products:
+            return RoutineProductSelection()
+        return self._routine_product_selector.select(
+            RoutineProductSelectionRequest(
+                products=products,
+                rejected_product_ids=sorted(rejected_ids),
+            )
+        )
+
+    def _routine_response_lines(
+        self,
+        plan: RoutinePlan,
+        selection: RoutineProductSelection,
+        schedule: RoutineScheduleConstraints,
+        excluded_weekdays: list[Weekday],
+    ) -> list[str]:
+        sequence_count = (
+            schedule.duration_days
+            or schedule.occurrence_count
+            or schedule.applications_per_week
+            or DEFAULT_ROUTINE_DURATION_DAYS
+        )
+        sequence_days = [
+            weekday
+            for weekday in self._WEEKDAY_ORDER
+            if weekday not in excluded_weekdays
+        ][:sequence_count]
+        representatives = {
+            group.role: group.products[0]
+            for group in selection.groups
+            if group.products and group.role in self._routine_product_selector.APPLICATION_ROLE_ORDER
+        }
+        lines: list[str] = []
+        for sequence_number, weekday in enumerate(sequence_days, start=1):
+            lines.append(f"{self._sequence_label(schedule, sequence_number)}:")
+            day_placements = [
+                placement for placement in plan.placements if placement.weekday is weekday
+            ]
+            for role in self._routine_product_selector.APPLICATION_ROLE_ORDER:
+                label = KoreanRoutineRoleLabel[role.name].value
+                representative = representatives.get(role)
+                if representative is None:
+                    lines.append(
+                        f"- {label}: ({label} 상품: 이번 검색 결과에서 후보 없음)"
+                    )
+                    continue
+                role_placements = [
+                    placement
+                    for placement in day_placements
+                    if placement.product_id == representative.product_id
+                ]
+                if not role_placements:
+                    lines.append(
+                        f"- {label}: (검증된 일정 조건에 따라 이번 순서에는 배치하지 않음)"
+                    )
+                    continue
+                lines.append(
+                    f"- {label}: {self._placement_text(role_placements)}"
+                )
+            special_placements = [
+                placement
+                for placement in day_placements
+                if self._routine_product_selector.role(
+                    self._product_by_id(selection.products, placement.product_id)
+                )
+                is RoutineProductRole.UNCLASSIFIED
+            ]
+            if special_placements:
+                label = KoreanRoutineRoleLabel.SPECIAL_CARE.value
+                lines.append(f"- {label}: {self._placement_text(special_placements)}")
+        return lines
+
+    def _missing_role_lines(
+        self,
+        roles: list[RoutineProductRole],
+    ) -> list[str]:
+        return [
+            (
+                f"- {KoreanRoutineRoleLabel[role.name].value}: "
+                f"({KoreanRoutineRoleLabel[role.name].value} 상품: "
+                "이번 검색 결과에서 후보 없음)"
+            )
+            for role in roles
+        ]
+
+    def _sequence_label(
+        self,
+        schedule: RoutineScheduleConstraints,
+        sequence_number: int,
+    ) -> str:
+        if schedule.occurrence_count is not None:
+            return f"루틴 {sequence_number}"
+        if schedule.applications_per_week is not None:
+            return f"주간 루틴 {sequence_number}"
+        return f"{sequence_number}일차"
+
+    def _placement_text(self, placements: list[RoutinePlacement]) -> str:
+        ordered = sorted(
+            placements,
+            key=lambda placement: (
+                self._PERIOD_DISPLAY_ORDER[placement.period],
+                placement.order,
+            ),
+        )
+        if len(ordered) == 1 and ordered[0].period is DayPeriod.UNSPECIFIED:
+            return ordered[0].product_name
+        return " / ".join(
+            (
+                placement.product_name
+                if placement.period is DayPeriod.UNSPECIFIED
+                else (
+                    f"{KoreanDayPeriodLabel[placement.period.name].value} "
+                    f"{placement.product_name}"
+                )
+            )
+            for placement in ordered
+        )
+
+    def _product_by_id(
+        self,
+        products: list[ProductRecord],
+        product_id: str,
+    ) -> ProductRecord:
+        product = next(
+            (candidate for candidate in products if candidate.product_id == product_id),
+            None,
+        )
+        if product is None:
+            raise ValueError(f"루틴 배치 상품을 선택 결과에서 찾을 수 없습니다: {product_id}")
+        return product
 
     def _merged_excluded_weekdays(
         self,

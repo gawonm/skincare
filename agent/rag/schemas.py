@@ -248,6 +248,15 @@ class ApplicabilityStatus(StrEnum):
 class DayPeriod(StrEnum):
     MORNING = "morning"
     EVENING = "evening"
+    UNSPECIFIED = "unspecified"
+
+
+class RoutineProductRole(StrEnum):
+    CARE = "care"
+    MOISTURIZE = "moisturize"
+    CLEANSE = "cleanse"
+    SPECIAL_CARE = "special_care"
+    UNCLASSIFIED = "unclassified"
 
 
 class Weekday(StrEnum):
@@ -899,8 +908,20 @@ class RoutineScheduleConstraints(RagModel):
     """사용자 요청의 기간·주간 횟수·시간대를 서로 다른 축으로 보존한다."""
 
     duration_days: int | None = Field(default=None, ge=1, le=7)
+    occurrence_count: int | None = Field(default=None, ge=1, le=7)
     applications_per_week: int | None = Field(default=None, ge=1, le=7)
     periods: list[DayPeriod] = Field(default_factory=list)
+
+
+class DeterministicRoutineScheduleRequest(RagModel):
+    products: list[ProductRecord] = Field(min_length=1)
+    excluded_weekdays: list[Weekday] = Field(default_factory=list)
+    schedule: RoutineScheduleConstraints = Field(default_factory=RoutineScheduleConstraints)
+    rules: list[RoutineRule] = Field(default_factory=list)
+
+
+class DeterministicRoutineScheduleResult(RagModel):
+    placements: list[RoutinePlacement] = Field(default_factory=list)
 
 
 class RoutineDraftGenerationRequest(RagModel):
