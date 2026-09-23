@@ -116,8 +116,17 @@ class RoutineProductSelector:
     def role(self, product: ProductRecord) -> RoutineProductRole:
         if product.category is None:
             return RoutineProductRole.UNCLASSIFIED
-        if any(term in product.name.casefold() for term in self._SPECIALTY_NAME_TERMS):
-            # 넓은 '크림·로션' 분류에 아이크림·선크림·팩이 섞여도 기본 보습제로 오인하지 않는다.
+        category_role = self._category_role(product)
+        if category_role is RoutineProductRole.MOISTURIZE and any(
+            term in product.name.casefold() for term in self._SPECIALTY_NAME_TERMS
+        ):
+            # 특수 용도명은 넓은 보습 카테고리의 과대 분류만 막는다. 명시적인 클렌저
+            # 카테고리보다 먼저 적용하면 '팩 클렌저'까지 미분류되는 역전이 생긴다.
+            return RoutineProductRole.UNCLASSIFIED
+        return category_role
+
+    def _category_role(self, product: ProductRecord) -> RoutineProductRole:
+        if product.category is None:
             return RoutineProductRole.UNCLASSIFIED
         category_terms = {
             product.category.code.casefold(),

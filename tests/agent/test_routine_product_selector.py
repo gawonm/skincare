@@ -118,3 +118,19 @@ class TestRoutineProductSelector:
 
         assert result.groups[-1].products == [eye_cream]
         assert result.products == [eye_cream]
+
+    def test_명시적_클렌저_카테고리는_상품명의_팩보다_우선한다(self) -> None:
+        fixture = RoutineProductSelectorFixture()
+        pack_cleanser = fixture.product(
+            "cleanser-pack-1",
+            "Whipped Yujamong 비건 팩 클렌저",
+            "클렌저",
+        )
+
+        result = RoutineProductSelector().select(
+            RoutineProductSelectionRequest(products=[pack_cleanser])
+        )
+
+        assert result.groups[2].products == [pack_cleanser]
+        assert result.groups[-1].products == []
+        assert result.products == [pack_cleanser]
