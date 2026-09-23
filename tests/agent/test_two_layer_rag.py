@@ -504,14 +504,15 @@ class TestTwoLayerRagWorkflow:
             "product:niacinamide-serum",
             "product:retinol-serum",
         ]
-        assert "성분 근거 제품 후보" in output.message
-        assert "Claim 기반 제품 후보" in output.message
+        assert "역할별 제품 후보" in output.message
+        assert "(검수 근거)" in output.message
+        assert "(Claim 기반)" in output.message
         assert [citation.evidence_id for citation in output.citations] == [
             "evidence:verified-niacinamide"
         ]
         assert CLAIM_ONLY_PRODUCT_LIMITATION in candidate_set.candidates[1].unresolved
 
-    async def test_only_uncovered_ingredient_uses_fallback_search(self) -> None:
+    async def test_uncovered_ingredient_does_not_trigger_supplemental_search(self) -> None:
         calls: list[WorkflowCall] = []
         repository = FallbackCoverageProductRepository(calls)
         harness = TwoLayerRagHarness()
@@ -533,15 +534,14 @@ class TestTwoLayerRagWorkflow:
             if isinstance(artifact, ProductCandidateSet)
         )
         assert [request.filters.ingredient_ids for request in repository.requests] == [
-            ["ingredient:niacinamide", "ingredient:retinol"],
-            ["ingredient:retinol"],
+            ["ingredient:niacinamide", "ingredient:retinol"]
         ]
-        assert [request.limit for request in repository.requests] == [10, 5]
+        assert [request.limit for request in repository.requests] == [10]
         assert {
             ingredient_id
             for candidate in candidate_set.candidates
             for ingredient_id in candidate.product.ingredient_ids
-        } == {"ingredient:niacinamide", "ingredient:retinol"}
+        } == {"ingredient:niacinamide"}
 
     async def test_rule_routes_concern_to_claim_when_llm_omits_route(self) -> None:
         calls: list[WorkflowCall] = []

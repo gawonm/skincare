@@ -46,6 +46,7 @@ from agent.rag.claim_schemas import (
     ClaimStatementType,
     ClaimSupportStatus,
 )
+from agent.rag.deterministic_routine_scheduler import DeterministicRoutineScheduler
 from agent.rag.ports import (
     CaseClaimExtractor,
     CaseReranker,
@@ -58,9 +59,8 @@ from agent.rag.retrieval.ingredient_mention_resolver import IngredientMentionRes
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.schemas import (
     BGE_M3_EMBEDDING_DIMENSIONS,
-    DEFAULT_ROUTINE_DURATION_DAYS,
     ConstraintSource,
-    DayPeriod,
+    DeterministicRoutineScheduleRequest,
     EmbeddingRequest,
     EmbeddingResult,
     EmbeddingVector,
@@ -88,7 +88,6 @@ from agent.rag.schemas import (
     ProductTaxonomy,
     ProductTexture,
     RoutineConstraint,
-    RoutinePlacement,
     RoutinePlan,
     RoutinePlanRequest,
     RoutineValidationRequest,
@@ -750,53 +749,26 @@ class FixtureEvidenceRetriever(EvidenceRetriever):
 class FixtureRoutinePlanner(RoutinePlanner):
     """임상 최적화가 아니라 구조화된 배치·검증 흐름만 보여주는 계획기."""
 
-    _WEEKDAY_ORDER: ClassVar[tuple[Weekday, ...]] = (
-        Weekday.MONDAY,
-        Weekday.TUESDAY,
-        Weekday.WEDNESDAY,
-        Weekday.THURSDAY,
-        Weekday.FRIDAY,
-        Weekday.SATURDAY,
-        Weekday.SUNDAY,
-    )
+    def __init__(self) -> None:
+        self._scheduler = DeterministicRoutineScheduler()
 
     async def plan(self, request: RoutinePlanRequest) -> RoutinePlan:
-        available_days = [
-            weekday for weekday in self._WEEKDAY_ORDER if weekday not in request.excluded_weekdays
-        ]
-        requested_days = (
-            request.schedule.duration_days
-            or request.schedule.applications_per_week
-            or DEFAULT_ROUTINE_DURATION_DAYS
+        scheduled = self._scheduler.schedule(
+            DeterministicRoutineScheduleRequest(
+                products=request.products,
+                excluded_weekdays=request.excluded_weekdays,
+                schedule=request.schedule,
+            )
         )
-        selected_days = available_days[:requested_days]
         previous_version = request.current_plan.version if request.current_plan else 0
         routine_id = (
             request.current_plan.routine_id
             if request.current_plan
             else str(uuid5(NAMESPACE_URL, f"routine:{request.chat_room_id}"))
         )
-        placements: list[RoutinePlacement] = []
-        for weekday in selected_days:
-            for order, product in enumerate(request.products, start=1):
-                placements.append(
-                    RoutinePlacement(
-                        weekday=weekday,
-                        period=(
-                            request.schedule.periods[0]
-                            if request.schedule.periods
-                            else DayPeriod.EVENING
-                        ),
-                        product_id=product.product_id,
-                        product_name=product.name,
-                        order=order,
-                        reason="개발용 배치 정책과 제품 fixture 사용 맥락을 적용",
-                    )
-                )
-
         constraints = [
             RoutineConstraint(
-                description="실제 임상 빈도가 아닌 개발용 기본 주 2회 배치",
+                description="실제 임상 판단이 아닌 개발용 결정적 역할 배치",
                 source=ConstraintSource.SERVICE_POLICY,
             )
         ]
@@ -822,7 +794,7 @@ class FixtureRoutinePlanner(RoutinePlanner):
         return RoutinePlan(
             routine_id=routine_id,
             version=previous_version + 1,
-            placements=placements,
+            placements=scheduled.placements,
             constraints=constraints,
             changes=changes,
             is_demo=True,

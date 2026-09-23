@@ -1,4 +1,4 @@
-"""추천 상품 선택이 성분 커버리지를 임의의 후보 수보다 우선하는지 검증한다."""
+"""추천 상품 선택이 성분 커버리지와 역할 후보 다양성을 함께 보존하는지 검증한다."""
 
 from agent.rag.claim_schemas import (
     IngredientRecommendationCandidate,
@@ -65,6 +65,25 @@ class TestRecommendationProductSelector:
             "ingredient:claim",
         ]
         assert result.uncovered_ingredient_ids == []
+
+    def test_같은_성분을_가진_서로_다른_상품을_모두_보존한다(self) -> None:
+        fixture = RecommendationProductSelectorFixture()
+        result = RecommendationProductSelector().select(
+            RecommendationProductSelectionRequest(
+                ingredients=[fixture.ingredient("ingredient:shared")],
+                products=[
+                    fixture.product("product:cleanser", ["ingredient:shared"]),
+                    fixture.product("product:serum", ["ingredient:shared"]),
+                    fixture.product("product:cream", ["ingredient:shared"]),
+                ],
+            )
+        )
+
+        assert [match.product.product_id for match in result.matches] == [
+            "product:cleanser",
+            "product:serum",
+            "product:cream",
+        ]
 
     def test_more_than_six_ingredients_are_all_kept_when_products_exist(self) -> None:
         fixture = RecommendationProductSelectorFixture()

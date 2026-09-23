@@ -598,8 +598,11 @@ class VerboseTwoLayerTurnPresenter:
                 mapped = self._aliases.map_request(request)
                 ambiguous = self._aliases.is_ambiguous_family(request)
                 resolution = self._find_resolution(snapshot, request.name, mapped.name)
-                if resolution is None or resolution.result is None:
-                    resolved = "ingredient_id 미확정"
+                if resolution is None:
+                    # 원문 검증에서 제외된 Claim은 DB 조회 실패가 아니므로 ID 미확정으로 표시하지 않는다.
+                    resolved = "조회 미실행 (Claim 원문 검증 제외)"
+                elif resolution.result is None:
+                    resolved = "조회 결과 미수신"
                 elif resolution.result.ingredient is not None:
                     record = resolution.result.ingredient
                     resolved = f"{record.canonical_name} / {record.ingredient_id}"

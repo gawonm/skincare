@@ -102,6 +102,8 @@ class PromptCatalog:
             </rules>
         """),
 
+        # 운영 Factory는 결정적 스케줄러를 사용한다. 이 템플릿은 기존에 직접 주입된
+        # RoutineDraftGenerator 구현이 한 번에 깨지지 않도록 전환 기간에만 보존한다.
         PromptPurpose.ROUTINE_PLANNING: inspect.cleandoc("""
             # 역할 (Role)
             제공된 제품 목록과 사용 규칙을 바탕으로 사용자의 스킨케어 루틴 일정을 생성하는 플래닝 엔진입니다.

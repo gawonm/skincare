@@ -1151,3 +1151,57 @@ Evidence나 Citation으로 승격하지 않는다.
 - reranker 실패 시 기존처럼 vector 순위 Top-3로 fallback하고 실패 이력을 남긴다.
 - 실제 골든셋에서 필요한 Case가 vector Top-20에 포함되지 않는 recall 문제가 확인될 때만 후보 수
   확대, 메타데이터 선호 후보 합집합 또는 BM25 하이브리드 검색을 별도 계약으로 검토한다.
+
+## 15. 역할 기반 루틴 상품 선택·번호 일정 계약 — 2026-09-23
+
+> 상태: **사용자 확인 / Agent 구현 완료**
+>
+> 관련 계획:
+> [`2026-09-23_ROUTINE_PRODUCT_ROLE_SELECTION_PLAN.md`](../agent/RAG_YK/2026-09-23_ROUTINE_PRODUCT_ROLE_SELECTION_PLAN.md)
+
+### 15.1 상품 후보와 루틴 대표 상품
+
+- Agent는 최초 상품 검색 결과를 최소 집합 덮개로 축소하지 않고 중복 제거한 전체 후보로 보존한다.
+- 후보는 `care → moisturize → cleanse → unclassified` 순서로 표시한다.
+- 루틴에는 `cleanse`, `care`, `moisturize` 역할마다 최대 한 상품만 대표로 선택한다.
+- 역할 상품이 없으면 존재하지 않는 상품 ID를 만들지 않고 사용자 메시지에
+  `(보습 상품: 이번 검색 결과에서 후보 없음)`처럼 표시한다.
+- `unclassified` 상품은 공식 사용법 또는 검증된 필수 Rule이 있을 때만 `special_care`로 승격하며,
+  전체 루틴에서 최대 한 상품을 한 번만 배치한다.
+
+### 15.2 일정 표현과 호환 필드
+
+기존 저장·조회 코드가 `RoutinePlan`을 그대로 JSON artifact로 다룰 수 있도록 필드는 삭제하지 않고
+다음 값만 추가한다. 타입 소유자는 `agent/rag/schemas.py`다.
+
+```python
+class DayPeriod(StrEnum):
+    MORNING = "morning"
+    EVENING = "evening"
+    UNSPECIFIED = "unspecified"
+
+
+class RoutineScheduleConstraints(RagModel):
+    duration_days: int | None = Field(default=None, ge=1, le=7)
+    occurrence_count: int | None = Field(default=None, ge=1, le=7)
+    applications_per_week: int | None = Field(default=None, ge=1, le=7)
+    periods: list[DayPeriod] = Field(default_factory=list)
+```
+
+- `N일간`은 `duration_days`, 단독 `N회`/`N번`은 `occurrence_count`, `주 N회`는
+  `applications_per_week`로 분리한다.
+- 요일을 명시하지 않은 `N일간`과 단독 `N회`는 사용자 응답에서 각각 `N일차`, `루틴 N`으로
+  번호를 매긴다. 내부 `weekday`는 기존 저장 계약을 유지하기 위한 순서 키이며 실제 요일 주장으로
+  노출하지 않는다.
+- 아침·저녁을 지정하지 않은 요청은 `DayPeriod.UNSPECIFIED`로 보존하며 Agent 응답에서 시간대 문구를
+  임의로 추가하지 않는다.
+- Backend는 새 필드를 해석하거나 DB 스키마로 분해하지 않고 기존과 같이 artifact JSON을 저장한다.
+
+### 15.3 결정 주체
+
+- LLM은 제품 사용법과 Evidence에서 출처에 묶인 Rule 후보만 추출한다.
+- 제품 역할 분류, 역할별 대표 선택, 반복 횟수, 사용 순서, 누락 역할 표시는 Agent의 결정적 코드가
+  담당한다.
+- 우선순위는 `사용자 명시 조건 → 제품 directions 필수 Rule → 검증 Evidence 필수 Rule → 서비스
+  역할 순서(cleanse → care/special_care → moisturize)`다.
+- Case 사용 가이드와 warning Rule은 배치를 새로 만들거나 횟수를 늘리지 않는다.

@@ -137,3 +137,20 @@ Agent와 Backend 코드는 계약 확인 전에는 수정하지 않는다.
 - 전체 성분명의 자동 번역·음역 사전 생성
 - fuzzy search, trigram, 별도 검색 인덱스
 - Case별 반복 trace 표시 제거 또는 Repository 조회 캐시
+
+## 9. 2026-09-23 Case 성분 별칭 보완
+
+실제 Trace와 현재 `ingredient_master`를 대조해 다음 확정 동의어를 추가했다. UUID는 별칭 코드에
+넣지 않고 표준 국문명으로 Backend를 다시 조회한다.
+
+| Case 표현 | 재조회 표준 국문명 | 판단 |
+| --- | --- | --- |
+| `알로에신`, `Aloesin` | `알로에신` | 동일 성분의 국문·영문 표기 |
+| `헥사펩타이드-2`, `Hexapeptide-2` | `헥사펩타이드-2` | 동일 성분의 국문·영문 표기 |
+| `서양 고추냉이 뿌리 추출물`, `Cochlearia Armoracia Root Extract` | `호스래디시뿌리추출물` | 서양고추냉이 표준 성분 |
+
+`Cochlearia Armoracia`는 `Wasabia Japonica`의 `고추냉이뿌리추출물`과 서로 다른 마스터
+성분이다. 기존 별칭의 잘못된 연결을 `호스래디시뿌리추출물`로 바로잡았다.
+
+Trace CLI도 Claim 원문 검증에서 제외돼 성분 조회가 실행되지 않은 경우를
+`ingredient_id 미확정`으로 표시하지 않고 `조회 미실행`으로 구분한다.
