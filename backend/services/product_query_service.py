@@ -1,6 +1,5 @@
-"""상품 조회 유스케이스: 홈 목록, 상세, 이미지 파일 경로. 읽기 전용이라 commit이 없다."""
+"""상품 조회 유스케이스: 홈 목록, 상세. 읽기 전용이라 commit이 없다."""
 
-from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,10 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.repositories.product_repository import ProductRepository
 from backend.schemas.product import ProductCardResponse, ProductDetailResponse, ProductListResponse
 from models.product import Product, ProductServiceCategory
-
-# `Product.local_image_path`는 저장소 루트 기준 상대경로다(models/product.py 주석).
-# 이 파일 기준 두 단계 위(backend/services -> backend -> 저장소 루트)가 그 기준점이다.
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class ProductQueryService:
@@ -43,19 +38,12 @@ class ProductQueryService:
         await self._session.commit()
         return self._to_detail(product, view_count)
 
-    async def get_image_path(self, product_id: UUID) -> Path | None:
-        """상품의 로컬 이미지 파일 절대경로. 상품이 없으면 None(파일 존재 여부는 호출부가 확인)."""
-        product = await self._repository.get_by_id(product_id)
-        if product is None:
-            return None
-        return _REPO_ROOT / product.local_image_path
-
     def _to_card(self, product: Product) -> ProductCardResponse:
         return ProductCardResponse(
             id=product.id,
             display_title=product.display_title,
             brand=product.brand,
-            image_url=self._image_endpoint(product.id),
+            image_url=product.image_url,
             lowest_price=product.lowest_price,
             service_category=product.service_category,
             volume_value=product.volume_value,
@@ -68,7 +56,7 @@ class ProductQueryService:
             id=product.id,
             display_title=product.display_title,
             brand=product.brand,
-            image_url=self._image_endpoint(product.id),
+            image_url=product.image_url,
             lowest_price=product.lowest_price,
             service_category=product.service_category,
             volume_value=product.volume_value,
@@ -82,7 +70,3 @@ class ProductQueryService:
             shopping_url=product.shopping_url,
             mall_name=product.mall_name,
         )
-
-    @staticmethod
-    def _image_endpoint(product_id: UUID) -> str:
-        return f"/products/{product_id}/image"

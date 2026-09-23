@@ -4,14 +4,11 @@
 `source`/`source_product_id`(수집 출처 식별자), `match_status`/`review_reasons`(검증 상태)는
 화면에 노출할 이유가 없거나 노출하면 안 되는 내부 컬럼이다(규칙 17, docs/erd/app.md).
 
-`image_url` 필드는 `Product.image_url`(원본 쇼핑몰 CDN URL)을 그대로 옮기지 않는다.
-`GET /products/{id}/image`를 가리키는 상대경로로 새로 만든다 — 그래서 이 모델들은
-`from_attributes`로 자동 매핑하지 않고 `backend/services/product_query_service.py`가
-필드별로 값을 채운다.
-
-view_count: `models.product.Product`에 컬럼과 마이그레이션(`cdff29b164d8`)이 코드로는
-준비돼 있지만, 로컬 DB에 마이그레이션을 아직 적용하지 않았다(2026-09-23, data 파트
-확인 완료·적용 대기). 적용 전까지는 `ProductRepository`를 쓰는 모든 조회가 실패한다.
+`image_url` 필드는 `Product.image_url`(올리브영 CDN 원본)을 그대로 옮긴다. data 파트 문서
+(docs/data/README.md "상품 데이터를 다른 파트에 전달할 때")가 이미지는 파일로 전달하지 않고
+이 CDN URL을 그대로 쓰라고 정해 뒀기 때문이다 — `local_image_path`는 수집 시점 로컬 경로라
+이 서버 환경에는 없다. 그래서 이 모델들은 `from_attributes`로 자동 매핑하지 않고
+`backend/services/product_query_service.py`가 필드별로 값을 채운다.
 """
 
 from uuid import UUID
