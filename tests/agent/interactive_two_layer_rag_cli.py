@@ -15,7 +15,7 @@
 import asyncio
 import sys
 from enum import StrEnum
-from typing import ClassVar, Final
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.engine import make_url
@@ -73,9 +73,6 @@ from agent.rag.schemas import (
     TextEmbeddingConfig,
 )
 from agent.schemas import (
-    AuthenticatedChatContext,
-    ChatServiceRequest,
-    ChatTurnInput,
     ExecutionLimits,
     RegisterRoomRequest,
     UnresolvedKind,
