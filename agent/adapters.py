@@ -58,6 +58,7 @@ from agent.rag.retrieval.ingredient_mention_resolver import IngredientMentionRes
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.schemas import (
     BGE_M3_EMBEDDING_DIMENSIONS,
+    DEFAULT_ROUTINE_DURATION_DAYS,
     ConstraintSource,
     DayPeriod,
     EmbeddingRequest,
@@ -763,7 +764,12 @@ class FixtureRoutinePlanner(RoutinePlanner):
         available_days = [
             weekday for weekday in self._WEEKDAY_ORDER if weekday not in request.excluded_weekdays
         ]
-        selected_days = available_days[: request.frequency_per_week]
+        requested_days = (
+            request.schedule.duration_days
+            or request.schedule.applications_per_week
+            or DEFAULT_ROUTINE_DURATION_DAYS
+        )
+        selected_days = available_days[:requested_days]
         previous_version = request.current_plan.version if request.current_plan else 0
         routine_id = (
             request.current_plan.routine_id
@@ -776,7 +782,11 @@ class FixtureRoutinePlanner(RoutinePlanner):
                 placements.append(
                     RoutinePlacement(
                         weekday=weekday,
-                        period=DayPeriod.EVENING,
+                        period=(
+                            request.schedule.periods[0]
+                            if request.schedule.periods
+                            else DayPeriod.EVENING
+                        ),
                         product_id=product.product_id,
                         product_name=product.name,
                         order=order,

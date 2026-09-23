@@ -17,7 +17,7 @@ from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
 
 DEFAULT_SEARCH_LIMIT = 5
-DEFAULT_ROUTINE_FREQUENCY = 2
+DEFAULT_ROUTINE_DURATION_DAYS = 2
 MAX_ROUTINE_RULES = 32
 MAX_ROUTINE_PLACEMENTS = 64
 DEFAULT_EMBEDDING_BATCH_SIZE = 16
@@ -895,11 +895,19 @@ class RoutineDraftModelOutput(RagModel):
     )
 
 
+class RoutineScheduleConstraints(RagModel):
+    """사용자 요청의 기간·주간 횟수·시간대를 서로 다른 축으로 보존한다."""
+
+    duration_days: int | None = Field(default=None, ge=1, le=7)
+    applications_per_week: int | None = Field(default=None, ge=1, le=7)
+    periods: list[DayPeriod] = Field(default_factory=list)
+
+
 class RoutineDraftGenerationRequest(RagModel):
     user_request: str = Field(min_length=1)
     products: list[ProductRecord] = Field(min_length=1)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
-    frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
+    schedule: RoutineScheduleConstraints = Field(default_factory=RoutineScheduleConstraints)
     rules: list[RoutineRule] = Field(default_factory=list)
     current_plan: RoutinePlan | None = None
 
@@ -910,7 +918,7 @@ class RoutinePlanRequest(RagModel):
     products: list[ProductRecord] = Field(min_length=1)
     user_request: str = Field(min_length=1)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
-    frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
+    schedule: RoutineScheduleConstraints = Field(default_factory=RoutineScheduleConstraints)
     evidence_records: list[EvidenceRecord] = Field(default_factory=list)
     case_usage_guidance: list[CaseUsageGuidance] = Field(default_factory=list)
     current_plan: RoutinePlan | None = None
@@ -920,7 +928,7 @@ class RoutineValidationRequest(RagModel):
     plan: RoutinePlan
     products: list[ProductRecord] = Field(min_length=1)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
-    frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
+    schedule: RoutineScheduleConstraints = Field(default_factory=RoutineScheduleConstraints)
 
 
 class RoutineValidationResult(RagModel):

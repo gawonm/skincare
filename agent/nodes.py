@@ -1,6 +1,7 @@
 """LangGraph 각 단계의 상태 전이를 구현한다."""
 
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import ClassVar
 
 from agent.context import ContextBuilder
@@ -83,6 +84,21 @@ LIMITED_EVIDENCE_PRODUCT_LIMITATION = (
 )
 UNREVIEWED_EVIDENCE_PRODUCT_LIMITATION = ProductCandidateLimitation.EVIDENCE_UNREVIEWED.value
 CLAIM_ONLY_PRODUCT_LIMITATION = ProductCandidateLimitation.CLAIM_NOT_VERIFIED.value
+
+
+class KoreanWeekdayLabel(StrEnum):
+    MONDAY = "월요일"
+    TUESDAY = "화요일"
+    WEDNESDAY = "수요일"
+    THURSDAY = "목요일"
+    FRIDAY = "금요일"
+    SATURDAY = "토요일"
+    SUNDAY = "일요일"
+
+
+class KoreanDayPeriodLabel(StrEnum):
+    MORNING = "아침"
+    EVENING = "저녁"
 
 
 class AgentNodes:
@@ -1016,7 +1032,7 @@ class AgentNodes:
 
         excluded_weekdays = self._merged_excluded_weekdays(state, parsed.excluded_weekdays)
         user_request = parsed.query_plan.routine_query or parsed.query
-        frequency_per_week = self._routine_frequency.requested_frequency(user_request)
+        schedule = self._routine_frequency.schedule(user_request)
         plan = await self._routine_planner.plan(
             RoutinePlanRequest(
                 chat_room_id=state.chat_room_id,
@@ -1024,7 +1040,7 @@ class AgentNodes:
                 products=products,
                 user_request=user_request,
                 excluded_weekdays=excluded_weekdays,
-                frequency_per_week=frequency_per_week,
+                schedule=schedule,
                 evidence_records=state.evidence,
                 case_usage_guidance=state.task_context.case_usage_guidance,
                 current_plan=state.routine,
@@ -1037,7 +1053,7 @@ class AgentNodes:
                 plan=plan,
                 products=products,
                 excluded_weekdays=excluded_weekdays,
-                frequency_per_week=frequency_per_week,
+                schedule=schedule,
             )
         )
         if not validation.valid:
@@ -1060,7 +1076,11 @@ class AgentNodes:
         state.routine = plan
         state.artifacts.append(plan)
         schedule = [
-            f"{placement.weekday.value} {placement.period.value}: {placement.product_name}"
+            (
+                f"{KoreanWeekdayLabel[placement.weekday.name].value} "
+                f"{KoreanDayPeriodLabel[placement.period.name].value}: "
+                f"{placement.product_name}"
+            )
             for placement in plan.placements
         ]
         title = "개발용 루틴 초안:" if plan.is_demo else "루틴 초안:"

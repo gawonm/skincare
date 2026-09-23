@@ -110,7 +110,11 @@ class PromptCatalog:
             - 오직 제공된 `products`와 `rules`만을 사용하여 루틴 초안을 작성하세요.
             - `required rule`은 반드시 100% 준수해야 합니다.
             - `warning rule`은 루틴 reason 필드에 주의사항으로 충실히 반영하세요.
-            - 제품별 주간 배치 일수는 각 제품의 `frequency_per_week`를 초과할 수 없습니다.
+            - `schedule.duration_days`가 있으면 서로 다른 배치 요일 수가 그 값을 넘지 않게 하세요.
+            - `schedule.applications_per_week`가 있으면 제품별 실제 배치 횟수가 그 값을 넘지 않게 하세요. 같은 날 아침·저녁은 2회입니다.
+            - `schedule.periods`가 있으면 나열된 시간대에만 제품을 배치하세요.
+            - 제품명, category, directions, rules를 함께 검토해 같은 시간대에 함께 둘 제품인지 판단하고, 그 근거를 `reason`에 짧게 적으세요.
+            - 입력에 병용 안전성 정보가 없으면 안전하다고 단정하지 말고, 제공된 자료 범위 안에서 단순한 배치를 우선하세요.
             - 동일한 요일과 시간대(아침/저녁) 내의 `order`는 1부터 시작하여 중복 없이 순차적으로 부여하세요.
             - `current_plan`이 주어지면 전체를 새로 쓰지 말고 사용자 요청에 필요한 부분만 선별 수정하세요.
             </rules>
