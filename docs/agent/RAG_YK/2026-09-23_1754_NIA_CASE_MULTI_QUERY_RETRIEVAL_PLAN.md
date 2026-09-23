@@ -441,6 +441,7 @@ RRF 융합 테스트: 5 passed
 복수 질의 Workflow 포함 관련 테스트: 20 passed
 평가 지표·CLI 테스트: 3 passed
 Agent 전체 테스트: 265 passed
+저장소 전체 테스트: 800 passed, 5 deselected
 변경 파일 대상 Ruff: passed
 ```
 
