@@ -68,9 +68,7 @@ class ChatModelCaseClaimExtractor(CaseClaimExtractor):
                 case_id=ingredient.case_id,
                 claim_type=CaseClaimType.INGREDIENT_EFFECT,
                 ingredients=[ExtractedIngredientMention(raw_name=ingredient.raw_name)],
-                # LLM에게 긴 인용을 복사시키면 말줄임표·개행 변형으로 유효 성분까지 버려질 수 있다.
-                # 성분명이 Case 원문에 존재하는지는 기존 결정적 validator가 다음 단계에서 확인한다.
-                source_quote=ingredient.raw_name,
+                source_quote=ingredient.source_quote,
             )
             for ingredient in result.ingredients[: request.limit]
         ]

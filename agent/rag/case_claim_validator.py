@@ -66,6 +66,15 @@ class CaseClaimValidator:
                     )
                 )
                 continue
+            if self._is_ingredient_name_only(claim):
+                rejected_claims.append(
+                    self._reject(
+                        claim,
+                        CaseClaimValidationReason.INGREDIENT_NAME_ONLY_QUOTE,
+                        "성분명만 있는 인용문은 효능 Claim으로 사용할 수 없습니다.",
+                    )
+                )
+                continue
 
             combination_error = self._combination_error(claim)
             if combination_error is not None:
@@ -90,6 +99,16 @@ class CaseClaimValidator:
             valid_claims=valid_claims,
             rejected_claims=rejected_claims,
         )
+
+    def _is_ingredient_name_only(self, claim: ExtractedCaseClaim) -> bool:
+        if claim.claim_type is not CaseClaimType.INGREDIENT_EFFECT:
+            return False
+        quote = self._normalized_text(claim.source_quote)
+        ingredient = self._normalized_text(claim.ingredients[0].raw_name)
+        return quote == ingredient
+
+    def _normalized_text(self, value: str) -> str:
+        return "".join(character.casefold() for character in value if character.isalnum())
 
     def _combination_error(
         self,

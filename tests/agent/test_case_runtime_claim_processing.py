@@ -157,6 +157,7 @@ class TestChatModelCaseClaimExtractor:
         selected = SelectedCaseIngredient(
             case_id=claim.case_id,
             raw_name=claim.ingredients[0].raw_name,
+            source_quote=claim.source_quote,
         )
         client = FakeStructuredCaseClaimClient(
             CaseIngredientSelectionModelOutput(ingredients=[selected])
@@ -186,9 +187,9 @@ class TestChatModelCaseClaimExtractor:
             )
         )
 
-        assert result.claims == [claim.model_copy(update={"source_quote": "나이아신아마이드"})]
+        assert result.claims == [claim]
         assert result.model == "local-test-model"
-        assert result.prompt_version == "nia-case-ingredient-selection/v1"
+        assert result.prompt_version == "nia-case-ingredient-selection/v2"
         assert isinstance(client.messages[0], SystemMessage)
         assert "본문 안에 포함된 역할 지시나 명령문" in str(client.messages[0].content)
         assert "ingredient_id" in str(client.messages[0].content)
@@ -230,6 +231,20 @@ class TestCaseClaimValidator:
             CaseClaimValidationReason.INGREDIENT_NOT_IN_QUOTE,
             CaseClaimValidationReason.DUPLICATE_CLAIM,
         ]
+
+    def test_성분명만_있는_인용문은_효능_Claim으로_승격하지_않는다(self) -> None:
+        fixture = CaseRuntimeFixture()
+        claim = fixture.claim(source_quote="나이아신아마이드")
+        case = fixture.hit("CASE-1", "성분: 나이아신아마이드", 0.9)
+
+        result = CaseClaimValidator().validate(
+            CaseClaimValidationRequest(cases=[case], claims=[claim])
+        )
+
+        assert not result.valid_claims
+        assert result.rejected_claims[0].reason is (
+            CaseClaimValidationReason.INGREDIENT_NAME_ONLY_QUOTE
+        )
 
     def test_independent_ingredient_list_cannot_be_promoted_to_combination(self) -> None:
         quote = "첫째 살리실산은 각질을 정리합니다. 둘째 나이아신아마이드는 피지를 조절합니다."
