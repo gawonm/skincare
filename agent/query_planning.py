@@ -32,10 +32,28 @@ class EvidenceQueryAxis(StrEnum):
     PRECAUTION = "주의사항"
 
 
+class CaseQueryInstructionCue(StrEnum):
+    """Case 유사도와 무관한 상품 선택·루틴 실행 지시의 고정 신호."""
+
+    PRODUCT = "제품"
+    PRODUCT_SYNONYM = "상품"
+    RECOMMEND = "추천"
+    ROUTINE = "루틴"
+    WHAT_TO_USE = "뭘 써"
+    WHAT_USE = "뭐 써"
+    WHAT_SHOULD_I_USE = "무엇을 써"
+    WHAT_TO_APPLY = "뭘 발라"
+    WHAT_APPLY = "뭐 발라"
+    WHAT_SHOULD_I_APPLY = "무엇을 발라"
+
+
 class IntentQueryPlanner:
     """LLM의 질의 분리를 보완하되 사용자가 명시한 Case 문맥은 삭제하지 않는다."""
 
-    _AGE_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"(?<!\d)(?:[1-9]0대|\d{1,2}세)")
+    _AGE_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<!\d)(?:[1-9]0대|\d{1,2}(?:세|살))"
+    )
+    _CASE_QUERY_PURPOSE: ClassVar[str] = "피부 관련 성분 및 주의사항"
     _CONTEXT_ALIASES: ClassVar[dict[ExplicitCaseContext, tuple[str, ...]]] = {
         ExplicitCaseContext.MALE: ("남성", "남자"),
         ExplicitCaseContext.FEMALE: ("여성", "여자"),
@@ -108,12 +126,37 @@ class IntentQueryPlanner:
             return None
         explicit_context = self._explicit_context(request.original_message)
         concerns = self._evidence_concerns(request)
+        if self._has_case_instruction(base_query):
+            # LLM이 상품 선택 문구를 Case 질의에 남겨도 임베딩·리랭크의 의미를 흐리지 않도록
+            # 원문에서 결정적으로 확인한 사용자 문맥과 고민만으로 Case 질의를 다시 만든다.
+            return self._rebuild_case_query(explicit_context, concerns)
         missing_terms = [
             term
             for term in [*explicit_context, *concerns]
             if term.casefold() not in base_query.casefold()
         ]
         return self._normalize(" ".join([*missing_terms, base_query]))
+
+    def _has_case_instruction(self, query: str) -> bool:
+        normalized = query.casefold()
+        return any(cue.value.casefold() in normalized for cue in CaseQueryInstructionCue)
+
+    def _rebuild_case_query(
+        self,
+        explicit_context: list[str],
+        concerns: list[str],
+    ) -> str:
+        terms: list[str] = []
+        for term in [*explicit_context, *concerns]:
+            normalized_term = term.casefold()
+            if any(
+                normalized_term in existing.casefold()
+                or existing.casefold() in normalized_term
+                for existing in terms
+            ):
+                continue
+            terms.append(term)
+        return self._normalize(" ".join([*terms, self._CASE_QUERY_PURPOSE]))
 
     def _explicit_context(self, message: str) -> list[str]:
         positioned: list[tuple[int, str]] = [
