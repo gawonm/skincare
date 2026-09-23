@@ -20,7 +20,7 @@ class CaseClaimToEvidenceQueryAnchorAdapter:
         claim: ResolvedCaseClaim,
         *,
         request_id: str,
-        user_query: str,
+        evidence_query: str,
     ) -> EvidenceQueryAnchor | None:
         if not claim.is_fully_resolved():
             return None
@@ -55,8 +55,8 @@ class CaseClaimToEvidenceQueryAnchorAdapter:
                 if claim.claim.claim_type is CaseClaimType.COMBINATION_EFFECT
                 else EvidenceClaimTopic.EFFICACY
             ),
-            # Case의 효능 문장을 검색문으로 재사용하면 질문과 무관한 설명이 Evidence 검색을
-            # 지배할 수 있으므로 표준 성분명과 실제 사용자 질문만 사용한다.
-            query_text=f"{' + '.join(names)}: {user_query}",
+            # Case의 효능 문장이나 상품·루틴 지시를 재사용하면 Evidence 검색을 지배할 수 있으므로
+            # 표준 성분명과 질의 계획에서 정제한 효능·주의 축만 사용한다.
+            query_text=f"{' + '.join(names)}: {evidence_query}",
             query_terms=names,
         )

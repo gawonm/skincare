@@ -91,20 +91,18 @@ class DbIngredientRepository(IngredientRepository):
         self, session: AsyncSession, request: IngredientResolveRequest
     ) -> IngredientResolveResult:
         name = request.name.strip()
-        # 1. 표준명/영문명/정규화명 완전 일치 우선 조회
-        stmt = (
-            select(IngredientMaster)
-            .where(
-                or_(
-                    IngredientMaster.standard_name_ko == name,
-                    IngredientMaster.standard_name_en.ilike(name),
-                    IngredientMaster.normalized_name_ko == name,
-                )
-            )
-            .limit(2)
-        )
-        res = await session.execute(stmt)
-        rows = res.scalars().all()
+        # 표준명과 정규화명을 한 OR 조회로 섞으면 같은 표현의 다른 후보가 표준명 완전 일치를 가릴 수 있다.
+        rows: list[IngredientMaster] = []
+        for exact_condition in (
+            IngredientMaster.standard_name_ko == name,
+            IngredientMaster.standard_name_en.ilike(name),
+            IngredientMaster.normalized_name_ko == name,
+        ):
+            stmt = select(IngredientMaster).where(exact_condition).limit(2)
+            res = await session.execute(stmt)
+            rows = list(res.scalars().all())
+            if rows:
+                break
 
         # 2. 완전 일치가 없으면 부분 일치로 후보 검색
         if not rows:

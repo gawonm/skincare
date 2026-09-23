@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from agent.ports import RoutineDraftGenerator, RoutinePlanner, RoutineRuleGenerator
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.rag.schemas import (
+    DEFAULT_ROUTINE_DURATION_DAYS,
     ChatModelConfig,
     ConstraintSource,
     DayPeriod,
@@ -36,10 +37,76 @@ from agent.rag.schemas import (
     RoutineRuleSource,
     RoutineRuleSourceKind,
     RoutineRuleType,
+    RoutineScheduleConstraints,
     RoutineValidationRequest,
     RoutineValidationResult,
     Weekday,
 )
+
+
+class RoutineFrequencyInterpreter:
+    """루틴 기간·주간 횟수·시간대를 섞지 않고 구조화한다."""
+
+    _EXPLICIT_WEEKLY_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:일주일(?:에|동안)?|주)\s*"
+        r"(?P<minimum>[1-7])"
+        r"(?:\s*(?:~|-|에서)\s*(?P<maximum>[1-7]))?\s*"
+        r"(?:회|번|일)"
+    )
+    _BARE_COUNT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<!\d)(?P<count>[1-7])\s*(?:회|번)"
+    )
+    _ROUTINE_DURATION_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<!\d)(?P<count>[1-7])\s*일간"
+    )
+    _DAILY_CONTEXT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:하루|매일|일일|1일)|(?:아침\s*(?:과|및|,|·|/)?\s*저녁)|아침저녁|"
+        r"(?:저녁\s*(?:과|및|,|·|/)?\s*아침)"
+    )
+
+    def schedule(self, user_request: str) -> RoutineScheduleConstraints:
+        explicit = self._frequencies(self._EXPLICIT_WEEKLY_PATTERN, user_request)
+        duration = self._ROUTINE_DURATION_PATTERN.search(user_request)
+        bare = self._bare_frequencies(user_request)
+        return RoutineScheduleConstraints(
+            duration_days=(
+                int(duration.group("count"))
+                if duration is not None
+                else (
+                    None
+                    if explicit or bare
+                    else DEFAULT_ROUTINE_DURATION_DAYS
+                )
+            ),
+            applications_per_week=(
+                max(explicit) if explicit else (max(bare) if bare else None)
+            ),
+            periods=self._periods(user_request),
+        )
+
+    def grounded_source_frequencies(self, source_quote: str) -> set[int]:
+        explicit = self._frequencies(self._EXPLICIT_WEEKLY_PATTERN, source_quote)
+        return explicit.union(self._bare_frequencies(source_quote))
+
+    def _bare_frequencies(self, text: str) -> set[int]:
+        if self._DAILY_CONTEXT_PATTERN.search(text):
+            # 일일 횟수를 7배 하거나 주간 사용일로 축소하면 원문과 다른 제약이 되므로 제외한다.
+            return set()
+        return {int(match.group("count")) for match in self._BARE_COUNT_PATTERN.finditer(text)}
+
+    def _frequencies(self, pattern: re.Pattern[str], text: str) -> set[int]:
+        return {
+            int(match.groupdict().get("maximum") or match.groupdict().get("minimum") or "0")
+            for match in pattern.finditer(text)
+        }
+
+    def _periods(self, text: str) -> list[DayPeriod]:
+        periods: list[DayPeriod] = []
+        if "아침" in text:
+            periods.append(DayPeriod.MORNING)
+        if "저녁" in text:
+            periods.append(DayPeriod.EVENING)
+        return periods
 
 
 class RoutineChatModelFactory:
@@ -178,6 +245,22 @@ class ChatModelRoutineDraftGenerator(RoutineDraftGenerator):
         return result
 
 
+class RoutineDraftNormalizer:
+    """LLM의 상대 순서는 보존하고 슬롯별 order만 연속된 값으로 정규화한다."""
+
+    def normalize(self, draft: RoutineDraftModelOutput) -> RoutineDraftModelOutput:
+        placements = [item.model_copy(deep=True) for item in draft.placements]
+        indices_by_slot: defaultdict[tuple[Weekday, DayPeriod], list[int]] = defaultdict(list)
+        for index, placement in enumerate(placements):
+            indices_by_slot[(placement.weekday, placement.period)].append(index)
+        for indices in indices_by_slot.values():
+            # Python 정렬은 안정적이므로 같은 order에서는 모델이 반환한 상대 순서를 유지한다.
+            ordered_indices = sorted(indices, key=lambda index: placements[index].order)
+            for normalized_order, index in enumerate(ordered_indices, start=1):
+                placements[index].order = normalized_order
+        return RoutineDraftModelOutput(placements=placements)
+
+
 class RoutineRuleSourceBuilder:
     """Planner가 접근할 수 있는 제품·Evidence·Case 사용법을 제품 범위에 묶는다."""
 
@@ -235,12 +318,11 @@ class RoutineRuleSourceBuilder:
 class DeterministicRoutineValidator:
     """LLM Rule의 출처와 최종 일정의 기계적 제약만 판정한다."""
 
-    _WEEKLY_FREQUENCY_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?:일주일(?:에|동안)?|주)\s*"
-        r"(?P<minimum>[1-7])"
-        r"(?:\s*(?:~|-|에서)\s*(?P<maximum>[1-7]))?\s*"
-        r"(?:회|번|일)"
-    )
+    def __init__(
+        self,
+        frequency_interpreter: RoutineFrequencyInterpreter | None = None,
+    ) -> None:
+        self._frequency_interpreter = frequency_interpreter or RoutineFrequencyInterpreter()
 
     def compile_rules(
         self,
@@ -297,7 +379,8 @@ class DeterministicRoutineValidator:
 
         seen_placements: set[tuple[str, Weekday, DayPeriod]] = set()
         orders_by_slot: defaultdict[tuple[Weekday, DayPeriod], list[int]] = defaultdict(list)
-        weekdays_by_product: defaultdict[str, set[Weekday]] = defaultdict(set)
+        placement_count_by_product: defaultdict[str, int] = defaultdict(int)
+        scheduled_weekdays: set[Weekday] = set()
         placements_by_slot: defaultdict[
             tuple[Weekday, DayPeriod], list[RoutinePlacement]
         ] = (
@@ -321,7 +404,12 @@ class DeterministicRoutineValidator:
             slot = (placement.weekday, placement.period)
             orders_by_slot[slot].append(placement.order)
             placements_by_slot[slot].append(placement)
-            weekdays_by_product[placement.product_id].add(placement.weekday)
+            placement_count_by_product[placement.product_id] += 1
+            scheduled_weekdays.add(placement.weekday)
+            if request.schedule.periods and placement.period not in request.schedule.periods:
+                violations.append(
+                    f"요청하지 않은 시간대에 제품이 배치됐습니다: {placement.period.value}"
+                )
 
         for slot, orders in orders_by_slot.items():
             expected_orders = list(range(1, len(orders) + 1))
@@ -329,12 +417,23 @@ class DeterministicRoutineValidator:
                 violations.append(
                     f"{slot[0].value} {slot[1].value} 사용 순서는 1부터 중복 없이 이어져야 합니다."
                 )
-        for product_id, weekdays in weekdays_by_product.items():
-            if len(weekdays) > request.frequency_per_week:
+        if (
+            request.schedule.duration_days is not None
+            and len(scheduled_weekdays) > request.schedule.duration_days
+        ):
+            violations.append(
+                "요청한 루틴 기간을 초과했습니다: "
+                f"{len(scheduled_weekdays)}일/{request.schedule.duration_days}일"
+            )
+        if request.schedule.applications_per_week is not None:
+            for product_id, placement_count in placement_count_by_product.items():
+                if placement_count <= request.schedule.applications_per_week:
+                    continue
                 product_name = allowed_products.get(product_id)
                 label = product_name.name if product_name is not None else product_id
                 violations.append(
-                    f"요청한 주당 횟수를 초과했습니다: {label} ({len(weekdays)}회)"
+                    "요청한 주당 횟수를 초과했습니다: "
+                    f"{label} ({placement_count}회)"
                 )
 
         for rule in request.plan.rules:
@@ -345,7 +444,7 @@ class DeterministicRoutineValidator:
                 rule,
                 placements,
                 placements_by_slot,
-                weekdays_by_product,
+                placement_count_by_product,
                 violations,
             )
 
@@ -386,10 +485,9 @@ class DeterministicRoutineValidator:
                 "주당 횟수가 없는 최대 사용 빈도 Rule을 제외했습니다: "
                 f"{candidate.source_id}"
             )
-        grounded_frequencies = {
-            int(match.group("maximum") or match.group("minimum"))
-            for match in self._WEEKLY_FREQUENCY_PATTERN.finditer(candidate.source_quote)
-        }
+        grounded_frequencies = self._frequency_interpreter.grounded_source_frequencies(
+            candidate.source_quote
+        )
         if expected_frequency not in grounded_frequencies:
             # 일일 사용 횟수를 주간 배치 일수로 바꾸면 원문보다 강하거나 약한 제약이 생길 수 있다.
             return (
@@ -417,7 +515,7 @@ class DeterministicRoutineValidator:
         placements_by_slot: defaultdict[
             tuple[Weekday, DayPeriod], list[RoutinePlacement]
         ],
-        weekdays_by_product: defaultdict[str, set[Weekday]],
+        placement_count_by_product: defaultdict[str, int],
         violations: list[str],
     ) -> None:
         if rule.rule_type is RoutineRuleType.ALLOWED_PERIOD:
@@ -434,7 +532,7 @@ class DeterministicRoutineValidator:
             if rule.max_frequency_per_week is None:
                 return
             for product_id in rule.product_ids:
-                if len(weekdays_by_product[product_id]) > rule.max_frequency_per_week:
+                if placement_count_by_product[product_id] > rule.max_frequency_per_week:
                     violations.append(f"제품별 최대 사용 빈도를 초과했습니다: {product_id}")
             return
         if rule.rule_type is RoutineRuleType.AVOID_SAME_PERIOD:
@@ -471,11 +569,13 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
         draft_generator: RoutineDraftGenerator,
         validator: DeterministicRoutineValidator | None = None,
         source_builder: RoutineRuleSourceBuilder | None = None,
+        draft_normalizer: RoutineDraftNormalizer | None = None,
     ) -> None:
         self._rule_generator = rule_generator
         self._draft_generator = draft_generator
         self._validator = validator or DeterministicRoutineValidator()
         self._source_builder = source_builder or RoutineRuleSourceBuilder()
+        self._draft_normalizer = draft_normalizer or RoutineDraftNormalizer()
 
     async def plan(self, request: RoutinePlanRequest) -> RoutinePlan:
         sources = self._source_builder.build(request)
@@ -502,14 +602,16 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
                 candidates=candidates.rules,
             )
         )
-        draft = await self._draft_generator.generate(
-            RoutineDraftGenerationRequest(
-                user_request=request.user_request,
-                products=request.products,
-                excluded_weekdays=request.excluded_weekdays,
-                frequency_per_week=request.frequency_per_week,
-                rules=compilation.rules,
-                current_plan=request.current_plan,
+        draft = self._draft_normalizer.normalize(
+            await self._draft_generator.generate(
+                RoutineDraftGenerationRequest(
+                    user_request=request.user_request,
+                    products=request.products,
+                    excluded_weekdays=request.excluded_weekdays,
+                    schedule=request.schedule,
+                    rules=self._draft_rules(compilation.rules),
+                    current_plan=request.current_plan,
+                )
             )
         )
         products = {product.product_id: product for product in request.products}
@@ -548,6 +650,14 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
             ),
             is_demo=False,
         )
+
+    def _draft_rules(self, rules: list[RoutineRule]) -> list[RoutineRule]:
+        # Case 사용 가이드는 검증 경고로 남기되, 일정 생성 명령처럼 해석되어 배치를 늘리지 않게 한다.
+        return [
+            rule.model_copy(deep=True)
+            for rule in rules
+            if rule.enforcement is RoutineRuleEnforcement.REQUIRED
+        ]
 
     def _can_continue_without_generated_rules(
         self,

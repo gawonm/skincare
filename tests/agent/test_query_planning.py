@@ -66,6 +66,29 @@ class TestIntentQueryPlanner:
 
         assert result.case_query == parsed.query
 
+    def test_LLM의_긴_고민_문구를_Case_질의에_중복해서_붙이지_않는다(self) -> None:
+        original = (
+            "30대 남성, 환절기라 힘들다. 피지가 많고 여드름도 많은데 뭘 써야 하지?"
+        )
+        parsed = ParsedRequest(
+            intents=[Intent.PRODUCT_DISCOVERY, Intent.ROUTINE_PLANNING],
+            query=original,
+            query_plan=IntentQueryPlan(
+                case_query="피지가 많고 여드름이 많은데, 뭘 써야하지?"
+            ),
+            skin_concerns=["피지가 많고 여드름이 많은 피부 고민", "피지", "여드름"],
+            rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+        )
+
+        result = IntentQueryPlanner().build(
+            QueryPlanningRequest(original_message=original, parsed_request=parsed)
+        )
+
+        assert result.case_query == (
+            "30대 남성 환절기 피지가 많고 여드름이 많은데, 뭘 써야하지?"
+        )
+        assert result.case_query.count("피지가 많고") == 1
+
     def test_명시_성분_Evidence_직행에는_Case_질의를_만들지_않는다(self) -> None:
         parsed = ParsedRequest(
             intents=[Intent.EVIDENCE_QA],
@@ -86,3 +109,46 @@ class TestIntentQueryPlanner:
 
         assert result.case_query is None
         assert result.evidence_query == parsed.query
+
+    def test_Case_경로의_Evidence_질의가_없으면_고민과_검증축만_사용한다(self) -> None:
+        original = (
+            "30대 남성, 환절기라 힘들다. 피지가 많고 여드름도 많은데 뭘 써야 하지? "
+            "추천 상품으로 3일간 스킨케어 루틴 짜줘"
+        )
+        parsed = ParsedRequest(
+            intents=[Intent.PRODUCT_DISCOVERY, Intent.ROUTINE_PLANNING],
+            query=original,
+            skin_concerns=["피지", "여드름"],
+            rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+        )
+
+        result = IntentQueryPlanner().build(
+            QueryPlanningRequest(original_message=original, parsed_request=parsed)
+        )
+
+        assert result.evidence_query == "피지 여드름 관련 효능 및 주의사항"
+        assert "30대" not in result.evidence_query
+        assert "남성" not in result.evidence_query
+        assert "환절기" not in result.evidence_query
+        assert "상품" not in result.evidence_query
+        assert "루틴" not in result.evidence_query
+
+    def test_Case_경로의_LLM_Evidence_질의보다_원문_고민어를_우선한다(self) -> None:
+        original = (
+            "30대 남성, 피지가 많고 여드름도 많은데 추천 상품으로 3일간 루틴 짜줘"
+        )
+        parsed = ParsedRequest(
+            intents=[Intent.PRODUCT_DISCOVERY, Intent.ROUTINE_PLANNING],
+            query=original,
+            query_plan=IntentQueryPlan(
+                evidence_query="피지가 많고 여드름 여드름 피지 관련 효능 및 주의사항"
+            ),
+            skin_concerns=["피지가 많고 여드름", "여드름", "피지"],
+            rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+        )
+
+        result = IntentQueryPlanner().build(
+            QueryPlanningRequest(original_message=original, parsed_request=parsed)
+        )
+
+        assert result.evidence_query == "피지 여드름 관련 효능 및 주의사항"

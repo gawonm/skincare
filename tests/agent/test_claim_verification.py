@@ -10,10 +10,13 @@ from agent.rag.claim_schemas import (
     ClaimVerificationRequest,
     ClaimVerificationResult,
     ClaimVerificationStatus,
+    EvidenceSupportLevel,
     RecommendationBasis,
 )
 from agent.rag.pipeline import EvidencePipeline
 from agent.rag.schemas import (
+    ApplicabilityAssessment,
+    ApplicabilityStatus,
     EvidenceBackedStatement,
     EvidenceBundle,
     EvidenceClaimTopic,
@@ -118,6 +121,12 @@ class ClaimVerificationFixture:
                     )
                 ]
             ),
+            assessments=[
+                ApplicabilityAssessment(
+                    evidence_id=searched.evidence_id,
+                    status=ApplicabilityStatus.APPLICABLE,
+                )
+            ],
         )
 
     def individual_evidence_for_combination_bundle(self) -> EvidenceBundle:
@@ -176,6 +185,12 @@ class ClaimVerificationFixture:
                     ]
                 )
             ),
+            assessments=[
+                ApplicabilityAssessment(
+                    evidence_id=searched.evidence_id,
+                    status=ApplicabilityStatus.APPLICABLE,
+                )
+            ],
         )
 
 
@@ -188,9 +203,36 @@ class TestClaimEvidenceVerifier:
 
         assert result.status is ClaimVerificationStatus.SUPPORTED
         assert result.evidence_ids == ["evidence:1"]
+        assert result.evidence_support_level is EvidenceSupportLevel.VERIFIED
         assert result.summary == "검증 가능한 효능 근거가 확인됐습니다."
         assert pipeline.requests[0].query == fixture.anchor().query_text
         assert pipeline.requests[0].target_ids == [fixture.INGREDIENT_ID]
+
+    async def test_limited_applicability_is_not_labeled_as_verified(self) -> None:
+        fixture = ClaimVerificationFixture()
+        bundle = fixture.supported_bundle()
+        bundle.assessments[0].status = ApplicabilityStatus.LIMITED
+        pipeline = ScriptedEvidencePipeline(bundle)
+
+        result = await ClaimEvidenceVerifier(pipeline).verify(fixture.request())
+
+        assert result.status is ClaimVerificationStatus.SUPPORTED
+        assert result.evidence_support_level is EvidenceSupportLevel.LIMITED
+
+    async def test_unreviewed_record_is_not_labeled_as_verified(self) -> None:
+        fixture = ClaimVerificationFixture()
+        bundle = fixture.supported_bundle()
+        bundle.search.records[0].review_status = EvidenceReviewStatus.UNREVIEWED
+        assert bundle.generated is not None
+        bundle.generated.per_target[0].result.claims[0].sources[
+            0
+        ].review_status = EvidenceReviewStatus.UNREVIEWED
+        pipeline = ScriptedEvidencePipeline(bundle)
+
+        result = await ClaimEvidenceVerifier(pipeline).verify(fixture.request())
+
+        assert result.status is ClaimVerificationStatus.SUPPORTED
+        assert result.evidence_support_level is EvidenceSupportLevel.UNREVIEWED
 
     async def test_no_results_remains_claim_only_eligible(self) -> None:
         fixture = ClaimVerificationFixture()
@@ -243,6 +285,7 @@ class TestClaimEvidenceVerifier:
 
         assert result.status is ClaimVerificationStatus.SUPPORTED
         assert result.evidence_ids == ["evidence:combination"]
+        assert result.evidence_support_level is EvidenceSupportLevel.VERIFIED
         assert pipeline.requests[0].combination_target_ids == [
             fixture.INGREDIENT_ID,
             fixture.SECOND_INGREDIENT_ID,
@@ -313,6 +356,7 @@ class TestIngredientRecommendationSelector:
                     status=ClaimVerificationStatus.SUPPORTED,
                     evidence_ids=["evidence:1"],
                     evidence_records=[ClaimVerificationFixture().record()],
+                    evidence_support_level=EvidenceSupportLevel.VERIFIED,
                     summary="검증됨",
                 ),
             ]
@@ -324,9 +368,31 @@ class TestIngredientRecommendationSelector:
             "ingredient:supported",
             "ingredient:claim-only",
         ]
-        assert result.candidates[0].basis is RecommendationBasis.EVIDENCE_SUPPORTED
+        assert result.candidates[0].basis is RecommendationBasis.VERIFIED_EVIDENCE
         assert result.candidates[1].basis is RecommendationBasis.CLAIM_ONLY
         assert result.candidates[1].limitation == CLAIM_ONLY_LIMITATION
+
+    def test_unreviewed_evidence_is_not_labeled_as_verified(self) -> None:
+        fixture = ClaimVerificationFixture()
+        record = fixture.record()
+        record.review_status = EvidenceReviewStatus.UNREVIEWED
+        bundle = ClaimVerificationBundle(
+            results=[
+                ClaimVerificationResult(
+                    statement_id="claim:unreviewed",
+                    ingredient_ids=[fixture.INGREDIENT_ID],
+                    status=ClaimVerificationStatus.SUPPORTED,
+                    evidence_ids=[record.evidence_id],
+                    evidence_records=[record],
+                    evidence_support_level=EvidenceSupportLevel.UNREVIEWED,
+                    summary="미검수 근거",
+                )
+            ]
+        )
+
+        result = IngredientRecommendationSelector().select(bundle)
+
+        assert result.candidates[0].basis is RecommendationBasis.UNREVIEWED_EVIDENCE
 
     def test_error_or_contradiction_blocks_same_ingredient(self) -> None:
         bundle = ClaimVerificationBundle(

@@ -15,14 +15,18 @@
 import asyncio
 import sys
 from enum import StrEnum
-from typing import ClassVar, Final
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.engine import make_url
 
 from agent.factory import DevelopmentAgentApplication, DevelopmentAgentFactory
 from agent.llm import LlmClientFactory
-from agent.nodes import CLAIM_ONLY_PRODUCT_LIMITATION
+from agent.nodes import (
+    CLAIM_ONLY_PRODUCT_LIMITATION,
+    LIMITED_EVIDENCE_PRODUCT_LIMITATION,
+    UNREVIEWED_EVIDENCE_PRODUCT_LIMITATION,
+)
 from agent.ports import IngredientRepository, ProductRepository
 from agent.rag.case_claim_extractor import CaseClaimExtractorFactory
 from agent.rag.case_claim_schemas import (
@@ -69,9 +73,6 @@ from agent.rag.schemas import (
     TextEmbeddingConfig,
 )
 from agent.schemas import (
-    AuthenticatedChatContext,
-    ChatServiceRequest,
-    ChatTurnInput,
     ExecutionLimits,
     RegisterRoomRequest,
     UnresolvedKind,
@@ -336,10 +337,24 @@ class Utf8ConsoleConfigurator:
                 reconfigure(encoding=self.ENCODING, errors=self.ERROR_POLICY)
 
 
+class ProductBasisPresenter:
+    def label(self, limitations: list[str]) -> str:
+        if CLAIM_ONLY_PRODUCT_LIMITATION in limitations:
+            return "Claim 기반"
+        if UNREVIEWED_EVIDENCE_PRODUCT_LIMITATION in limitations:
+            return "미검수 근거"
+        if LIMITED_EVIDENCE_PRODUCT_LIMITATION in limitations:
+            return "제한 근거"
+        return "성분 근거"
+
+
 class CompactTwoLayerTurnPresenter:
     """간결한 최종 결과와 성분/근거 요약을 출력한다."""
 
     CLAIM_SEPARATOR: ClassVar[str] = "::"
+
+    def __init__(self) -> None:
+        self._product_basis = ProductBasisPresenter()
 
     def print_turn(self, result: AgentTurnResult, user_message: str) -> None:
         output = result.turn_output
@@ -380,15 +395,11 @@ class CompactTwoLayerTurnPresenter:
         if candidates:
             print("\n[상품 후보]")
             for candidate in candidates:
-                basis = (
-                    "Claim 기반·근거 미확인"
-                    if CLAIM_ONLY_PRODUCT_LIMITATION in candidate.unresolved
-                    else "Evidence 기반"
-                )
+                basis = self._product_basis.label(candidate.unresolved)
                 print(f"{candidate.rank}. {candidate.product.name} [{basis}]")
 
         if output.citations:
-            print("\n[채택된 공인 근거]")
+            print("\n[채택된 근거]")
             for citation in output.citations:
                 print(f"- {citation.source_title} ({citation.locator})")
 
@@ -453,6 +464,7 @@ class VerboseTwoLayerTurnPresenter:
 
     def __init__(self) -> None:
         self._aliases = CommonIngredientAliasMapper()
+        self._product_basis = ProductBasisPresenter()
 
     def print_turn(
         self,
@@ -488,15 +500,11 @@ class VerboseTwoLayerTurnPresenter:
         if candidates:
             print("\n[상품 후보]")
             for candidate in candidates:
-                basis = (
-                    "Claim 기반·근거 미확인"
-                    if CLAIM_ONLY_PRODUCT_LIMITATION in candidate.unresolved
-                    else "Evidence 기반"
-                )
+                basis = self._product_basis.label(candidate.unresolved)
                 print(f"{candidate.rank}. {candidate.product.name} [{basis}]")
 
         if output.citations:
-            print("\n[채택된 공인 근거]")
+            print("\n[채택된 근거]")
             for citation in output.citations:
                 print(f"- {citation.source_title} ({citation.locator})")
 

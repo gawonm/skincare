@@ -17,7 +17,7 @@ from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
 
 DEFAULT_SEARCH_LIMIT = 5
-DEFAULT_ROUTINE_FREQUENCY = 2
+DEFAULT_ROUTINE_DURATION_DAYS = 2
 MAX_ROUTINE_RULES = 32
 MAX_ROUTINE_PLACEMENTS = 64
 DEFAULT_EMBEDDING_BATCH_SIZE = 16
@@ -715,7 +715,9 @@ class ProductCandidateLimitation(StrEnum):
     DIRECTIONS_UNKNOWN = "제품 사용법 미상"
     VERSION_UNKNOWN = "제품 버전 미상"
     INGREDIENT_EVIDENCE_ONLY = "성분 근거이며 완제품 자체의 임상 효과를 입증하지 않습니다."
-    CLAIM_NOT_VERIFIED = "현재 연결된 공인 근거로 Claim을 충분히 확인하지 못했습니다."
+    EVIDENCE_APPLICABILITY_LIMITED = "성분 근거의 적용 조건이 현재 요청과 완전히 일치하지 않습니다."
+    EVIDENCE_UNREVIEWED = "사람이 검수하지 않은 성분 근거입니다."
+    CLAIM_NOT_VERIFIED = "현재 연결된 근거로 Claim을 충분히 확인하지 못했습니다."
 
 
 class ProductCandidateSet(RagModel):
@@ -785,8 +787,9 @@ class AllowedPeriodRoutineRuleCandidate(RoutineRuleCandidateBase):
 
 class MaxFrequencyRoutineRuleCandidate(RoutineRuleCandidateBase):
     rule_type: Literal[RoutineRuleType.MAX_FREQUENCY_PER_WEEK]
-    # LLM 제공 JSON Schema에서도 필수 정수로 보여야 null 응답을 파싱 뒤에 발견하지 않는다.
-    max_frequency_per_week: int = Field(ge=1, le=7)
+    # 잘못 생성된 후보 하나 때문에 같은 응답의 유효 Rule까지 잃지 않도록 파싱은 허용하고,
+    # 결정적 컴파일 단계에서 값이 없는 후보만 출처 경고와 함께 제외한다.
+    max_frequency_per_week: int | None = Field(default=None, ge=1, le=7)
 
 
 class AvoidSamePeriodRoutineRuleCandidate(RoutineRuleCandidateBase):
@@ -892,11 +895,19 @@ class RoutineDraftModelOutput(RagModel):
     )
 
 
+class RoutineScheduleConstraints(RagModel):
+    """사용자 요청의 기간·주간 횟수·시간대를 서로 다른 축으로 보존한다."""
+
+    duration_days: int | None = Field(default=None, ge=1, le=7)
+    applications_per_week: int | None = Field(default=None, ge=1, le=7)
+    periods: list[DayPeriod] = Field(default_factory=list)
+
+
 class RoutineDraftGenerationRequest(RagModel):
     user_request: str = Field(min_length=1)
     products: list[ProductRecord] = Field(min_length=1)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
-    frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
+    schedule: RoutineScheduleConstraints = Field(default_factory=RoutineScheduleConstraints)
     rules: list[RoutineRule] = Field(default_factory=list)
     current_plan: RoutinePlan | None = None
 
@@ -907,7 +918,7 @@ class RoutinePlanRequest(RagModel):
     products: list[ProductRecord] = Field(min_length=1)
     user_request: str = Field(min_length=1)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
-    frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
+    schedule: RoutineScheduleConstraints = Field(default_factory=RoutineScheduleConstraints)
     evidence_records: list[EvidenceRecord] = Field(default_factory=list)
     case_usage_guidance: list[CaseUsageGuidance] = Field(default_factory=list)
     current_plan: RoutinePlan | None = None
@@ -917,7 +928,7 @@ class RoutineValidationRequest(RagModel):
     plan: RoutinePlan
     products: list[ProductRecord] = Field(min_length=1)
     excluded_weekdays: list[Weekday] = Field(default_factory=list)
-    frequency_per_week: int = Field(default=DEFAULT_ROUTINE_FREQUENCY, ge=1, le=7)
+    schedule: RoutineScheduleConstraints = Field(default_factory=RoutineScheduleConstraints)
 
 
 class RoutineValidationResult(RagModel):

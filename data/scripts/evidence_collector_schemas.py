@@ -119,6 +119,7 @@ class PubmedSelectionReason(StrEnum):
     EXCLUDED_PUBLICATION_TYPE = "excluded_publication_type"
     NOT_RELEVANT_TO_INGREDIENT = "not_relevant_to_ingredient"
     INGREDIENT_NOT_IN_TITLE = "ingredient_not_in_title"
+    COMBINATION_REQUIRES_ASSOCIATION_MAPPING = "combination_requires_association_mapping"
     STUDY_TYPE_NOT_SELECTABLE = "study_type_not_selectable"
     OVER_BUDGET = "over_budget"
 

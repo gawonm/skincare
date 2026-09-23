@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from core.database import Database
+from core.database import Database, DatabaseConfig
 from data.scripts.evidence_collector_schemas import EvidenceBundle, EvidenceChunkDraft
 from data.scripts.mfds_evidence_embedder import MfdsEvidenceEmbedder
 from models.evidence_chunk import EvidenceChunk, evidence_chunk_ingredient
@@ -205,7 +205,12 @@ class CompactEvidenceLoader:
         return True
 
 
-async def _run(bundles_path: Path, *, execute: bool) -> CompactEvidenceLoadSummary:
+async def _run(
+    bundles_path: Path,
+    *,
+    execute: bool,
+    dsn: str | None = None,
+) -> CompactEvidenceLoadSummary:
     if not bundles_path.exists():
         raise RuntimeError(f"bundle 파일이 없습니다: {bundles_path}")
     bundles = [
@@ -213,7 +218,8 @@ async def _run(bundles_path: Path, *, execute: bool) -> CompactEvidenceLoadSumma
         for line in bundles_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    database = Database(settings.database)
+    # 새 기준본 후보를 기존 config DB와 분리해 검증할 수 있도록 CLI에서만 DSN 교체를 허용한다.
+    database = Database(DatabaseConfig(url=dsn) if dsn is not None else settings.database)
     try:
         async with database.session_factory() as session:
             embedder = MfdsEvidenceEmbedder(settings.agent.embedding) if execute else None
@@ -228,8 +234,13 @@ def main() -> None:
     parser.add_argument(
         "--execute", action="store_true", help="임베딩하고 DB 에 쓴다(기본 dry-run)"
     )
+    parser.add_argument(
+        "--dsn",
+        default=None,
+        help="config DB 대신 사용할 SQLAlchemy DSN",
+    )
     args = parser.parse_args()
-    summary = asyncio.run(_run(args.bundles, execute=args.execute))
+    summary = asyncio.run(_run(args.bundles, execute=args.execute, dsn=args.dsn))
     print(json.dumps(summary.model_dump(mode="json"), ensure_ascii=False, indent=_JSON_INDENT))
 
 

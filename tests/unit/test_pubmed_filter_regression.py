@@ -158,17 +158,22 @@ class TestCombinationHandling:
         assert by_pmid["38299457"].formulation_type is (
             EvidenceFormulationType.COMBINATION_FORMULATION
         )
-        # 예산이 1편이면 단일 성분 논문이 뽑히고 복합 제형은 over_budget 후보로 남는다
+        # 복합 제형은 예산과 무관하게 복수 성분 association 검수 대상으로 남는다
         assert by_pmid["36683259"].disposition is _SELECTED
         assert by_pmid["36683259"].evidence_grade is EvidenceGrade.DIRECT_SINGLE_TOPICAL_HUMAN
         assert by_pmid["38299457"].disposition is _CANDIDATE
-        assert by_pmid["38299457"].reason is PubmedSelectionReason.OVER_BUDGET
+        assert by_pmid["38299457"].reason is (
+            PubmedSelectionReason.COMBINATION_REQUIRES_ASSOCIATION_MAPPING
+        )
 
-    def test_combination_can_be_selected_when_no_single_paper_exists_but_is_graded(self) -> None:
+    def test_combination_requires_reviewed_association_mapping(self) -> None:
         (assessment,) = PubmedSelectionPolicy(3).assess(
             _ingredient("Niacinamide", ["Nicotinamide"]), [_record("38299457")]
         )
-        assert assessment.disposition is _SELECTED
+        assert assessment.disposition is _CANDIDATE
+        assert assessment.reason is (
+            PubmedSelectionReason.COMBINATION_REQUIRES_ASSOCIATION_MAPPING
+        )
         assert assessment.evidence_grade is EvidenceGrade.COMBINATION_TOPICAL_HUMAN
 
 

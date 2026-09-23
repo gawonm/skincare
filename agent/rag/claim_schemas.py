@@ -64,8 +64,16 @@ class ClaimVerificationStatus(StrEnum):
 
 
 class RecommendationBasis(StrEnum):
-    EVIDENCE_SUPPORTED = "evidence_supported"
+    VERIFIED_EVIDENCE = "verified_evidence"
+    LIMITED_EVIDENCE = "limited_evidence"
+    UNREVIEWED_EVIDENCE = "unreviewed_evidence"
     CLAIM_ONLY = "claim_only"
+
+
+class EvidenceSupportLevel(StrEnum):
+    VERIFIED = "verified"
+    LIMITED = "limited"
+    UNREVIEWED = "unreviewed"
 
 
 class ClaimIngredientRef(RagModel):
@@ -178,6 +186,7 @@ class ClaimVerificationResult(RagModel):
     status: ClaimVerificationStatus
     evidence_ids: list[str] = Field(default_factory=list)
     evidence_records: list[EvidenceRecord] = Field(default_factory=list)
+    evidence_support_level: EvidenceSupportLevel | None = None
     summary: str | None = Field(default=None, min_length=1)
     reasons: list[str] = Field(default_factory=list)
 
@@ -191,9 +200,13 @@ class ClaimVerificationResult(RagModel):
         if self.evidence_ids != record_ids:
             raise ValueError("Claim 검증 결과의 evidence_ids와 EvidenceRecord가 일치하지 않습니다.")
         if self.status is ClaimVerificationStatus.SUPPORTED:
-            if not self.evidence_ids or self.summary is None:
-                raise ValueError("SUPPORTED Claim 검증 결과에는 근거와 요약이 필요합니다.")
-        elif self.evidence_ids or self.evidence_records:
+            if (
+                not self.evidence_ids
+                or self.summary is None
+                or self.evidence_support_level is None
+            ):
+                raise ValueError("SUPPORTED Claim 검증 결과에는 근거·요약·근거 등급이 필요합니다.")
+        elif self.evidence_ids or self.evidence_records or self.evidence_support_level is not None:
             # 검증에 쓰지 못한 검색 자료가 Citation으로 승격되지 않도록 결과에서 분리한다.
             raise ValueError("SUPPORTED가 아닌 Claim 결과에는 인용 가능한 근거를 넣을 수 없습니다.")
         return self
@@ -217,15 +230,32 @@ class IngredientRecommendationSet(RagModel):
 
 class RecommendationProductMatch(RagModel):
     product: ProductRecord
-    evidence_supported_ingredient_ids: list[str] = Field(default_factory=list)
+    verified_evidence_ingredient_ids: list[str] = Field(default_factory=list)
+    limited_evidence_ingredient_ids: list[str] = Field(default_factory=list)
+    unreviewed_evidence_ingredient_ids: list[str] = Field(default_factory=list)
     claim_only_ingredient_ids: list[str] = Field(default_factory=list)
     statement_ids: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
 
     def basis(self) -> RecommendationBasis:
-        if self.evidence_supported_ingredient_ids:
-            return RecommendationBasis.EVIDENCE_SUPPORTED
+        if self.verified_evidence_ingredient_ids:
+            return RecommendationBasis.VERIFIED_EVIDENCE
+        if self.limited_evidence_ingredient_ids:
+            return RecommendationBasis.LIMITED_EVIDENCE
+        if self.unreviewed_evidence_ingredient_ids:
+            return RecommendationBasis.UNREVIEWED_EVIDENCE
         return RecommendationBasis.CLAIM_ONLY
+
+
+class RecommendationProductSelectionRequest(RagModel):
+    ingredients: list[IngredientRecommendationCandidate] = Field(min_length=1)
+    products: list[ProductRecord] = Field(default_factory=list)
+
+
+class RecommendationProductSelectionResult(RagModel):
+    matches: list[RecommendationProductMatch] = Field(default_factory=list)
+    covered_ingredient_ids: list[str] = Field(default_factory=list)
+    uncovered_ingredient_ids: list[str] = Field(default_factory=list)
 
 
 class ClaimBundle(RagModel):

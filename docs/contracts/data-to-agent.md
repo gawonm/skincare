@@ -188,3 +188,74 @@ Agent는 위 Data 타입을 import하지 않는다. Backend가 다음 정보만 
 - 출력 파일 쓰기 실패: 부분 파일을 정상 산출물로 간주하지 않고 실패
 
 개별 오류를 숨기거나 실패 레코드만 제외한 채 manifest를 성공으로 만들지 않는다.
+
+## 6. Evidence 성분 연결 범위 계약 — 2026-09-23
+
+> 상태: **확정**. 조합 Evidence를 단일 성분 Claim의 근거로 승격하지 않으며 신규 조합
+> Evidence는 이 절의 범위 규칙을 적용한 뒤 적재한다.
+
+### 6.1 부르는 대상과 타입 소유권
+
+Data가 `evidence_chunk_ingredient`에 기록한 성분 연결은 Backend 검색 어댑터를 거쳐 Agent의
+`AnswerGenerator.generate()`가 소비한다. Data와 Backend의 ORM 타입을 Agent가 import하지
+않으며, 경계 타입은 불리는 쪽인 Agent가 `agent/rag/schemas.py`에서 소유한다.
+
+```python
+from enum import StrEnum
+
+from pydantic import BaseModel, Field
+
+
+class EvidenceScope(StrEnum):
+    INGREDIENT = "ingredient"
+    PRODUCT = "product"
+    PAIR = "pair"
+    ASSOCIATION = "association"
+
+
+class EvidenceRecord(BaseModel):
+    scope: EvidenceScope = EvidenceScope.INGREDIENT
+    evidence_id: str = Field(min_length=1)
+    target_ids: list[str] = Field(default_factory=list)
+    text: str = Field(min_length=1)
+```
+
+실제 `EvidenceRecord`에는 출처, 검수 상태, 조건, URL 등의 필드가 더 있으며 이 절은 성분 연결
+범위에 관여하는 필드만 발췌한다. 새 DTO나 DB 컬럼은 추가하지 않는다.
+
+### 6.2 입력과 범위 판정
+
+| Data 연결 상태 | Backend가 전달할 `scope` | Agent의 사용 범위 |
+| --- | --- | --- |
+| 정확히 한 성분 ID에 연결 | `INGREDIENT` | 동일 `target_id`의 개별 효능·주의 Claim 검증 후보 |
+| 둘 이상의 성분 ID에 연결된 복합물·병용·연관 연구 | `ASSOCIATION` | 검색·출처 보존만 허용. 단일 성분 Claim 검증에는 사용 금지 |
+| 정확한 두 성분의 상호작용을 검증하도록 별도 구축된 자료 | `PAIR` | 질문의 조합 ID 집합과 정확히 같을 때만 조합 Claim 검증 후보 |
+
+- `evidence_chunk_ingredient.ingredient_id`는 정확한 표준 성분 ID만 사용한다.
+- 유도체, 계열, 원료군 또는 이름이 비슷한 성분으로 연결을 확장하지 않는다.
+- 제목이나 초록이 `chitin-glucan`, copolymer, 혼합 제형처럼 복수 성분을 명시하면 한 성분의
+  직접 Evidence로 만들지 않는다. 각 정확한 성분에 연결하되 `ASSOCIATION`으로 전달한다.
+- 검색 결과에 `ASSOCIATION`이 포함되더라도 Agent는 이를 개별 `PerTargetResult`의 Citation이나
+  `SUPPORTED` 판정에 사용하지 않는다.
+- `ASSOCIATION`은 현재 일반적인 조합 답변 근거로도 자동 승격하지 않는다. 조합 검증에는 질문의
+  정확한 대상 집합을 만족하는 `PAIR`만 사용한다.
+
+### 6.3 Chitin-glucan 자료 처리
+
+이번에 확인한 `PMID:19743936`, `PMID:19099547`은 Chitin 단독 연구가 아니라 Chitin과
+Beta-Glucan의 복합물 연구다. 적재한다면 다음 두 표준 ID에 모두 연결한다.
+
+- Chitin: `c4399298-58ae-4df1-8f6b-eeaae7a98ce3`
+- Beta-Glucan: `94c4bad8-5f3b-47c9-8044-543ec8f971a7`
+
+따라서 두 자료는 `ASSOCIATION`으로만 검색되며 Chitin 또는 Beta-Glucan 단독 효능의 근거로
+표시하지 않는다. Chitosan은 다른 표준 성분이므로 연결하지 않는다.
+
+### 6.4 반환과 실패 처리
+
+- 정확한 단일 성분 Evidence가 없으면 `no_results`/`NO_EVIDENCE_FOUND`를 유지한다.
+- 원문에 성분명이 등장했다는 이유만으로 누락된 연결을 런타임에 보정하지 않는다.
+- Evidence가 없더라도 Case Claim과 상품 후보는 별도 경로로 사용할 수 있으며 사용자 표시는
+  `Claim 기반`으로 한다. Evidence 제한 문구는 Claim 표시와 분리한다.
+- 동일 `evidence_id`의 범위나 대상 ID가 서로 다르면 조용히 병합하지 않고 오류를 발생시킨다.
+- 신규 자료 적재는 수집 결과, 연결 ID, 범위 분류를 dry-run으로 검증한 뒤 진행한다.

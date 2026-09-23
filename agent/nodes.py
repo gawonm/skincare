@@ -1,6 +1,8 @@
 """LangGraph 각 단계의 상태 전이를 구현한다."""
 
 from datetime import UTC, datetime
+from enum import StrEnum
+from typing import ClassVar
 
 from agent.context import ContextBuilder
 from agent.evidence_query_policy import EvidenceQueryPolicy
@@ -8,17 +10,25 @@ from agent.ports import IngredientRepository, LlmClient, ProductRepository, Rout
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.query_planning import IntentQueryPlanner
 from agent.rag.claim_schemas import (
-    IngredientRecommendationCandidate,
     RecommendationBasis,
     RecommendationProductMatch,
+    RecommendationProductSelectionRequest,
 )
+from agent.rag.recommendation_product_selector import RecommendationProductSelector
 from agent.rag.retrieval.ingredient_alias_mapper import (
     CommonIngredientAliasMapper,
     IngredientMentionDetectionRequest,
 )
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
+from agent.rag.routine_planner import RoutineFrequencyInterpreter
+from agent.rag.routine_product_selector import (
+    RoutineProductSelectionRequest,
+    RoutineProductSelector,
+)
 from agent.rag.schemas import (
+    DEFAULT_SEARCH_LIMIT,
     EvidenceConditions,
+    IngredientMatchMode,
     IngredientResolveRequest,
     LookupStatus,
     ProductCandidate,
@@ -69,13 +79,33 @@ CANDIDATE_REFERENCE_QUESTION = (
 ROUTINE_REFERENCE_QUESTION = "참조한 루틴 버전을 현재 방에서 찾을 수 없습니다. 다시 선택해 주세요."
 NO_RESULT_MESSAGE = "현재 상품 데이터에서 조건을 만족하는 제품을 찾지 못했습니다."
 EVIDENCE_PRODUCT_LIMITATION = ProductCandidateLimitation.INGREDIENT_EVIDENCE_ONLY.value
+LIMITED_EVIDENCE_PRODUCT_LIMITATION = (
+    ProductCandidateLimitation.EVIDENCE_APPLICABILITY_LIMITED.value
+)
+UNREVIEWED_EVIDENCE_PRODUCT_LIMITATION = ProductCandidateLimitation.EVIDENCE_UNREVIEWED.value
 CLAIM_ONLY_PRODUCT_LIMITATION = ProductCandidateLimitation.CLAIM_NOT_VERIFIED.value
+
+
+class KoreanWeekdayLabel(StrEnum):
+    MONDAY = "월요일"
+    TUESDAY = "화요일"
+    WEDNESDAY = "수요일"
+    THURSDAY = "목요일"
+    FRIDAY = "금요일"
+    SATURDAY = "토요일"
+    SUNDAY = "일요일"
+
+
+class KoreanDayPeriodLabel(StrEnum):
+    MORNING = "아침"
+    EVENING = "저녁"
 
 
 class AgentNodes:
     """주입된 포트만 사용해 그래프 노드를 실행한다."""
 
     _EVIDENCE_REFERENCES = ("이 성분", "그 성분", "해당 성분", "이 제품", "그 제품")
+    _RECOMMENDATION_POOL_PER_INGREDIENT: ClassVar[int] = DEFAULT_SEARCH_LIMIT
 
     def __init__(
         self,
@@ -105,6 +135,9 @@ class AgentNodes:
         self._rag_route_policy = rag_route_policy
         self._evidence_query_policy = evidence_query_policy
         self._query_planner = IntentQueryPlanner()
+        self._routine_frequency = RoutineFrequencyInterpreter()
+        self._routine_product_selector = RoutineProductSelector()
+        self._recommendation_product_selector = RecommendationProductSelector()
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
         self._require_turn_fields(state)
@@ -719,90 +752,69 @@ class AgentNodes:
         state: AgentState,
     ) -> list[RecommendationProductMatch]:
         recommendation_set = state.recommendation_ingredients
-        if recommendation_set is None:
+        if recommendation_set is None or not recommendation_set.candidates:
             return []
-        matches: dict[str, RecommendationProductMatch] = {}
         ingredient_ids = [candidate.ingredient_id for candidate in recommendation_set.candidates]
-        for candidate in recommendation_set.candidates:
+        unresolved_count = len(state.unresolved)
+        previous_error_code = state.error_code
+        primary = await self._search_products(
+            state,
+            ingredient_ids,
+            GraphNode.PROCESS_TASK,
+            limit=max(
+                DEFAULT_SEARCH_LIMIT,
+                len(ingredient_ids) * self._RECOMMENDATION_POOL_PER_INGREDIENT,
+            ),
+            ingredient_match_mode=IngredientMatchMode.ANY,
+        )
+        products = list(primary.products)
+        selection = self._recommendation_product_selector.select(
+            RecommendationProductSelectionRequest(
+                ingredients=recommendation_set.candidates,
+                products=products,
+            )
+        )
+        if (
+            state.error_code is not previous_error_code
+            or len(state.unresolved) != unresolved_count
+        ):
+            return selection.matches
+
+        for ingredient_id in selection.uncovered_ingredient_ids:
             unresolved_count = len(state.unresolved)
             previous_error_code = state.error_code
             entities = await self._search_products(
                 state,
-                [candidate.ingredient_id],
+                [ingredient_id],
                 GraphNode.PROCESS_TASK,
+                ingredient_match_mode=IngredientMatchMode.ANY,
             )
             if not entities.products:
                 if (
-                    len(state.unresolved) == unresolved_count
-                    and state.error_code is previous_error_code
+                    len(state.unresolved) != unresolved_count
+                    or state.error_code is not previous_error_code
                 ):
-                    state.status = ChatStatus.PARTIAL
-                    detail = (
-                        "추천 성분과 연결된 상품을 찾지 못했습니다: "
-                        f"{candidate.ingredient_id}"
-                    )
-                    state.unresolved.append(
-                        UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=detail)
-                    )
-                continue
-            for product in entities.products:
-                matches[product.product_id] = self._merge_recommendation_product(
-                    matches.get(product.product_id),
-                    product,
-                    candidate,
+                    break
+                state.status = ChatStatus.PARTIAL
+                detail = (
+                    "추천 성분과 연결된 상품을 찾지 못했습니다: "
+                    f"{ingredient_id}"
                 )
+                state.unresolved.append(
+                    UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=detail)
+                )
+                continue
+            products.extend(entities.products)
         state.task_context.search_filters = state.task_context.search_filters.model_copy(
             deep=True,
             update={"ingredient_ids": ingredient_ids},
         )
-        return sorted(
-            matches.values(),
-            key=lambda match: (
-                0 if match.basis() is RecommendationBasis.EVIDENCE_SUPPORTED else 1
-            ),
-        )
-
-    def _merge_recommendation_product(
-        self,
-        existing: RecommendationProductMatch | None,
-        product: ProductRecord,
-        candidate: IngredientRecommendationCandidate,
-    ) -> RecommendationProductMatch:
-        supported_ids = (
-            [candidate.ingredient_id]
-            if candidate.basis is RecommendationBasis.EVIDENCE_SUPPORTED
-            else []
-        )
-        claim_only_ids = (
-            [candidate.ingredient_id]
-            if candidate.basis is RecommendationBasis.CLAIM_ONLY
-            else []
-        )
-        if existing is None:
-            return RecommendationProductMatch(
-                product=product,
-                evidence_supported_ingredient_ids=supported_ids,
-                claim_only_ingredient_ids=claim_only_ids,
-                statement_ids=candidate.statement_ids,
-                evidence_ids=candidate.evidence_ids,
+        return self._recommendation_product_selector.select(
+            RecommendationProductSelectionRequest(
+                ingredients=recommendation_set.candidates,
+                products=products,
             )
-        return existing.model_copy(
-            deep=True,
-            update={
-                "evidence_supported_ingredient_ids": list(
-                    dict.fromkeys(existing.evidence_supported_ingredient_ids + supported_ids)
-                ),
-                "claim_only_ingredient_ids": list(
-                    dict.fromkeys(existing.claim_only_ingredient_ids + claim_only_ids)
-                ),
-                "statement_ids": list(
-                    dict.fromkeys(existing.statement_ids + candidate.statement_ids)
-                ),
-                "evidence_ids": list(
-                    dict.fromkeys(existing.evidence_ids + candidate.evidence_ids)
-                ),
-            },
-        )
+        ).matches
 
     def _recommendation_product_candidates(
         self,
@@ -813,16 +825,32 @@ class AgentNodes:
         for rank, match in enumerate(matches, start=1):
             reasons = self._candidate_reasons(state.task_context.search_filters)
             reasons.extend(
-                f"공인 Evidence가 확인된 성분 포함: {ingredient_id}"
-                for ingredient_id in match.evidence_supported_ingredient_ids
+                f"검수된 성분 근거 포함: {ingredient_id}"
+                for ingredient_id in match.verified_evidence_ingredient_ids
             )
             reasons.extend(
-                f"유사 사용자 사례에서 발굴된 탐색 성분 포함: {ingredient_id}"
+                f"적용 제한 성분 근거 포함: {ingredient_id}"
+                for ingredient_id in match.limited_evidence_ingredient_ids
+            )
+            reasons.extend(
+                f"미검수 성분 근거 포함: {ingredient_id}"
+                for ingredient_id in match.unreviewed_evidence_ingredient_ids
+            )
+            reasons.extend(
+                f"Claim 기반 성분 포함: {ingredient_id}"
                 for ingredient_id in match.claim_only_ingredient_ids
             )
             limitations = self._product_limitations(match.product)
-            if match.evidence_supported_ingredient_ids:
+            if (
+                match.verified_evidence_ingredient_ids
+                or match.limited_evidence_ingredient_ids
+                or match.unreviewed_evidence_ingredient_ids
+            ):
                 limitations.append(EVIDENCE_PRODUCT_LIMITATION)
+            if match.limited_evidence_ingredient_ids:
+                limitations.append(LIMITED_EVIDENCE_PRODUCT_LIMITATION)
+            if match.unreviewed_evidence_ingredient_ids:
+                limitations.append(UNREVIEWED_EVIDENCE_PRODUCT_LIMITATION)
             if match.claim_only_ingredient_ids:
                 limitations.append(CLAIM_ONLY_PRODUCT_LIMITATION)
             candidates.append(
@@ -841,24 +869,37 @@ class AgentNodes:
         candidates: list[ProductCandidate],
         matches: list[RecommendationProductMatch],
     ) -> None:
-        supported_lines = [
+        verified_lines = [
             f"{candidate.rank}번. {candidate.product.name}"
             for candidate, match in zip(candidates, matches, strict=True)
-            if match.basis() is RecommendationBasis.EVIDENCE_SUPPORTED
+            if match.basis() is RecommendationBasis.VERIFIED_EVIDENCE
+        ]
+        limited_lines = [
+            f"{candidate.rank}번. {candidate.product.name}"
+            for candidate, match in zip(candidates, matches, strict=True)
+            if match.basis() is RecommendationBasis.LIMITED_EVIDENCE
+        ]
+        unreviewed_lines = [
+            f"{candidate.rank}번. {candidate.product.name}"
+            for candidate, match in zip(candidates, matches, strict=True)
+            if match.basis() is RecommendationBasis.UNREVIEWED_EVIDENCE
         ]
         claim_only_lines = [
             f"{candidate.rank}번. {candidate.product.name}"
             for candidate, match in zip(candidates, matches, strict=True)
             if match.basis() is RecommendationBasis.CLAIM_ONLY
         ]
-        if supported_lines:
+        if verified_lines:
+            state.response_parts.append("성분 근거 제품 후보:\n" + "\n".join(verified_lines))
+        if limited_lines:
+            state.response_parts.append("제한 근거 제품 후보:\n" + "\n".join(limited_lines))
+        if unreviewed_lines:
             state.response_parts.append(
-                "공인 근거가 확인된 성분 기반 제품 후보:\n" + "\n".join(supported_lines)
+                "미검수 근거 제품 후보:\n" + "\n".join(unreviewed_lines)
             )
         if claim_only_lines:
             state.response_parts.append(
-                "유사 사용자 사례에서 발굴된 탐색 제품 후보:\n"
-                + "\n".join(claim_only_lines)
+                "Claim 기반 제품 후보:\n" + "\n".join(claim_only_lines)
             )
 
     def _product_limitations(self, product: ProductRecord) -> list[str]:
@@ -886,6 +927,8 @@ class AgentNodes:
         state: AgentState,
         ingredient_ids: list[str],
         node: GraphNode,
+        limit: int = DEFAULT_SEARCH_LIMIT,
+        ingredient_match_mode: IngredientMatchMode = IngredientMatchMode.ALL,
     ) -> ResolvedEntities:
         parsed = self._require_parsed(state)
         if not self._reserve_tool_call(state, node):
@@ -928,6 +971,7 @@ class AgentNodes:
                 query=parsed.query_plan.product_query or parsed.query,
                 allow_discovery=Intent.PRODUCT_DISCOVERY in parsed.intents,
                 filters=filters,
+                limit=limit,
             )
         )
         if result.status is LookupStatus.ERROR:
@@ -945,11 +989,26 @@ class AgentNodes:
             return ResolvedEntities(ingredient_ids=effective_ingredient_ids)
         products = result.products if result.status is LookupStatus.SUCCESS else []
         if Intent.PRODUCT_DISCOVERY in parsed.intents:
-            products = [
-                product
-                for product in products
-                if self._product_filters.matches(product, state.task_context.search_filters)
-            ]
+            if ingredient_match_mode is IngredientMatchMode.ANY:
+                attribute_filters = state.task_context.search_filters.model_copy(
+                    deep=True,
+                    update={"ingredient_ids": []},
+                )
+                products = [
+                    product
+                    for product in products
+                    if self._product_filters.matches(product, attribute_filters)
+                    and set(effective_ingredient_ids).intersection(product.ingredient_ids)
+                ]
+            else:
+                products = [
+                    product
+                    for product in products
+                    if self._product_filters.matches(
+                        product,
+                        state.task_context.search_filters,
+                    )
+                ]
         return ResolvedEntities(
             products=products,
             ingredient_ids=effective_ingredient_ids,
@@ -972,13 +1031,16 @@ class AgentNodes:
             return
 
         excluded_weekdays = self._merged_excluded_weekdays(state, parsed.excluded_weekdays)
+        user_request = parsed.query_plan.routine_query or parsed.query
+        schedule = self._routine_frequency.schedule(user_request)
         plan = await self._routine_planner.plan(
             RoutinePlanRequest(
                 chat_room_id=state.chat_room_id,
                 request_id=self._require_turn(state).request_id,
                 products=products,
-                user_request=parsed.query_plan.routine_query or parsed.query,
+                user_request=user_request,
                 excluded_weekdays=excluded_weekdays,
+                schedule=schedule,
                 evidence_records=state.evidence,
                 case_usage_guidance=state.task_context.case_usage_guidance,
                 current_plan=state.routine,
@@ -991,6 +1053,7 @@ class AgentNodes:
                 plan=plan,
                 products=products,
                 excluded_weekdays=excluded_weekdays,
+                schedule=schedule,
             )
         )
         if not validation.valid:
@@ -1013,7 +1076,11 @@ class AgentNodes:
         state.routine = plan
         state.artifacts.append(plan)
         schedule = [
-            f"{placement.weekday.value} {placement.period.value}: {placement.product_name}"
+            (
+                f"{KoreanWeekdayLabel[placement.weekday.name].value} "
+                f"{KoreanDayPeriodLabel[placement.period.name].value}: "
+                f"{placement.product_name}"
+            )
             for placement in plan.placements
         ]
         title = "개발용 루틴 초안:" if plan.is_demo else "루틴 초안:"
@@ -1044,6 +1111,14 @@ class AgentNodes:
                 if candidate and candidate.product.product_id not in rejected_ids
                 else []
             )
+        if Intent.PRODUCT_DISCOVERY in parsed.intents and state.candidate_set is not None:
+            selection = self._routine_product_selector.select(
+                RoutineProductSelectionRequest(
+                    products=[candidate.product for candidate in state.candidate_set.candidates],
+                    rejected_product_ids=sorted(rejected_ids),
+                )
+            )
+            return selection.products
         if state.resolved_entities.products:
             return [
                 product

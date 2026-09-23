@@ -1,0 +1,38 @@
+[
+  {
+    "pmid": "19743936",
+    "status": "approved",
+    "ingredients": [
+      {
+        "ingredient_id": "c4399298-58ae-4df1-8f6b-eeaae7a98ce3",
+        "standard_name_en": "Chitin",
+        "standard_name_ko": "키틴",
+        "aliases": []
+      },
+      {
+        "ingredient_id": "94c4bad8-5f3b-47c9-8044-543ec8f971a7",
+        "standard_name_en": "Beta-Glucan",
+        "standard_name_ko": "베타-글루칸",
+        "aliases": ["beta-Glucans"]
+      }
+    ]
+  },
+  {
+    "pmid": "19099547",
+    "status": "approved",
+    "ingredients": [
+      {
+        "ingredient_id": "c4399298-58ae-4df1-8f6b-eeaae7a98ce3",
+        "standard_name_en": "Chitin",
+        "standard_name_ko": "키틴",
+        "aliases": []
+      },
+      {
+        "ingredient_id": "94c4bad8-5f3b-47c9-8044-543ec8f971a7",
+        "standard_name_en": "Beta-Glucan",
+        "standard_name_ko": "베타-글루칸",
+        "aliases": ["beta-glucan"]
+      }
+    ]
+  }
+]

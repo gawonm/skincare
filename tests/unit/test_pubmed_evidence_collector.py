@@ -233,6 +233,31 @@ class TestSelectionPolicy:
         )
         result = policy.assess(_NIACINAMIDE, [combo, single])
         assert result[0].record.pmid == "2"
+        assert result[1].disposition is PubmedSelectionDisposition.CANDIDATE
+        assert (
+            result[1].reason
+            is PubmedSelectionReason.COMBINATION_REQUIRES_ASSOCIATION_MAPPING
+        )
+
+    def test_hyphenated_ingredient_compound_is_combination(self) -> None:
+        policy = PubmedSelectionPolicy()
+        ingredient = CollectionIngredient(
+            ingredient_id=UUID("c4399298-58ae-4df1-8f6b-eeaae7a98ce3"),
+            standard_name_en="Chitin",
+        )
+        record = _record(
+            "19743936",
+            title="A chitin-glucan scaffold improves skin hydration",
+        )
+
+        assessment = policy.assess_record(ingredient, record)
+
+        assert assessment.formulation_type is EvidenceFormulationType.COMBINATION_FORMULATION
+        assert assessment.disposition is PubmedSelectionDisposition.CANDIDATE
+        assert (
+            assessment.reason
+            is PubmedSelectionReason.COMBINATION_REQUIRES_ASSOCIATION_MAPPING
+        )
 
     def test_claim_topics_from_text(self) -> None:
         record = _record(

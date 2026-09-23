@@ -227,6 +227,27 @@ class TestRagContract:
             not call.is_combination and "같이" not in call.question for call in generator.requests
         )
 
+    async def test_복수_성분_ASSOCIATION을_단일_성분_근거로_승격하지_않는다(self) -> None:
+        fixture = RagContractFixture()
+        document = fixture.document(fixture.TARGET_A)
+        document.evidence = document.evidence.model_copy(
+            update={
+                "scope": EvidenceScope.ASSOCIATION,
+                "target_ids": [fixture.TARGET_A, fixture.TARGET_B],
+            }
+        )
+        chunks = await RagIngestionPipeline(FieldChunker(), ContractEmbedder()).run([document])
+        generator = ContractEvidenceStatementGenerator()
+
+        result = await fixture.pipeline(ContractSearchBackend(chunks), generator).run(
+            EvidenceSearchRequest(query="효능", target_ids=[fixture.TARGET_A])
+        )
+
+        assert result.generated is not None
+        answer = result.generated.per_target[0].result
+        assert answer.unverifiable_reason is UnverifiableReason.NO_EVIDENCE_FOUND
+        assert generator.requests == []
+
     async def test_missing_conditions_are_appended_but_unknown_citations_are_rejected(
         self,
     ) -> None:

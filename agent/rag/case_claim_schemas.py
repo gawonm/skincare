@@ -9,7 +9,7 @@ from agent.rag.case_schemas import CaseSearchHit
 from agent.rag.schemas import EvidenceQueryAnchor, LookupStatus, RagModel
 
 DEFAULT_CASE_CLAIM_LIMIT = 10
-CASE_CLAIM_PROMPT_VERSION = "nia-case-ingredient-selection/v1"
+CASE_CLAIM_PROMPT_VERSION = "nia-case-ingredient-selection/v2"
 
 
 class CaseClaimType(StrEnum):
@@ -34,8 +34,9 @@ class SelectedCaseIngredient(RagModel):
 
     case_id: str = Field(min_length=1)
     raw_name: str = Field(min_length=1)
+    source_quote: str = Field(min_length=1)
 
-    @field_validator("raw_name")
+    @field_validator("raw_name", "source_quote")
     @classmethod
     def normalize_text(cls, value: str) -> str:
         normalized = value.strip()
@@ -141,6 +142,7 @@ class CaseClaimValidationReason(StrEnum):
     UNKNOWN_CASE_ID = "unknown_case_id"
     QUOTE_NOT_FOUND = "quote_not_found"
     INGREDIENT_NOT_IN_QUOTE = "ingredient_not_in_quote"
+    INGREDIENT_NAME_ONLY_QUOTE = "ingredient_name_only_quote"
     COMBINATION_RELATION_NOT_FOUND = "combination_relation_not_found"
     COMBINATION_RELATION_NOT_EXPLICIT = "combination_relation_not_explicit"
     DUPLICATE_CLAIM = "duplicate_claim"

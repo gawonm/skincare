@@ -4,6 +4,7 @@ import re
 from enum import StrEnum
 from typing import ClassVar
 
+from agent.rag_route_policy import SkinConcernCue
 from agent.schemas import Intent, IntentQueryPlan, QueryPlanningRequest, RagRoute
 
 
@@ -22,6 +23,13 @@ class ExplicitCaseContext(StrEnum):
     COMBINATION = "복합성"
     NORMAL = "중성"
     SENSITIVE = "민감성"
+
+
+class EvidenceQueryAxis(StrEnum):
+    """Case Claim을 검증할 때 사용자 지시 대신 유지할 Evidence 검색 축."""
+
+    EFFICACY = "효능"
+    PRECAUTION = "주의사항"
 
 
 class IntentQueryPlanner:
@@ -49,10 +57,42 @@ class IntentQueryPlanner:
         case_query = self._case_query(request)
         return IntentQueryPlan(
             case_query=case_query,
-            evidence_query=self._effective_query(draft.evidence_query, parsed.query),
+            evidence_query=self._evidence_query(request),
             product_query=self._effective_query(draft.product_query, parsed.query),
             routine_query=self._effective_query(draft.routine_query, parsed.query),
         )
+
+    def _evidence_query(self, request: QueryPlanningRequest) -> str | None:
+        parsed = request.parsed_request
+        preferred = self._normalize(parsed.query_plan.evidence_query or "")
+        if parsed.rag_route is not RagRoute.CLAIM_THEN_EVIDENCE:
+            return preferred or self._effective_query(None, parsed.query)
+
+        concerns = self._evidence_concerns(request)
+        if not concerns and preferred:
+            return preferred
+        subject = " ".join(concerns) if concerns else "피부 고민"
+        # 나이·성별·계절·상품·루틴 지시는 Case 검색에만 필요하다. Evidence 검색은
+        # 성분 ID hard filter와 효능·주의 축에 집중해야 관련 청크가 지시문에 밀리지 않는다.
+        return self._normalize(
+            f"{subject} 관련 {EvidenceQueryAxis.EFFICACY.value} 및 "
+            f"{EvidenceQueryAxis.PRECAUTION.value}"
+        )
+
+    def _evidence_concerns(self, request: QueryPlanningRequest) -> list[str]:
+        normalized_message = request.original_message.casefold()
+        positioned = [
+            (normalized_message.find(concern.value.casefold()), concern.value)
+            for concern in SkinConcernCue
+            if concern.value.casefold() in normalized_message
+        ]
+        explicit = [value for _, value in sorted(positioned)]
+        if explicit:
+            # LLM이 "피지가 많고 여드름"처럼 복합 문구를 추가해도 원문의 고정 고민어만
+            # 사용해야 같은 고민이 Evidence 임베딩 질의에 중복 삽입되지 않는다.
+            return explicit
+        parsed = request.parsed_request
+        return list(dict.fromkeys(parsed.skin_concerns + request.profile_concerns))
 
     def _case_query(self, request: QueryPlanningRequest) -> str | None:
         parsed = request.parsed_request
@@ -67,7 +107,7 @@ class IntentQueryPlanner:
         if base_query is None:
             return None
         explicit_context = self._explicit_context(request.original_message)
-        concerns = list(dict.fromkeys(parsed.skin_concerns + request.profile_concerns))
+        concerns = self._evidence_concerns(request)
         missing_terms = [
             term
             for term in [*explicit_context, *concerns]

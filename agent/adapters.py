@@ -58,6 +58,7 @@ from agent.rag.retrieval.ingredient_mention_resolver import IngredientMentionRes
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.schemas import (
     BGE_M3_EMBEDDING_DIMENSIONS,
+    DEFAULT_ROUTINE_DURATION_DAYS,
     ConstraintSource,
     DayPeriod,
     EmbeddingRequest,
@@ -448,7 +449,15 @@ class FixtureProductRepository(ProductRepository):
         return ProductGetResult(status=LookupStatus.NO_RESULTS)
 
     def _matches_filters(self, product: ProductRecord, request: ProductSearchRequest) -> bool:
-        return self._filter_validator.matches(product, request.filters)
+        attribute_filters = request.filters.model_copy(
+            deep=True,
+            update={"ingredient_ids": []},
+        )
+        ingredient_ids = set(request.filters.ingredient_ids)
+        # 운영 상품 저장소가 여러 성분을 OR로 조회하므로 fixture도 같은 넓은 후보 계약을 따른다.
+        return self._filter_validator.matches(product, attribute_filters) and (
+            not ingredient_ids or bool(ingredient_ids.intersection(product.ingredient_ids))
+        )
 
     def _build_products(self) -> list[ProductRecord]:
         return [
@@ -755,7 +764,12 @@ class FixtureRoutinePlanner(RoutinePlanner):
         available_days = [
             weekday for weekday in self._WEEKDAY_ORDER if weekday not in request.excluded_weekdays
         ]
-        selected_days = available_days[: request.frequency_per_week]
+        requested_days = (
+            request.schedule.duration_days
+            or request.schedule.applications_per_week
+            or DEFAULT_ROUTINE_DURATION_DAYS
+        )
+        selected_days = available_days[:requested_days]
         previous_version = request.current_plan.version if request.current_plan else 0
         routine_id = (
             request.current_plan.routine_id
@@ -768,7 +782,11 @@ class FixtureRoutinePlanner(RoutinePlanner):
                 placements.append(
                     RoutinePlacement(
                         weekday=weekday,
-                        period=DayPeriod.EVENING,
+                        period=(
+                            request.schedule.periods[0]
+                            if request.schedule.periods
+                            else DayPeriod.EVENING
+                        ),
                         product_id=product.product_id,
                         product_name=product.name,
                         order=order,

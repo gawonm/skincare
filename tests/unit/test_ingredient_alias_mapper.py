@@ -77,6 +77,32 @@ class TestCommonIngredientAliasMapper:
             mapper.map_request(IngredientResolveRequest(name="카라파 구아이아넨시스 씨 오일")).name
             == "안디로바씨오일"
         )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="안디로바 씨 오일")).name
+            == "안디로바씨오일"
+        )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="양고추냉이 뿌리 추출물")).name
+            == "고추냉이뿌리추출물"
+        )
+        assert (
+            mapper.map_request(
+                IngredientResolveRequest(name="COCHLEARIA ARMORACIA ROOT EXTRACT")
+            ).name
+            == "고추냉이뿌리추출물"
+        )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="CHITIN")).name
+            == "키틴"
+        )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="MINERAL SALTS")).name
+            == "미네랄솔트"
+        )
+        assert (
+            mapper.map_request(IngredientResolveRequest(name="미네랄 솔트")).name
+            == "미네랄솔트"
+        )
 
     def test_unregistered_name_retains_original(
         self, mapper: CommonIngredientAliasMapper

@@ -150,6 +150,7 @@ DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump
 - [현재 작업 합본 — NIA Case 기반 2-Layer RAG 통합](RAG_YK/2026-09-20_2324_NIA_CASE_RAG_INTEGRATION_WORKLOG.md)
 - [완료 이력 — 2-Layer RAG Agent 작업일지](TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
 - [Claim → Evidence RAG 인터페이스 계약](../contracts/claim-evidence-rag-interface.md)
+- [Data → Agent Evidence 성분 연결 범위 계약](../contracts/data-to-agent.md#6-evidence-성분-연결-범위-계약--2026-09-23)
 - [Backend → Agent 호출 계약](../contracts/backend-to-agent.md)
 - [역사 문서 — 2026-09-11 구조·연결 계약 검토](AGENT_INTEGRATION_REVIEW.md)
 - [DB·히스토리 연동 요청서](RAG_YK/LLM_RAG_DB_CONTRACT.md)

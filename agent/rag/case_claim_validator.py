@@ -10,6 +10,8 @@ from agent.rag.case_claim_schemas import (
     ExtractedCaseClaim,
     RejectedCaseClaim,
 )
+from agent.rag.retrieval.ingredient_alias_mapper import CommonIngredientAliasMapper
+from agent.rag.schemas import IngredientResolveRequest
 
 
 class CaseClaimValidator:
@@ -24,6 +26,9 @@ class CaseClaimValidator:
         "혼합",
         "시너지",
     )
+
+    def __init__(self, aliases: CommonIngredientAliasMapper | None = None) -> None:
+        self._aliases = aliases or CommonIngredientAliasMapper()
 
     def validate(self, request: CaseClaimValidationRequest) -> CaseClaimValidationResult:
         cases = {case.case_id: case for case in request.cases}
@@ -55,7 +60,10 @@ class CaseClaimValidator:
             missing_names = [
                 ingredient.raw_name
                 for ingredient in claim.ingredients
-                if ingredient.raw_name.casefold() not in quote
+                if not self._contains_equivalent_term(
+                    quote,
+                    ingredient.raw_name,
+                )
             ]
             if missing_names:
                 rejected_claims.append(
@@ -63,6 +71,15 @@ class CaseClaimValidator:
                         claim,
                         CaseClaimValidationReason.INGREDIENT_NOT_IN_QUOTE,
                         "source_quote에 없는 성분명이 있습니다: " + ", ".join(missing_names),
+                    )
+                )
+                continue
+            if self._is_ingredient_name_only(claim):
+                rejected_claims.append(
+                    self._reject(
+                        claim,
+                        CaseClaimValidationReason.INGREDIENT_NAME_ONLY_QUOTE,
+                        "성분명만 있는 인용문은 효능 Claim으로 사용할 수 없습니다.",
                     )
                 )
                 continue
@@ -90,6 +107,29 @@ class CaseClaimValidator:
             valid_claims=valid_claims,
             rejected_claims=rejected_claims,
         )
+
+    def _is_ingredient_name_only(self, claim: ExtractedCaseClaim) -> bool:
+        if claim.claim_type is not CaseClaimType.INGREDIENT_EFFECT:
+            return False
+        quote = self._normalized_text(claim.source_quote)
+        return any(
+            quote == self._normalized_text(term)
+            for term in self._aliases.equivalent_terms(
+                IngredientResolveRequest(name=claim.ingredients[0].raw_name)
+            )
+        )
+
+    def _contains_equivalent_term(self, quote: str, raw_name: str) -> bool:
+        normalized_quote = self._normalized_text(quote)
+        return any(
+            self._normalized_text(term) in normalized_quote
+            for term in self._aliases.equivalent_terms(
+                IngredientResolveRequest(name=raw_name)
+            )
+        )
+
+    def _normalized_text(self, value: str) -> str:
+        return "".join(character.casefold() for character in value if character.isalnum())
 
     def _combination_error(
         self,
