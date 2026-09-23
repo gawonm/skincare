@@ -298,6 +298,29 @@ class CommonIngredientAliasMapper:
             *[
                 IngredientAliasEntry(
                     consumer_term=term,
+                    standard_name_ko="알로에신",
+                    description="Case의 국문·영문 알로에신 표기를 동일한 표준 성분으로 연결하는 확정 동의어",
+                )
+                for term in (
+                    "알로에신",
+                    "aloesin",
+                )
+            ],
+            *[
+                IngredientAliasEntry(
+                    consumer_term=term,
+                    standard_name_ko="헥사펩타이드-2",
+                    description="Case의 국문·영문 헥사펩타이드-2 표기를 동일한 표준 성분으로 연결하는 확정 동의어",
+                )
+                for term in (
+                    "헥사펩타이드-2",
+                    "hexapeptide-2",
+                    "hexapeptide 2",
+                )
+            ],
+            *[
+                IngredientAliasEntry(
+                    consumer_term=term,
                     standard_name_ko="안디로바씨오일",
                     description="카라파 구아이아넨시스(Carapa Guianensis) 씨드 오일 표기를 표준 국문 명칭인 안디로바씨오일로 연결하는 확정 동의어",
                 )
@@ -312,12 +335,16 @@ class CommonIngredientAliasMapper:
             *[
                 IngredientAliasEntry(
                     consumer_term=term,
-                    standard_name_ko="고추냉이뿌리추출물",
-                    description="양고추냉이와 INCI 영문 표기를 확인된 표준 국문 명칭으로 연결하는 확정 동의어",
+                    standard_name_ko="호스래디시뿌리추출물",
+                    description="서양고추냉이와 Cochlearia Armoracia 표기를 호스래디시 표준 성분으로 연결하는 확정 동의어",
                 )
                 for term in (
+                    "호스래디시뿌리추출물",
+                    "서양 고추냉이 뿌리 추출물",
                     "양고추냉이 뿌리 추출물",
                     "Cochlearia Armoracia Root Extract",
+                    "Cochlearia Armoracia (Horseradish) Root Extract",
+                    "Horseradish Root Extract",
                 )
             ],
             *[

@@ -273,8 +273,10 @@ class TestCaseClaimValidator:
             ("MINERAL SALTS", "미네랄 솔트는 각질 관리에 도움을 줍니다."),
             (
                 "COCHLEARIA ARMORACIA ROOT EXTRACT",
-                "고추냉이 뿌리 추출물은 피부 관리에 사용됩니다.",
+                "서양 고추냉이 뿌리 추출물은 피부 관리에 사용됩니다.",
             ),
+            ("ALOESIN", "알로에신은 피부 관리에 사용됩니다."),
+            ("Hexapeptide-2", "헥사펩타이드-2는 피부 관리에 사용됩니다."),
         ],
     )
     def test_확정_영문_동의어와_국문_quote를_같은_성분으로_검증한다(
