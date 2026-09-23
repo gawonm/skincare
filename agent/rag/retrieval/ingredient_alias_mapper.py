@@ -283,6 +283,17 @@ class CommonIngredientAliasMapper:
                     "카라파 구아이아넨시스 씨 오일",
                 )
             ],
+            *[
+                IngredientAliasEntry(
+                    consumer_term=term,
+                    standard_name_ko="고추냉이뿌리추출물",
+                    description="양고추냉이와 INCI 영문 표기를 확인된 표준 국문 명칭으로 연결하는 확정 동의어",
+                )
+                for term in (
+                    "양고추냉이 뿌리 추출물",
+                    "Cochlearia Armoracia Root Extract",
+                )
+            ],
         ]
         family_entries = [
             IngredientAliasEntry(
