@@ -2,7 +2,9 @@
 
 > 작성: 2026-09-23 17:54 KST
 >
-> 상태: **구현 전 계획**
+> 상태: **Agent 구현 및 회귀 테스트 완료, 검토된 골든셋 기반 실제 DB 평가 대기**
+>
+> 구현 완료: 2026-09-24 02:08 KST
 >
 > 범위: **Agent 파트만** — 복수 임베딩 질의와 RRF 융합, BGE 리랭크 전용 질의,
 > 실제 DB 기준 Recall@20 평가
@@ -238,6 +240,7 @@ RRF(case) = Σ 1 / (RRF_RANK_CONSTANT + rank_in_query)
 | `agent/schemas.py` | `CaseRetrievalQueryKind`, `CaseRetrievalQuery`, 단계별 Case 질의 필드 추가 |
 | `agent/query_planning.py` | 확정 문맥 기반 검색 질의 변형과 rerank 질의 생성 |
 | `agent/rag_workflow.py` | batch 임베딩, 질의별 검색, RRF 융합 결과 사용, rerank 질의 분리 |
+| `agent/rag_response.py` | reranker 실패 시 RRF 융합 Top-3 fallback임을 사용자에게 명시 |
 | `tests/agent/test_query_planning.py` | 변형 질의·허용 확장·금지 확장·중복 제거 검증 |
 | `tests/agent/test_case_two_layer_rag_workflow.py` | 복수 검색·융합·부분 실패·단계별 질의 사용 검증 |
 | `tests/agent/interactive_two_layer_rag_cli.py` | 질의별 검색 결과와 융합 Top-20을 구분해 출력 |
@@ -371,7 +374,7 @@ uv run ruff check agent tests/agent
 실제 DB 평가는 unit test와 분리해 명시적으로 실행한다.
 
 ```sh
-uv run python -m tests.agent.case_retrieval_recall_eval
+uv run python -m tests.agent.case_retrieval_recall_eval --golden <검토된 JSONL 경로>
 ```
 
 ## 8. 구현 순서와 완료 조건
@@ -415,3 +418,38 @@ uv run python -m tests.agent.case_retrieval_recall_eval
 
 이 후속 작업은 `data`의 Case document 생성과 `backend`의 적재·검색 버전 사용에 영향을 줄 수
 있으므로, 진행 전에 `data-to-agent` 계약과 파트 범위를 먼저 합의한다.
+
+## 10. 2026-09-24 구현 결과
+
+구현 완료 항목:
+
+- `IntentQueryPlan`에 PROFILE, CONCERN, NATURAL_QUESTION 검색 질의와 전용 rerank 질의를 추가했다.
+- 건조·민감 신호에 대해서만 whitelist 기반 보습·수분 부족·진정·자극 주의 표현을 확장한다.
+- 검색 질의를 한 번에 BGE-M3 batch 임베딩하고 기존 Case 검색 계약을 질의별로 호출한다.
+- 질의별 결과를 RRF로 합쳐 Top-20을 만들고, 전용 rerank 질의로 BGE Top-3를 선정한다.
+- 개별 검색 실패는 성공 결과가 있으면 degraded 상태로 계속 진행하고 원인을 숨기지 않는다.
+- reranker 실패 시 단일 벡터 순위가 아니라 RRF 융합 Top-3을 사용한다.
+- verbose Trace CLI가 질의별 벡터 결과와 RRF 점수·매칭 질의 수를 출력한다.
+- 골든 JSONL을 입력받아 baseline / multi-query / multi-query+rerank의 Hit@20, Recall@20,
+  MRR@3, nDCG@3를 비교하는 평가 CLI를 추가했다.
+
+검증 결과:
+
+```text
+질의 계획 테스트: 7 passed
+RRF 융합 테스트: 5 passed
+복수 질의 Workflow 포함 관련 테스트: 20 passed
+평가 지표·CLI 테스트: 3 passed
+Agent 전체 테스트: 265 passed
+변경 파일 대상 Ruff: passed
+```
+
+전체 `agent + tests/agent` Ruff 실행에서는 이번 변경과 무관한
+`tests/agent/interactive_two_layer_rag_trace_cli.py`의 기존 미사용 import 15건이 발견됐다.
+요청 범위 밖 파일이므로 이번 작업에서는 수정하지 않았다.
+
+아직 남은 품질 확인:
+
+- 사람이 원문을 검토한 `relevant_case_ids` 골든 JSONL이 아직 확정되지 않았다.
+- 따라서 실제 DB의 Recall@20 수치와 합격 임계치는 아직 측정·확정하지 않았다.
+- 골든셋을 받으면 위 평가 CLI로 같은 DB·모델 조건의 A/B/C 결과를 기록한다.
