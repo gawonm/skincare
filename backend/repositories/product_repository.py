@@ -1,9 +1,11 @@
 """`product` 조회·저장. commit은 하지 않는다."""
 
 from datetime import datetime
+from typing import ClassVar
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.product import (
@@ -78,6 +80,13 @@ class ProductTitleUpdate(BaseModel):
 class ProductRepository:
     """`Product` 조회·저장 전용. commit은 하지 않는다."""
 
+    # 홈 화면·상세페이지에 노출하는 검증 상태. 크롤링 직후 기본값(MANUAL_REVIEW_REQUIRED)도
+    # 포함해야 초기에 화면이 비지 않는다(2026-09-23 사용자 확인). REJECTED만 제외한다.
+    VISIBLE_MATCH_STATUSES: ClassVar[tuple[ProductMatchStatus, ...]] = (
+        ProductMatchStatus.MATCHED,
+        ProductMatchStatus.MANUAL_REVIEW_REQUIRED,
+    )
+
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -87,6 +96,46 @@ class ProductRepository:
         )
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def get_by_id(self, product_id: UUID) -> Product | None:
+        statement = select(Product).where(Product.id == product_id)
+        result = await self._session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def list_popular(
+        self, *, service_category: ProductServiceCategory | None, limit: int
+    ) -> list[Product]:
+        """홈 화면 인기 상품 목록. `service_category`가 None이면 전체 상품 대상이다.
+
+        정렬은 `view_count DESC, observed_at DESC`. 서비스 초기라 대부분 view_count가
+        0인 동안은 사실상 observed_at(최근 수집순)으로 동작해 별도 콜드스타트 분기가
+        필요 없다(2026-09-23 확정, docs/erd/app.md "조회수 카운터 확장안").
+        """
+        statement = (
+            select(Product)
+            .where(Product.match_status.in_(self.VISIBLE_MATCH_STATUSES))
+            .order_by(Product.view_count.desc(), Product.observed_at.desc())
+            .limit(limit)
+        )
+        if service_category is not None:
+            statement = statement.where(Product.service_category == service_category)
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())
+
+    async def increment_view_count(self, product_id: UUID) -> int:
+        """상품 상세 조회수를 원자적으로 1 증가시키고 새 값을 돌려준다.
+
+        읽고-더해서-쓰는 방식은 동시 요청에서 증가분이 누락될 수 있어 쓰지 않는다.
+        같은 이유로 `RETURNING`으로 새 값을 바로 받아, 커밋 뒤 다시 조회하지 않는다.
+        """
+        statement = (
+            update(Product)
+            .where(Product.id == product_id)
+            .values(view_count=Product.view_count + 1)
+            .returning(Product.view_count)
+        )
+        result = await self._session.execute(statement)
+        return result.scalar_one()
 
     async def upsert(self, input_: ProductUpsertInput) -> tuple[Product, bool]:
         existing = await self.find(input_.source, input_.source_product_id)
@@ -135,7 +184,10 @@ class ProductRepository:
 
         # update_taxonomy와 같은 이유로 비교부터 한다: 값이 같으면 SQLAlchemy가 dirty로
         # 표시하지 않아 UPDATE가 안 나가므로, 재실행 시 "정말 안 바뀌었다"를 명시적으로 본다.
-        if existing.display_title == input_.display_title and existing.title_source == input_.title_source:
+        if (
+            existing.display_title == input_.display_title
+            and existing.title_source == input_.title_source
+        ):
             return existing
 
         existing.display_title = input_.display_title

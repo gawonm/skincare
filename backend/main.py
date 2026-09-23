@@ -94,9 +94,11 @@ class Application:
         # 앱을 만들 때 한 번만 로드되게 한다.
         from backend.api.auth import router as auth_router
         from backend.api.chat import router as chat_router
+        from backend.api.products import router as products_router
 
         self._app.include_router(auth_router)
         self._app.include_router(chat_router)
+        self._app.include_router(products_router)
 
     def _mount_frontend(self) -> None:
         """빌드된 프론트를 루트에 붙인다.

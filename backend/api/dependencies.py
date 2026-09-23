@@ -17,6 +17,7 @@ from backend.repositories.user import UserRepository
 from backend.services.auth import AuthService
 from backend.services.chat_room import ChatRoomService
 from backend.services.chat_turn import ChatTurnService
+from backend.services.product_query_service import ProductQueryService
 from backend.services.security import PasswordHasher
 from core.config import settings
 from models import User
@@ -107,3 +108,10 @@ def get_chat_turn_service(request: Request, agent: AgentChatServiceDep) -> ChatT
 
 
 ChatTurnServiceDep = Annotated[ChatTurnService, Depends(get_chat_turn_service)]
+
+
+def get_product_query_service(session: SessionDep) -> ProductQueryService:
+    return ProductQueryService(session)
+
+
+ProductQueryServiceDep = Annotated[ProductQueryService, Depends(get_product_query_service)]
