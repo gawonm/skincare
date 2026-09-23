@@ -61,7 +61,7 @@ class RoutineFrequencyInterpreter:
         r"(?<!\d)(?P<count>[1-7])\s*(?:회|번)"
     )
     _ROUTINE_DURATION_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?<!\d)(?P<count>[1-7])\s*일간"
+        r"(?<!\d)(?P<count>[1-7])\s*일(?:간)?"
     )
     _DAILY_CONTEXT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
         r"(?:하루|매일|일일|1일)|(?:아침\s*(?:과|및|,|·|/)?\s*저녁)|아침저녁|"
@@ -70,7 +70,7 @@ class RoutineFrequencyInterpreter:
 
     def schedule(self, user_request: str) -> RoutineScheduleConstraints:
         explicit = self._frequencies(self._EXPLICIT_WEEKLY_PATTERN, user_request)
-        duration = self._ROUTINE_DURATION_PATTERN.search(user_request)
+        duration = self._duration(user_request)
         bare = self._bare_frequencies(user_request)
         return RoutineScheduleConstraints(
             duration_days=(
@@ -85,6 +85,22 @@ class RoutineFrequencyInterpreter:
             occurrence_count=max(bare) if bare else None,
             applications_per_week=max(explicit) if explicit else None,
             periods=self._periods(user_request),
+        )
+
+    def _duration(self, text: str) -> re.Match[str] | None:
+        explicit_spans = [
+            match.span() for match in self._EXPLICIT_WEEKLY_PATTERN.finditer(text)
+        ]
+        return next(
+            (
+                match
+                for match in self._ROUTINE_DURATION_PATTERN.finditer(text)
+                if not any(
+                    explicit_start <= match.start() and match.end() <= explicit_end
+                    for explicit_start, explicit_end in explicit_spans
+                )
+            ),
+            None,
         )
 
     def grounded_source_frequencies(self, source_quote: str) -> set[int]:

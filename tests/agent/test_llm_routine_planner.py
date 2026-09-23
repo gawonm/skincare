@@ -252,6 +252,20 @@ class TestRoutineFrequencyInterpreter:
         assert schedule.duration_days == 3
         assert schedule.applications_per_week is None
 
+    def test_일간이_생략된_5일_루틴도_기간으로_해석한다(self) -> None:
+        schedule = RoutineFrequencyInterpreter().schedule("추천 상품으로 5일 스킨케어 루틴")
+
+        assert schedule.duration_days == 5
+        assert schedule.occurrence_count is None
+        assert schedule.applications_per_week is None
+
+    def test_주_3일은_3일_루틴_기간으로_중복_해석하지_않는다(self) -> None:
+        schedule = RoutineFrequencyInterpreter().schedule("이 제품은 주 3일 사용")
+
+        assert schedule.duration_days is None
+        assert schedule.occurrence_count is None
+        assert schedule.applications_per_week == 3
+
     def test_단독_횟수는_주당_횟수가_아닌_루틴_횟수로_해석한다(self) -> None:
         interpreter = RoutineFrequencyInterpreter()
 
