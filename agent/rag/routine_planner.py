@@ -609,7 +609,7 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
                     products=request.products,
                     excluded_weekdays=request.excluded_weekdays,
                     schedule=request.schedule,
-                    rules=compilation.rules,
+                    rules=self._draft_rules(compilation.rules),
                     current_plan=request.current_plan,
                 )
             )
@@ -650,6 +650,14 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
             ),
             is_demo=False,
         )
+
+    def _draft_rules(self, rules: list[RoutineRule]) -> list[RoutineRule]:
+        # Case 사용 가이드는 검증 경고로 남기되, 일정 생성 명령처럼 해석되어 배치를 늘리지 않게 한다.
+        return [
+            rule.model_copy(deep=True)
+            for rule in rules
+            if rule.enforcement is RoutineRuleEnforcement.REQUIRED
+        ]
 
     def _can_continue_without_generated_rules(
         self,

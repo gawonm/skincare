@@ -5,6 +5,7 @@ import json
 import pytest
 
 from agent.ports import RoutineDraftGenerator, RoutineRuleGenerator
+from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.rag.routine_planner import (
     RoutineDraftNormalizer,
     RoutineFrequencyInterpreter,
@@ -70,6 +71,21 @@ class FixedRoutineDraftGenerator(RoutineDraftGenerator):
     async def generate(self, request: RoutineDraftGenerationRequest) -> RoutineDraftModelOutput:
         self.requests.append(request)
         return self._output.model_copy(deep=True)
+
+
+class TestRoutinePlanningPrompt:
+    def test_기간과_시간대를_전제품_반복_지시로_해석하지_않는다(self) -> None:
+        prompt = PromptCatalog().get(
+            PromptRequest(purpose=PromptPurpose.ROUTINE_PLANNING)
+        )
+
+        assert "후보 풀" in prompt.system_message
+        assert "warning만을 근거로" in prompt.system_message
+        assert "모든 제품을 매일" in prompt.system_message
+        assert "배치 가능한 선택지" in prompt.system_message
+        assert "하루 여러 번 사용한다는 명시적 근거" in prompt.system_message
+        assert "적합한 시간대와 전체 배치 횟수를 내부적으로 먼저 결정" in prompt.system_message
+        assert "기계적으로 복제하지 마세요" in prompt.system_message
 
 
 class RoutinePlannerHarness:
@@ -334,6 +350,9 @@ class TestSourceBoundRoutinePlanner:
         harness = RoutinePlannerHarness()
         product = harness.product(directions=None)
         evidence = harness.evidence()
+        draft_generator = FixedRoutineDraftGenerator(
+            harness.draft(period=DayPeriod.EVENING)
+        )
         planner = SourceBoundRoutinePlanner(
             FixedRoutineRuleGenerator(
                 RoutineRuleModelOutput(
@@ -345,7 +364,7 @@ class TestSourceBoundRoutinePlanner:
                     ]
                 )
             ),
-            FixedRoutineDraftGenerator(harness.draft(period=DayPeriod.EVENING)),
+            draft_generator,
         )
         request = harness.request(product, evidence=[evidence])
 
@@ -357,6 +376,7 @@ class TestSourceBoundRoutinePlanner:
         assert validation.valid is True
         assert validation.violations == []
         assert plan.rules[0].enforcement is RoutineRuleEnforcement.REQUIRED
+        assert draft_generator.requests[0].rules[0].enforcement is RoutineRuleEnforcement.REQUIRED
 
     async def test_Case_사용법은_성분이_겹치는_상품에만_경고로_전달한다(self) -> None:
         harness = RoutinePlannerHarness()
@@ -366,6 +386,9 @@ class TestSourceBoundRoutinePlanner:
             case_id="CASE-1",
             text="3. 사용법 및 관리방안\n레티놀은 저녁에 사용합니다.",
             ingredient_ids=["ingredient:retinol"],
+        )
+        draft_generator = FixedRoutineDraftGenerator(
+            harness.draft(period=DayPeriod.MORNING)
         )
         planner = SourceBoundRoutinePlanner(
             FixedRoutineRuleGenerator(
@@ -378,7 +401,7 @@ class TestSourceBoundRoutinePlanner:
                     ]
                 )
             ),
-            FixedRoutineDraftGenerator(harness.draft(period=DayPeriod.MORNING)),
+            draft_generator,
         )
 
         plan = await planner.plan(
@@ -392,6 +415,7 @@ class TestSourceBoundRoutinePlanner:
         assert plan.rules[0].source_kind is RoutineRuleSourceKind.CASE_USAGE_GUIDANCE
         assert plan.rules[0].enforcement is RoutineRuleEnforcement.WARNING
         assert plan.constraints[0].source is ConstraintSource.CASE_USAGE_GUIDANCE
+        assert draft_generator.requests[0].rules == []
         assert "레티놀 제품은 저녁에만 배치" in validation.warnings
 
     async def test_LLM이_입력에_없는_제품을_배치하면_확정하지_않는다(self) -> None:
