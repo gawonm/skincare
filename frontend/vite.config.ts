@@ -7,6 +7,9 @@ import tailwindcss from "@tailwindcss/vite";
 const BACKEND_ORIGIN = "http://localhost:8000";
 const AUTH_PATH_PREFIX = "/auth";
 const CHAT_PATH_PREFIX = "/chat";
+// 프론트 상세페이지 라우트는 `/product`(단수)라서 `/products`(복수) API 경로와 겹치지
+// 않는다. `/chat` 과 달리 GET 을 걸러낼 필요가 없다(constants/product.ts 참고).
+const PRODUCTS_PATH_PREFIX = "/products";
 const HTTP_METHOD_GET = "GET";
 
 export default defineConfig({
@@ -24,6 +27,10 @@ export default defineConfig({
         target: BACKEND_ORIGIN,
         changeOrigin: true,
         bypass: (req) => (req.method === HTTP_METHOD_GET ? req.url : undefined),
+      },
+      [PRODUCTS_PATH_PREFIX]: {
+        target: BACKEND_ORIGIN,
+        changeOrigin: true,
       },
     },
   },
