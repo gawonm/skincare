@@ -365,7 +365,7 @@ class TestTwoLayerRagWorkflow:
         assert len(candidate_set.candidates) == 1
         candidate = candidate_set.candidates[0]
         assert candidate.product.product_id == "product:shared-serum"
-        assert "공인 Evidence가 확인된 성분 포함: ingredient:niacinamide" in (
+        assert "검수된 성분 근거 포함: ingredient:niacinamide" in (
             candidate.reasons
         )
         assert "Claim 기반 성분 포함: ingredient:retinol" in (
@@ -443,7 +443,7 @@ class TestTwoLayerRagWorkflow:
             "product:niacinamide-serum",
             "product:retinol-serum",
         ]
-        assert "공인 근거가 확인된 성분 기반 제품 후보" in output.message
+        assert "성분 근거 제품 후보" in output.message
         assert "Claim 기반 제품 후보" in output.message
         assert [citation.evidence_id for citation in output.citations] == [
             "evidence:verified-niacinamide"

@@ -715,7 +715,9 @@ class ProductCandidateLimitation(StrEnum):
     DIRECTIONS_UNKNOWN = "제품 사용법 미상"
     VERSION_UNKNOWN = "제품 버전 미상"
     INGREDIENT_EVIDENCE_ONLY = "성분 근거이며 완제품 자체의 임상 효과를 입증하지 않습니다."
-    CLAIM_NOT_VERIFIED = "현재 연결된 공인 근거로 Claim을 충분히 확인하지 못했습니다."
+    EVIDENCE_APPLICABILITY_LIMITED = "성분 근거의 적용 조건이 현재 요청과 완전히 일치하지 않습니다."
+    EVIDENCE_UNREVIEWED = "사람이 검수하지 않은 성분 근거입니다."
+    CLAIM_NOT_VERIFIED = "현재 연결된 근거로 Claim을 충분히 확인하지 못했습니다."
 
 
 class ProductCandidateSet(RagModel):

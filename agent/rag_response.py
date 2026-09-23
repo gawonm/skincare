@@ -93,7 +93,7 @@ class RagResponseAssembler:
         state.status = ChatStatus.PARTIAL
         names = self._claim_ingredient_names(state, results)
         subject = ", ".join(names) if names else "일부 후보 성분"
-        detail = f"현재 연결된 공인 근거로 충분히 확인하지 못한 후보 성분: {subject}"
+        detail = f"현재 연결된 근거로 충분히 확인하지 못한 후보 성분: {subject}"
         state.unresolved.append(UnresolvedItem(kind=UnresolvedKind.NO_EVIDENCE, detail=detail))
         state.response_parts.append(detail)
 

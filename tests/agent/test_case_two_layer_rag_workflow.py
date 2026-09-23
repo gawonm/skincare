@@ -343,7 +343,7 @@ class TestCaseTwoLayerRagWorkflow:
         assert candidates.candidates
         assert "유사 사례에서 질문과 관련해 언급된 성분" in output.message
         assert "Claim 기반 제품 후보" in output.message
-        assert "현재 연결된 공인 근거로 충분히 확인하지 못한 후보 성분" in output.message
+        assert "현재 연결된 근거로 충분히 확인하지 못한 후보 성분" in output.message
         assert "case-claim:" not in output.message
 
     async def test_exact_quote_검증_실패_Claim은_성분과_상품으로_넘기지_않는다(self) -> None:

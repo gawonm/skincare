@@ -1,6 +1,7 @@
 """LangGraph 각 단계의 상태 전이를 구현한다."""
 
 from datetime import UTC, datetime
+from typing import ClassVar
 
 from agent.context import ContextBuilder
 from agent.evidence_query_policy import EvidenceQueryPolicy
@@ -74,6 +75,10 @@ CANDIDATE_REFERENCE_QUESTION = (
 ROUTINE_REFERENCE_QUESTION = "참조한 루틴 버전을 현재 방에서 찾을 수 없습니다. 다시 선택해 주세요."
 NO_RESULT_MESSAGE = "현재 상품 데이터에서 조건을 만족하는 제품을 찾지 못했습니다."
 EVIDENCE_PRODUCT_LIMITATION = ProductCandidateLimitation.INGREDIENT_EVIDENCE_ONLY.value
+LIMITED_EVIDENCE_PRODUCT_LIMITATION = (
+    ProductCandidateLimitation.EVIDENCE_APPLICABILITY_LIMITED.value
+)
+UNREVIEWED_EVIDENCE_PRODUCT_LIMITATION = ProductCandidateLimitation.EVIDENCE_UNREVIEWED.value
 CLAIM_ONLY_PRODUCT_LIMITATION = ProductCandidateLimitation.CLAIM_NOT_VERIFIED.value
 
 
@@ -81,6 +86,12 @@ class AgentNodes:
     """주입된 포트만 사용해 그래프 노드를 실행한다."""
 
     _EVIDENCE_REFERENCES = ("이 성분", "그 성분", "해당 성분", "이 제품", "그 제품")
+    _RECOMMENDATION_BASIS_ORDER: ClassVar[tuple[RecommendationBasis, ...]] = (
+        RecommendationBasis.VERIFIED_EVIDENCE,
+        RecommendationBasis.LIMITED_EVIDENCE,
+        RecommendationBasis.UNREVIEWED_EVIDENCE,
+        RecommendationBasis.CLAIM_ONLY,
+    )
 
     def __init__(
         self,
@@ -764,9 +775,7 @@ class AgentNodes:
         )
         return sorted(
             matches.values(),
-            key=lambda match: (
-                0 if match.basis() is RecommendationBasis.EVIDENCE_SUPPORTED else 1
-            ),
+            key=lambda match: self._RECOMMENDATION_BASIS_ORDER.index(match.basis()),
         )
 
     def _merge_recommendation_product(
@@ -775,9 +784,19 @@ class AgentNodes:
         product: ProductRecord,
         candidate: IngredientRecommendationCandidate,
     ) -> RecommendationProductMatch:
-        supported_ids = (
+        verified_ids = (
             [candidate.ingredient_id]
-            if candidate.basis is RecommendationBasis.EVIDENCE_SUPPORTED
+            if candidate.basis is RecommendationBasis.VERIFIED_EVIDENCE
+            else []
+        )
+        limited_ids = (
+            [candidate.ingredient_id]
+            if candidate.basis is RecommendationBasis.LIMITED_EVIDENCE
+            else []
+        )
+        unreviewed_ids = (
+            [candidate.ingredient_id]
+            if candidate.basis is RecommendationBasis.UNREVIEWED_EVIDENCE
             else []
         )
         claim_only_ids = (
@@ -788,7 +807,9 @@ class AgentNodes:
         if existing is None:
             return RecommendationProductMatch(
                 product=product,
-                evidence_supported_ingredient_ids=supported_ids,
+                verified_evidence_ingredient_ids=verified_ids,
+                limited_evidence_ingredient_ids=limited_ids,
+                unreviewed_evidence_ingredient_ids=unreviewed_ids,
                 claim_only_ingredient_ids=claim_only_ids,
                 statement_ids=candidate.statement_ids,
                 evidence_ids=candidate.evidence_ids,
@@ -796,8 +817,14 @@ class AgentNodes:
         return existing.model_copy(
             deep=True,
             update={
-                "evidence_supported_ingredient_ids": list(
-                    dict.fromkeys(existing.evidence_supported_ingredient_ids + supported_ids)
+                "verified_evidence_ingredient_ids": list(
+                    dict.fromkeys(existing.verified_evidence_ingredient_ids + verified_ids)
+                ),
+                "limited_evidence_ingredient_ids": list(
+                    dict.fromkeys(existing.limited_evidence_ingredient_ids + limited_ids)
+                ),
+                "unreviewed_evidence_ingredient_ids": list(
+                    dict.fromkeys(existing.unreviewed_evidence_ingredient_ids + unreviewed_ids)
                 ),
                 "claim_only_ingredient_ids": list(
                     dict.fromkeys(existing.claim_only_ingredient_ids + claim_only_ids)
@@ -820,16 +847,32 @@ class AgentNodes:
         for rank, match in enumerate(matches, start=1):
             reasons = self._candidate_reasons(state.task_context.search_filters)
             reasons.extend(
-                f"공인 Evidence가 확인된 성분 포함: {ingredient_id}"
-                for ingredient_id in match.evidence_supported_ingredient_ids
+                f"검수된 성분 근거 포함: {ingredient_id}"
+                for ingredient_id in match.verified_evidence_ingredient_ids
+            )
+            reasons.extend(
+                f"적용 제한 성분 근거 포함: {ingredient_id}"
+                for ingredient_id in match.limited_evidence_ingredient_ids
+            )
+            reasons.extend(
+                f"미검수 성분 근거 포함: {ingredient_id}"
+                for ingredient_id in match.unreviewed_evidence_ingredient_ids
             )
             reasons.extend(
                 f"Claim 기반 성분 포함: {ingredient_id}"
                 for ingredient_id in match.claim_only_ingredient_ids
             )
             limitations = self._product_limitations(match.product)
-            if match.evidence_supported_ingredient_ids:
+            if (
+                match.verified_evidence_ingredient_ids
+                or match.limited_evidence_ingredient_ids
+                or match.unreviewed_evidence_ingredient_ids
+            ):
                 limitations.append(EVIDENCE_PRODUCT_LIMITATION)
+            if match.limited_evidence_ingredient_ids:
+                limitations.append(LIMITED_EVIDENCE_PRODUCT_LIMITATION)
+            if match.unreviewed_evidence_ingredient_ids:
+                limitations.append(UNREVIEWED_EVIDENCE_PRODUCT_LIMITATION)
             if match.claim_only_ingredient_ids:
                 limitations.append(CLAIM_ONLY_PRODUCT_LIMITATION)
             candidates.append(
@@ -848,19 +891,33 @@ class AgentNodes:
         candidates: list[ProductCandidate],
         matches: list[RecommendationProductMatch],
     ) -> None:
-        supported_lines = [
+        verified_lines = [
             f"{candidate.rank}번. {candidate.product.name}"
             for candidate, match in zip(candidates, matches, strict=True)
-            if match.basis() is RecommendationBasis.EVIDENCE_SUPPORTED
+            if match.basis() is RecommendationBasis.VERIFIED_EVIDENCE
+        ]
+        limited_lines = [
+            f"{candidate.rank}번. {candidate.product.name}"
+            for candidate, match in zip(candidates, matches, strict=True)
+            if match.basis() is RecommendationBasis.LIMITED_EVIDENCE
+        ]
+        unreviewed_lines = [
+            f"{candidate.rank}번. {candidate.product.name}"
+            for candidate, match in zip(candidates, matches, strict=True)
+            if match.basis() is RecommendationBasis.UNREVIEWED_EVIDENCE
         ]
         claim_only_lines = [
             f"{candidate.rank}번. {candidate.product.name}"
             for candidate, match in zip(candidates, matches, strict=True)
             if match.basis() is RecommendationBasis.CLAIM_ONLY
         ]
-        if supported_lines:
+        if verified_lines:
+            state.response_parts.append("성분 근거 제품 후보:\n" + "\n".join(verified_lines))
+        if limited_lines:
+            state.response_parts.append("제한 근거 제품 후보:\n" + "\n".join(limited_lines))
+        if unreviewed_lines:
             state.response_parts.append(
-                "공인 근거가 확인된 성분 기반 제품 후보:\n" + "\n".join(supported_lines)
+                "미검수 근거 제품 후보:\n" + "\n".join(unreviewed_lines)
             )
         if claim_only_lines:
             state.response_parts.append(

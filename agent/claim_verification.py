@@ -5,14 +5,17 @@ from agent.rag.claim_schemas import (
     ClaimVerificationRequest,
     ClaimVerificationResult,
     ClaimVerificationStatus,
+    EvidenceSupportLevel,
     IngredientRecommendationCandidate,
     IngredientRecommendationSet,
     RecommendationBasis,
 )
 from agent.rag.pipeline import EvidencePipeline
 from agent.rag.schemas import (
+    ApplicabilityStatus,
     EvidenceBundle,
     EvidenceRecord,
+    EvidenceReviewStatus,
     EvidenceSearchRequest,
     IngredientVerificationResult,
     LookupStatus,
@@ -20,7 +23,7 @@ from agent.rag.schemas import (
     UnverifiableReason,
 )
 
-CLAIM_ONLY_LIMITATION = "현재 연결된 공인 근거로 이 Claim을 충분히 확인하지 못했습니다."
+CLAIM_ONLY_LIMITATION = "현재 연결된 근거로 이 Claim을 충분히 확인하지 못했습니다."
 
 
 class ClaimEvidenceVerifier:
@@ -117,6 +120,7 @@ class ClaimEvidenceVerifier:
                 status=ClaimVerificationStatus.SUPPORTED,
                 evidence_ids=list(records),
                 evidence_records=list(records.values()),
+                evidence_support_level=self._support_level(bundle, records),
                 summary=" ".join(summaries),
             )
 
@@ -153,6 +157,25 @@ class ClaimEvidenceVerifier:
                     return {}
                 records[source.evidence_id] = source
         return records
+
+    def _support_level(
+        self,
+        bundle: EvidenceBundle,
+        records: dict[str, EvidenceRecord],
+    ) -> EvidenceSupportLevel:
+        if any(
+            record.review_status is not EvidenceReviewStatus.VERIFIED
+            for record in records.values()
+        ):
+            return EvidenceSupportLevel.UNREVIEWED
+        assessments = {item.evidence_id: item.status for item in bundle.assessments}
+        if any(
+            assessments.get(evidence_id) is not ApplicabilityStatus.APPLICABLE
+            for evidence_id in records
+        ):
+            # 적용성 평가가 누락된 근거도 검수 완료만으로 현재 질문에 맞다고 승격하지 않는다.
+            return EvidenceSupportLevel.LIMITED
+        return EvidenceSupportLevel.VERIFIED
 
     def _unverifiable_reasons(
         self,
@@ -216,18 +239,32 @@ class IngredientRecommendationSelector:
             self._candidate(ingredient_id, bundle)
             for ingredient_id in ingredient_order
         ]
-        supported = [
+        verified = [
             candidate
             for candidate in candidates
             if candidate is not None
-            and candidate.basis is RecommendationBasis.EVIDENCE_SUPPORTED
+            and candidate.basis is RecommendationBasis.VERIFIED_EVIDENCE
+        ]
+        limited = [
+            candidate
+            for candidate in candidates
+            if candidate is not None
+            and candidate.basis is RecommendationBasis.LIMITED_EVIDENCE
+        ]
+        unreviewed = [
+            candidate
+            for candidate in candidates
+            if candidate is not None
+            and candidate.basis is RecommendationBasis.UNREVIEWED_EVIDENCE
         ]
         claim_only = [
             candidate
             for candidate in candidates
             if candidate is not None and candidate.basis is RecommendationBasis.CLAIM_ONLY
         ]
-        return IngredientRecommendationSet(candidates=[*supported, *claim_only])
+        return IngredientRecommendationSet(
+            candidates=[*verified, *limited, *unreviewed, *claim_only]
+        )
 
     def _candidate(
         self,
@@ -250,11 +287,19 @@ class IngredientRecommendationSelector:
         selected = supported or insufficient
         if not selected:
             return None
-        basis = (
-            RecommendationBasis.EVIDENCE_SUPPORTED
-            if supported
-            else RecommendationBasis.CLAIM_ONLY
-        )
+        levels = {
+            result.evidence_support_level
+            for result in supported
+            if result.evidence_support_level is not None
+        }
+        if EvidenceSupportLevel.VERIFIED in levels:
+            basis = RecommendationBasis.VERIFIED_EVIDENCE
+        elif EvidenceSupportLevel.LIMITED in levels:
+            basis = RecommendationBasis.LIMITED_EVIDENCE
+        elif EvidenceSupportLevel.UNREVIEWED in levels:
+            basis = RecommendationBasis.UNREVIEWED_EVIDENCE
+        else:
+            basis = RecommendationBasis.CLAIM_ONLY
         return IngredientRecommendationCandidate(
             ingredient_id=ingredient_id,
             basis=basis,
