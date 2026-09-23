@@ -281,6 +281,70 @@ class OverlappingProductRepository(ProductRepository):
         return ProductGetResult(status=LookupStatus.NO_RESULTS)
 
 
+class FallbackCoverageProductRepository(ProductRepository):
+    """통합 조회에서 빠진 성분만 보완 조회하는 경계를 재현한다."""
+
+    def __init__(self, calls: list[WorkflowCall]) -> None:
+        self._calls = calls
+        self.requests: list[ProductSearchRequest] = []
+        taxonomy = FixtureProductTaxonomy()
+        self._products = {
+            "ingredient:niacinamide": ProductRecord(
+                product_id="product:niacinamide-serum",
+                version="fixture-v1",
+                name="나이아신아마이드 세럼",
+                category=taxonomy.category(FixtureCategoryCode.SERUM),
+                texture=taxonomy.SERUM,
+                skin_feel=taxonomy.LIGHT,
+                ingredient_ids=["ingredient:niacinamide"],
+                source_id="shop:niacinamide",
+                checked_at="2026-09-23T00:00:00Z",
+                is_demo=False,
+            ),
+            "ingredient:retinol": ProductRecord(
+                product_id="product:retinol-serum",
+                version="fixture-v1",
+                name="레티놀 세럼",
+                category=taxonomy.category(FixtureCategoryCode.SERUM),
+                texture=taxonomy.SERUM,
+                skin_feel=taxonomy.LIGHT,
+                ingredient_ids=["ingredient:retinol"],
+                source_id="shop:retinol",
+                checked_at="2026-09-23T00:00:00Z",
+                is_demo=False,
+            ),
+        }
+
+    async def search(self, request: ProductSearchRequest) -> ProductSearchResult:
+        self._calls.append(WorkflowCall.PRODUCT)
+        self.requests.append(request.model_copy(deep=True))
+        ingredient_ids = request.filters.ingredient_ids
+        if len(ingredient_ids) > 1:
+            return ProductSearchResult(
+                status=LookupStatus.SUCCESS,
+                products=[self._products["ingredient:niacinamide"]],
+            )
+        product = self._products.get(ingredient_ids[0]) if ingredient_ids else None
+        return ProductSearchResult(
+            status=LookupStatus.SUCCESS if product is not None else LookupStatus.NO_RESULTS,
+            products=[product] if product is not None else [],
+        )
+
+    async def get(self, request: ProductGetRequest) -> ProductGetResult:
+        product = next(
+            (
+                candidate
+                for candidate in self._products.values()
+                if candidate.product_id == request.product_id
+            ),
+            None,
+        )
+        return ProductGetResult(
+            status=LookupStatus.SUCCESS if product is not None else LookupStatus.NO_RESULTS,
+            product=product,
+        )
+
+
 class FixedRequestLlm(LlmClient):
     def __init__(self, parsed_request: ParsedRequest) -> None:
         self._parsed_request = parsed_request
@@ -360,7 +424,6 @@ class TestTwoLayerRagWorkflow:
             WorkflowCall.EVIDENCE,
             WorkflowCall.EVIDENCE,
             WorkflowCall.PRODUCT,
-            WorkflowCall.PRODUCT,
         ]
         assert len(candidate_set.candidates) == 1
         candidate = candidate_set.candidates[0]
@@ -399,7 +462,6 @@ class TestTwoLayerRagWorkflow:
             WorkflowCall.EVIDENCE,
             WorkflowCall.EVIDENCE,
             WorkflowCall.PRODUCT,
-            WorkflowCall.PRODUCT,
         ]
         assert len(candidate_set.candidates) == 1
         candidate = candidate_set.candidates[0]
@@ -437,7 +499,6 @@ class TestTwoLayerRagWorkflow:
             WorkflowCall.EVIDENCE,
             WorkflowCall.EVIDENCE,
             WorkflowCall.PRODUCT,
-            WorkflowCall.PRODUCT,
         ]
         assert [candidate.product.product_id for candidate in candidate_set.candidates] == [
             "product:niacinamide-serum",
@@ -449,6 +510,38 @@ class TestTwoLayerRagWorkflow:
             "evidence:verified-niacinamide"
         ]
         assert CLAIM_ONLY_PRODUCT_LIMITATION in candidate_set.candidates[1].unresolved
+
+    async def test_only_uncovered_ingredient_uses_fallback_search(self) -> None:
+        calls: list[WorkflowCall] = []
+        repository = FallbackCoverageProductRepository(calls)
+        harness = TwoLayerRagHarness()
+        application = harness.create(
+            calls,
+            claim_retriever=MixedClaimRetriever(calls),
+            evidence_retriever=VerifiedEvidenceRetriever(calls),
+            answer_generator=AnswerGenerator(EchoEvidenceStatementGenerator()),
+            product_repository=repository,
+        )
+
+        output = await application.service.handle_turn(
+            harness.request("fallback-coverage-1", "피지가 많고 좁쌀이 나는데 세럼 추천해줘")
+        )
+
+        candidate_set = next(
+            artifact
+            for artifact in output.artifacts
+            if isinstance(artifact, ProductCandidateSet)
+        )
+        assert [request.filters.ingredient_ids for request in repository.requests] == [
+            ["ingredient:niacinamide", "ingredient:retinol"],
+            ["ingredient:retinol"],
+        ]
+        assert [request.limit for request in repository.requests] == [10, 5]
+        assert {
+            ingredient_id
+            for candidate in candidate_set.candidates
+            for ingredient_id in candidate.product.ingredient_ids
+        } == {"ingredient:niacinamide", "ingredient:retinol"}
 
     async def test_rule_routes_concern_to_claim_when_llm_omits_route(self) -> None:
         calls: list[WorkflowCall] = []

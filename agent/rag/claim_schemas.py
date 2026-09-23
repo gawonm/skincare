@@ -247,6 +247,17 @@ class RecommendationProductMatch(RagModel):
         return RecommendationBasis.CLAIM_ONLY
 
 
+class RecommendationProductSelectionRequest(RagModel):
+    ingredients: list[IngredientRecommendationCandidate] = Field(min_length=1)
+    products: list[ProductRecord] = Field(default_factory=list)
+
+
+class RecommendationProductSelectionResult(RagModel):
+    matches: list[RecommendationProductMatch] = Field(default_factory=list)
+    covered_ingredient_ids: list[str] = Field(default_factory=list)
+    uncovered_ingredient_ids: list[str] = Field(default_factory=list)
+
+
 class ClaimBundle(RagModel):
     search: ClaimSearchResult
     target_ids: list[str] = Field(default_factory=list)

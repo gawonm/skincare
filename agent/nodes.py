@@ -9,10 +9,11 @@ from agent.ports import IngredientRepository, LlmClient, ProductRepository, Rout
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.query_planning import IntentQueryPlanner
 from agent.rag.claim_schemas import (
-    IngredientRecommendationCandidate,
     RecommendationBasis,
     RecommendationProductMatch,
+    RecommendationProductSelectionRequest,
 )
+from agent.rag.recommendation_product_selector import RecommendationProductSelector
 from agent.rag.retrieval.ingredient_alias_mapper import (
     CommonIngredientAliasMapper,
     IngredientMentionDetectionRequest,
@@ -24,7 +25,9 @@ from agent.rag.routine_product_selector import (
     RoutineProductSelector,
 )
 from agent.rag.schemas import (
+    DEFAULT_SEARCH_LIMIT,
     EvidenceConditions,
+    IngredientMatchMode,
     IngredientResolveRequest,
     LookupStatus,
     ProductCandidate,
@@ -86,12 +89,7 @@ class AgentNodes:
     """주입된 포트만 사용해 그래프 노드를 실행한다."""
 
     _EVIDENCE_REFERENCES = ("이 성분", "그 성분", "해당 성분", "이 제품", "그 제품")
-    _RECOMMENDATION_BASIS_ORDER: ClassVar[tuple[RecommendationBasis, ...]] = (
-        RecommendationBasis.VERIFIED_EVIDENCE,
-        RecommendationBasis.LIMITED_EVIDENCE,
-        RecommendationBasis.UNREVIEWED_EVIDENCE,
-        RecommendationBasis.CLAIM_ONLY,
-    )
+    _RECOMMENDATION_POOL_PER_INGREDIENT: ClassVar[int] = DEFAULT_SEARCH_LIMIT
 
     def __init__(
         self,
@@ -123,6 +121,7 @@ class AgentNodes:
         self._query_planner = IntentQueryPlanner()
         self._routine_frequency = RoutineFrequencyInterpreter()
         self._routine_product_selector = RoutineProductSelector()
+        self._recommendation_product_selector = RecommendationProductSelector()
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
         self._require_turn_fields(state)
@@ -737,106 +736,69 @@ class AgentNodes:
         state: AgentState,
     ) -> list[RecommendationProductMatch]:
         recommendation_set = state.recommendation_ingredients
-        if recommendation_set is None:
+        if recommendation_set is None or not recommendation_set.candidates:
             return []
-        matches: dict[str, RecommendationProductMatch] = {}
         ingredient_ids = [candidate.ingredient_id for candidate in recommendation_set.candidates]
-        for candidate in recommendation_set.candidates:
+        unresolved_count = len(state.unresolved)
+        previous_error_code = state.error_code
+        primary = await self._search_products(
+            state,
+            ingredient_ids,
+            GraphNode.PROCESS_TASK,
+            limit=max(
+                DEFAULT_SEARCH_LIMIT,
+                len(ingredient_ids) * self._RECOMMENDATION_POOL_PER_INGREDIENT,
+            ),
+            ingredient_match_mode=IngredientMatchMode.ANY,
+        )
+        products = list(primary.products)
+        selection = self._recommendation_product_selector.select(
+            RecommendationProductSelectionRequest(
+                ingredients=recommendation_set.candidates,
+                products=products,
+            )
+        )
+        if (
+            state.error_code is not previous_error_code
+            or len(state.unresolved) != unresolved_count
+        ):
+            return selection.matches
+
+        for ingredient_id in selection.uncovered_ingredient_ids:
             unresolved_count = len(state.unresolved)
             previous_error_code = state.error_code
             entities = await self._search_products(
                 state,
-                [candidate.ingredient_id],
+                [ingredient_id],
                 GraphNode.PROCESS_TASK,
+                ingredient_match_mode=IngredientMatchMode.ANY,
             )
             if not entities.products:
                 if (
-                    len(state.unresolved) == unresolved_count
-                    and state.error_code is previous_error_code
+                    len(state.unresolved) != unresolved_count
+                    or state.error_code is not previous_error_code
                 ):
-                    state.status = ChatStatus.PARTIAL
-                    detail = (
-                        "추천 성분과 연결된 상품을 찾지 못했습니다: "
-                        f"{candidate.ingredient_id}"
-                    )
-                    state.unresolved.append(
-                        UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=detail)
-                    )
-                continue
-            for product in entities.products:
-                matches[product.product_id] = self._merge_recommendation_product(
-                    matches.get(product.product_id),
-                    product,
-                    candidate,
+                    break
+                state.status = ChatStatus.PARTIAL
+                detail = (
+                    "추천 성분과 연결된 상품을 찾지 못했습니다: "
+                    f"{ingredient_id}"
                 )
+                state.unresolved.append(
+                    UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=detail)
+                )
+                continue
+            products.extend(entities.products)
         state.task_context.search_filters = state.task_context.search_filters.model_copy(
             deep=True,
             update={"ingredient_ids": ingredient_ids},
         )
-        return sorted(
-            matches.values(),
-            key=lambda match: self._RECOMMENDATION_BASIS_ORDER.index(match.basis()),
-        )
-
-    def _merge_recommendation_product(
-        self,
-        existing: RecommendationProductMatch | None,
-        product: ProductRecord,
-        candidate: IngredientRecommendationCandidate,
-    ) -> RecommendationProductMatch:
-        verified_ids = (
-            [candidate.ingredient_id]
-            if candidate.basis is RecommendationBasis.VERIFIED_EVIDENCE
-            else []
-        )
-        limited_ids = (
-            [candidate.ingredient_id]
-            if candidate.basis is RecommendationBasis.LIMITED_EVIDENCE
-            else []
-        )
-        unreviewed_ids = (
-            [candidate.ingredient_id]
-            if candidate.basis is RecommendationBasis.UNREVIEWED_EVIDENCE
-            else []
-        )
-        claim_only_ids = (
-            [candidate.ingredient_id]
-            if candidate.basis is RecommendationBasis.CLAIM_ONLY
-            else []
-        )
-        if existing is None:
-            return RecommendationProductMatch(
-                product=product,
-                verified_evidence_ingredient_ids=verified_ids,
-                limited_evidence_ingredient_ids=limited_ids,
-                unreviewed_evidence_ingredient_ids=unreviewed_ids,
-                claim_only_ingredient_ids=claim_only_ids,
-                statement_ids=candidate.statement_ids,
-                evidence_ids=candidate.evidence_ids,
+        return self._recommendation_product_selector.select(
+            RecommendationProductSelectionRequest(
+                ingredients=recommendation_set.candidates,
+                products=products,
             )
-        return existing.model_copy(
-            deep=True,
-            update={
-                "verified_evidence_ingredient_ids": list(
-                    dict.fromkeys(existing.verified_evidence_ingredient_ids + verified_ids)
-                ),
-                "limited_evidence_ingredient_ids": list(
-                    dict.fromkeys(existing.limited_evidence_ingredient_ids + limited_ids)
-                ),
-                "unreviewed_evidence_ingredient_ids": list(
-                    dict.fromkeys(existing.unreviewed_evidence_ingredient_ids + unreviewed_ids)
-                ),
-                "claim_only_ingredient_ids": list(
-                    dict.fromkeys(existing.claim_only_ingredient_ids + claim_only_ids)
-                ),
-                "statement_ids": list(
-                    dict.fromkeys(existing.statement_ids + candidate.statement_ids)
-                ),
-                "evidence_ids": list(
-                    dict.fromkeys(existing.evidence_ids + candidate.evidence_ids)
-                ),
-            },
-        )
+        ).matches
 
     def _recommendation_product_candidates(
         self,
@@ -949,6 +911,8 @@ class AgentNodes:
         state: AgentState,
         ingredient_ids: list[str],
         node: GraphNode,
+        limit: int = DEFAULT_SEARCH_LIMIT,
+        ingredient_match_mode: IngredientMatchMode = IngredientMatchMode.ALL,
     ) -> ResolvedEntities:
         parsed = self._require_parsed(state)
         if not self._reserve_tool_call(state, node):
@@ -991,6 +955,7 @@ class AgentNodes:
                 query=parsed.query_plan.product_query or parsed.query,
                 allow_discovery=Intent.PRODUCT_DISCOVERY in parsed.intents,
                 filters=filters,
+                limit=limit,
             )
         )
         if result.status is LookupStatus.ERROR:
@@ -1008,11 +973,26 @@ class AgentNodes:
             return ResolvedEntities(ingredient_ids=effective_ingredient_ids)
         products = result.products if result.status is LookupStatus.SUCCESS else []
         if Intent.PRODUCT_DISCOVERY in parsed.intents:
-            products = [
-                product
-                for product in products
-                if self._product_filters.matches(product, state.task_context.search_filters)
-            ]
+            if ingredient_match_mode is IngredientMatchMode.ANY:
+                attribute_filters = state.task_context.search_filters.model_copy(
+                    deep=True,
+                    update={"ingredient_ids": []},
+                )
+                products = [
+                    product
+                    for product in products
+                    if self._product_filters.matches(product, attribute_filters)
+                    and set(effective_ingredient_ids).intersection(product.ingredient_ids)
+                ]
+            else:
+                products = [
+                    product
+                    for product in products
+                    if self._product_filters.matches(
+                        product,
+                        state.task_context.search_filters,
+                    )
+                ]
         return ResolvedEntities(
             products=products,
             ingredient_ids=effective_ingredient_ids,

@@ -448,7 +448,15 @@ class FixtureProductRepository(ProductRepository):
         return ProductGetResult(status=LookupStatus.NO_RESULTS)
 
     def _matches_filters(self, product: ProductRecord, request: ProductSearchRequest) -> bool:
-        return self._filter_validator.matches(product, request.filters)
+        attribute_filters = request.filters.model_copy(
+            deep=True,
+            update={"ingredient_ids": []},
+        )
+        ingredient_ids = set(request.filters.ingredient_ids)
+        # 운영 상품 저장소가 여러 성분을 OR로 조회하므로 fixture도 같은 넓은 후보 계약을 따른다.
+        return self._filter_validator.matches(product, attribute_filters) and (
+            not ingredient_ids or bool(ingredient_ids.intersection(product.ingredient_ids))
+        )
 
     def _build_products(self) -> list[ProductRecord]:
         return [
