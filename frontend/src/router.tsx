@@ -9,9 +9,11 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import { ChatRoute } from "./constants/chat";
+import { ProductRoute } from "./constants/product";
 import { ChatPage } from "./pages/ChatPage";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
+import { ProductDetailPage } from "./pages/ProductDetailPage";
 import { SignupPage } from "./pages/SignupPage";
 
 export const router = createBrowserRouter([
@@ -20,6 +22,7 @@ export const router = createBrowserRouter([
   { path: "/signup", element: <SignupPage /> },
   { path: "/home", element: <HomePage /> },
   { path: ChatRoute.Chat, element: <ChatPage /> },
+  { path: ProductRoute.Detail, element: <ProductDetailPage /> },
   // 정의되지 않은 경로도 로그인으로 되돌린다.
   { path: "*", element: <Navigate to="/login" replace /> },
 ]);
