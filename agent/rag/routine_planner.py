@@ -14,11 +14,15 @@ from pydantic import ValidationError
 
 from agent.ports import RoutineDraftGenerator, RoutinePlanner, RoutineRuleGenerator
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
+from agent.rag.deterministic_routine_scheduler import DeterministicRoutineScheduler
+from agent.rag.routine_product_selector import RoutineProductSelector
 from agent.rag.schemas import (
     DEFAULT_ROUTINE_DURATION_DAYS,
     ChatModelConfig,
     ConstraintSource,
     DayPeriod,
+    DeterministicRoutineScheduleRequest,
+    EvidenceReviewStatus,
     LlmProvider,
     ProductRecord,
     RoutineConstraint,
@@ -78,9 +82,8 @@ class RoutineFrequencyInterpreter:
                     else DEFAULT_ROUTINE_DURATION_DAYS
                 )
             ),
-            applications_per_week=(
-                max(explicit) if explicit else (max(bare) if bare else None)
-            ),
+            occurrence_count=max(bare) if bare else None,
+            applications_per_week=max(explicit) if explicit else None,
             periods=self._periods(user_request),
         )
 
@@ -92,7 +95,17 @@ class RoutineFrequencyInterpreter:
         if self._DAILY_CONTEXT_PATTERN.search(text):
             # 일일 횟수를 7배 하거나 주간 사용일로 축소하면 원문과 다른 제약이 되므로 제외한다.
             return set()
-        return {int(match.group("count")) for match in self._BARE_COUNT_PATTERN.finditer(text)}
+        explicit_spans = [
+            match.span() for match in self._EXPLICIT_WEEKLY_PATTERN.finditer(text)
+        ]
+        return {
+            int(match.group("count"))
+            for match in self._BARE_COUNT_PATTERN.finditer(text)
+            if not any(
+                explicit_start <= match.start() and match.end() <= explicit_end
+                for explicit_start, explicit_end in explicit_spans
+            )
+        }
 
     def _frequencies(self, pattern: re.Pattern[str], text: str) -> set[int]:
         return {
@@ -207,7 +220,7 @@ class ChatModelRoutineRuleGenerator(RoutineRuleGenerator):
 
 
 class ChatModelRoutineDraftGenerator(RoutineDraftGenerator):
-    """검증된 Rule과 허용 제품만 사용해 루틴 일정 초안을 생성한다."""
+    """직접 주입된 기존 구현의 전환을 위한 LLM 루틴 초안 생성기."""
 
     def __init__(
         self,
@@ -286,8 +299,11 @@ class RoutineRuleSourceBuilder:
             sources.append(
                 RoutineRuleSource(
                     source_id=f"evidence:{evidence.evidence_id}",
-                    # document_status는 문서 생명주기 메타데이터이므로 Rule 강제 수준에 관여시키지 않는다.
-                    source_kind=RoutineRuleSourceKind.EVIDENCE,
+                    source_kind=(
+                        RoutineRuleSourceKind.VERIFIED_EVIDENCE
+                        if evidence.review_status is EvidenceReviewStatus.VERIFIED
+                        else RoutineRuleSourceKind.UNREVIEWED_EVIDENCE
+                    ),
                     text=evidence.text,
                     applicable_product_ids=applicable_product_ids,
                 )
@@ -321,8 +337,10 @@ class DeterministicRoutineValidator:
     def __init__(
         self,
         frequency_interpreter: RoutineFrequencyInterpreter | None = None,
+        product_selector: RoutineProductSelector | None = None,
     ) -> None:
         self._frequency_interpreter = frequency_interpreter or RoutineFrequencyInterpreter()
+        self._product_selector = product_selector or RoutineProductSelector()
 
     def compile_rules(
         self,
@@ -369,13 +387,16 @@ class DeterministicRoutineValidator:
         warnings = list(request.plan.warnings)
         placements = request.plan.placements
 
-        if not placements:
-            violations.append("루틴 배치가 비어 있습니다.")
-
         placed_product_ids = {placement.product_id for placement in placements}
-        for product_id, product in allowed_products.items():
-            if product_id not in placed_product_ids:
-                violations.append(f"선택한 제품이 루틴에서 누락됐습니다: {product.name}")
+        for product in allowed_products.values():
+            if (
+                self._product_selector.role(product)
+                in RoutineProductSelector.APPLICATION_ROLE_ORDER
+                and product.product_id not in placed_product_ids
+            ):
+                violations.append(
+                    f"기본 역할 대표 상품이 루틴에서 누락됐습니다: {product.name}"
+                )
 
         seen_placements: set[tuple[str, Weekday, DayPeriod]] = set()
         orders_by_slot: defaultdict[tuple[Weekday, DayPeriod], list[int]] = defaultdict(list)
@@ -424,6 +445,14 @@ class DeterministicRoutineValidator:
             violations.append(
                 "요청한 루틴 기간을 초과했습니다: "
                 f"{len(scheduled_weekdays)}일/{request.schedule.duration_days}일"
+            )
+        if (
+            request.schedule.occurrence_count is not None
+            and len(scheduled_weekdays) > request.schedule.occurrence_count
+        ):
+            violations.append(
+                "요청한 루틴 횟수를 초과했습니다: "
+                f"{len(scheduled_weekdays)}회/{request.schedule.occurrence_count}회"
             )
         if request.schedule.applications_per_week is not None:
             for product_id, placement_count in placement_count_by_product.items():
@@ -503,6 +532,7 @@ class DeterministicRoutineValidator:
     ) -> RoutineRuleEnforcement:
         if (
             source.source_kind is RoutineRuleSourceKind.CASE_USAGE_GUIDANCE
+            or source.source_kind is RoutineRuleSourceKind.UNREVIEWED_EVIDENCE
             or candidate.rule_type is RoutineRuleType.WARNING
         ):
             return RoutineRuleEnforcement.WARNING
@@ -557,7 +587,7 @@ class DeterministicRoutineValidator:
 
 
 class SourceBoundRoutinePlanner(RoutinePlanner):
-    """LLM은 Rule·초안을 제안하고 코드는 출처와 최종 배치를 검증한다."""
+    """LLM은 출처 기반 Rule만 추출하고 기본 일정은 결정적 코드가 생성한다."""
 
     _CASE_RULE_PARSE_WARNING: ClassVar[str] = (
         "유사 사례의 사용법 Rule을 구조화하지 못해 일정 제약에서 제외했습니다."
@@ -566,16 +596,18 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
     def __init__(
         self,
         rule_generator: RoutineRuleGenerator,
-        draft_generator: RoutineDraftGenerator,
+        draft_generator: RoutineDraftGenerator | None = None,
         validator: DeterministicRoutineValidator | None = None,
         source_builder: RoutineRuleSourceBuilder | None = None,
         draft_normalizer: RoutineDraftNormalizer | None = None,
+        scheduler: DeterministicRoutineScheduler | None = None,
     ) -> None:
         self._rule_generator = rule_generator
         self._draft_generator = draft_generator
         self._validator = validator or DeterministicRoutineValidator()
         self._source_builder = source_builder or RoutineRuleSourceBuilder()
         self._draft_normalizer = draft_normalizer or RoutineDraftNormalizer()
+        self._scheduler = scheduler or DeterministicRoutineScheduler()
 
     async def plan(self, request: RoutinePlanRequest) -> RoutinePlan:
         sources = self._source_builder.build(request)
@@ -602,34 +634,7 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
                 candidates=candidates.rules,
             )
         )
-        draft = self._draft_normalizer.normalize(
-            await self._draft_generator.generate(
-                RoutineDraftGenerationRequest(
-                    user_request=request.user_request,
-                    products=request.products,
-                    excluded_weekdays=request.excluded_weekdays,
-                    schedule=request.schedule,
-                    rules=self._draft_rules(compilation.rules),
-                    current_plan=request.current_plan,
-                )
-            )
-        )
-        products = {product.product_id: product for product in request.products}
-        placements = [
-            RoutinePlacement(
-                product_id=item.product_id,
-                product_name=(
-                    products[item.product_id].name
-                    if item.product_id in products
-                    else item.product_id
-                ),
-                weekday=item.weekday,
-                period=item.period,
-                order=item.order,
-                reason=item.reason,
-            )
-            for item in draft.placements
-        ]
+        placements = await self._placements(request, compilation.rules)
         routine_id = (
             request.current_plan.routine_id
             if request.current_plan is not None
@@ -650,6 +655,53 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
             ),
             is_demo=False,
         )
+
+    async def _placements(
+        self,
+        request: RoutinePlanRequest,
+        rules: list[RoutineRule],
+    ) -> list[RoutinePlacement]:
+        if self._draft_generator is None:
+            scheduled = self._scheduler.schedule(
+                DeterministicRoutineScheduleRequest(
+                    products=request.products,
+                    excluded_weekdays=request.excluded_weekdays,
+                    schedule=request.schedule,
+                    rules=self._draft_rules(rules),
+                )
+            )
+            return scheduled.placements
+
+        # 직접 주입된 구형 DraftGenerator는 기존 통합 테스트와 외부 구현의 단계적 전환만을 위해
+        # 보존한다. 운영 Factory는 이 경로를 주입하지 않아 결정적 스케줄러만 사용한다.
+        draft = self._draft_normalizer.normalize(
+            await self._draft_generator.generate(
+                RoutineDraftGenerationRequest(
+                    user_request=request.user_request,
+                    products=request.products,
+                    excluded_weekdays=request.excluded_weekdays,
+                    schedule=request.schedule,
+                    rules=self._draft_rules(rules),
+                    current_plan=request.current_plan,
+                )
+            )
+        )
+        products = {product.product_id: product for product in request.products}
+        return [
+            RoutinePlacement(
+                product_id=item.product_id,
+                product_name=(
+                    products[item.product_id].name
+                    if item.product_id in products
+                    else item.product_id
+                ),
+                weekday=item.weekday,
+                period=item.period,
+                order=item.order,
+                reason=item.reason,
+            )
+            for item in draft.placements
+        ]
 
     def _draft_rules(self, rules: list[RoutineRule]) -> list[RoutineRule]:
         # Case 사용 가이드는 검증 경고로 남기되, 일정 생성 명령처럼 해석되어 배치를 늘리지 않게 한다.
@@ -706,10 +758,9 @@ class SourceBoundRoutinePlanner(RoutinePlanner):
 
 
 class RoutinePlannerFactory:
-    """채팅 모델 설정으로 출처 기반 LLM 루틴 Planner를 조립한다."""
+    """채팅 모델은 Rule 추출에만 쓰고 일정은 결정적 스케줄러로 조립한다."""
 
     def create(self, config: ChatModelConfig) -> RoutinePlanner:
         return SourceBoundRoutinePlanner(
             rule_generator=ChatModelRoutineRuleGenerator(config),
-            draft_generator=ChatModelRoutineDraftGenerator(config),
         )
