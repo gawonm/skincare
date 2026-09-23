@@ -107,7 +107,7 @@ class IntentQueryPlanner:
         if base_query is None:
             return None
         explicit_context = self._explicit_context(request.original_message)
-        concerns = list(dict.fromkeys(parsed.skin_concerns + request.profile_concerns))
+        concerns = self._evidence_concerns(request)
         missing_terms = [
             term
             for term in [*explicit_context, *concerns]
