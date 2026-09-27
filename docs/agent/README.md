@@ -145,6 +145,15 @@ DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump
 
 ## 관련 문서
 
+- [NIA Case 새 복합 질의 12건 점검](RAG_YK/2026-09-27_NIA_CASE_FRESH_COMPOSITE_CHALLENGE_REPORT.md)
+- [NIA Case 관리 조언 적합성 보완 계획](RAG_YK/2026-09-27_NIA_CASE_CARE_COMPATIBILITY_UPDATE_PLAN.md)
+- [NIA Case 관리 조언 필터 보완 24건 재평가](RAG_YK/2026-09-27_NIA_CASE_CARE_COMPATIBILITY_UPDATE_REPORT.md)
+- [NIA Case CareContext 전체 골든셋 점검](RAG_YK/2026-09-27_NIA_CASE_CARE_CONTEXT_FULL_GOLDEN_REPORT.md)
+- [NIA Case Codex 추가 판정 전체 24건 비교](RAG_YK/2026-09-27_NIA_CASE_CARE_CONTEXT_AI_JUDGED_REPORT.md)
+- [NIA Case 현재 관리 조언 적합성 Codex 검토](RAG_YK/2026-09-27_NIA_CASE_CARE_APPLICABILITY_AI_REVIEW.md)
+- [NIA Case 다음 업데이트 판정 요청과 실험 기준](RAG_YK/2026-09-27_NIA_CASE_NEXT_UPDATE_REVIEW.md)
+- [NIA Case 피부 상태-관리 부적합 안전 브레이크 집중 점검](RAG_YK/2026-09-27_NIA_CASE_CARE_COMPATIBILITY_PROBE.md)
+- [NIA Case 후보 보존형 리랭커 관련성 평가](RAG_YK/2026-09-26_2150_NIA_CASE_RERANKER_RELEVANCE_V5_REPORT.md)
 - [NIA Case 복수 질의 검색·전용 리랭크·Recall@20 평가](RAG_YK/2026-09-23_1754_NIA_CASE_MULTI_QUERY_RETRIEVAL_PLAN.md)
 - [역할 기반 루틴 상품 선택·번호 일정 계획](RAG_YK/2026-09-23_ROUTINE_PRODUCT_ROLE_SELECTION_PLAN.md)
 - [NIA Case 의도별 질의 분리 및 메타데이터 리랭크 계획](RAG_YK/2026-09-22_NIA_CASE_QUERY_DECOMPOSITION_PLAN.md)

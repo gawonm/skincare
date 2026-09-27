@@ -25,7 +25,15 @@ from agent.rag.case_schemas import (
 )
 from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
 from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
-from agent.rag.schemas import ChatModelConfig, LlmProvider, LocalChatConfig, LocalRerankerConfig
+from agent.rag.schemas import (
+    CareContext,
+    CarePriority,
+    ChatModelConfig,
+    IrritationStatus,
+    LlmProvider,
+    LocalChatConfig,
+    LocalRerankerConfig,
+)
 
 
 class FakeStructuredCaseClaimClient:
@@ -69,6 +77,12 @@ class FakeCaseCrossEncoder:
 
 
 class CaseRuntimeFixture:
+    def recovery_context(self) -> CareContext:
+        return CareContext(
+            irritation_status=IrritationStatus.ACTIVE,
+            priority=CarePriority.RECOVERY,
+        )
+
     def hit(
         self,
         case_id: str,
@@ -115,7 +129,14 @@ class TestLocalBgeCaseRerankerV2M3:
     async def test_교차인코더_점수로_Top3를_반환한다(self) -> None:
         fixture = CaseRuntimeFixture()
         candidates = [
-            fixture.hit("CASE-1", "첫 번째", 0.95),
+            fixture.hit(
+                "CASE-1",
+                (
+                    "[질문]\n첫 번째 질문\n[답변]\n첫 번째 답변\n\n"
+                    "[추론]\n리랭크 입력에서는 제외할 생성 추론"
+                ),
+                0.95,
+            ),
             fixture.hit("CASE-2", "두 번째", 0.85),
             fixture.hit("CASE-3", "세 번째", 0.75),
             fixture.hit("CASE-4", "네 번째", 0.65),
@@ -136,14 +157,284 @@ class TestLocalBgeCaseRerankerV2M3:
             "피지가 많아요",
             (
                 "[사례 문맥]\n"
-                "연령: 25세\n"
-                "성별: 여성\n"
+                "대표 고민: 피지\n"
+                "피부 고민: 피지\n"
                 "피부 타입: 지성\n"
-                "피부 고민: 피지\n\n"
-                "[질문·답변·추론]\n"
-                "첫 번째"
+                "연령: 25세\n"
+                "성별: 여성\n\n"
+                "[사례 질문·답변]\n"
+                "[질문]\n첫 번째 질문\n[답변]\n첫 번째 답변"
             ),
         ]
+
+    @pytest.mark.asyncio
+    async def test_동일_질문과_답변은_서로_다른_사례_뒤로_보낸다(self) -> None:
+        fixture = CaseRuntimeFixture()
+        duplicate_content = "[질문]\n같은 질문\n\n[답변]\n같은 답변"
+        candidates = [
+            fixture.hit("CASE-1", duplicate_content, 0.95),
+            fixture.hit(
+                "CASE-2",
+                f"{duplicate_content}\n\n[추론]\n다른 생성 추론",
+                0.85,
+            ),
+            fixture.hit("CASE-3", "[질문]\n세 번째\n\n[답변]\n세 번째 답변", 0.75),
+            fixture.hit("CASE-4", "[질문]\n네 번째\n\n[답변]\n네 번째 답변", 0.65),
+        ]
+        model = FakeCaseCrossEncoder([0.9, 0.8, 0.7, 0.6])
+        config = LocalRerankerConfig()
+        scorer = LocalBgeCrossEncoderScorer(config)
+        scorer._model = cast(Any, model)
+        reranker = LocalBgeCaseRerankerV2M3(config, scorer=scorer)
+
+        result = await reranker.rerank(
+            CaseRerankRequest(query="피부 고민", candidates=candidates, limit=3)
+        )
+
+        assert [hit.case_id for hit in result.hits] == ["CASE-1", "CASE-3", "CASE-4"]
+
+    @pytest.mark.asyncio
+    async def test_활성_자극을_안정시키려는_질의에서는_각질제거_권고를_후순위로_보낸다(
+        self,
+    ) -> None:
+        fixture = CaseRuntimeFixture()
+        candidates = [
+            fixture.hit(
+                "CASE-BHA",
+                "[질문]\n모공 고민\n[답변]\n살리실산(BHA) 토너를 꾸준히 사용해주세요.",
+                0.95,
+            ),
+            fixture.hit(
+                "CASE-BARRIER",
+                "[질문]\n민감 고민\n[답변]\n순한 세안과 보습으로 피부 장벽을 회복하세요.",
+                0.85,
+            ),
+            fixture.hit(
+                "CASE-SOOTHING",
+                "[질문]\n붉어짐 고민\n[답변]\n판테놀 크림으로 피부를 진정시키세요.",
+                0.75,
+            ),
+            fixture.hit(
+                "CASE-HYDRATION",
+                "[질문]\n건조 고민\n[답변]\n보습제를 충분히 사용하세요.",
+                0.65,
+            ),
+        ]
+        model = FakeCaseCrossEncoder([0.99, 0.8, 0.7, 0.6])
+        scorer = LocalBgeCrossEncoderScorer(LocalRerankerConfig())
+        scorer._model = cast(Any, model)
+        reranker = LocalBgeCaseRerankerV2M3(LocalRerankerConfig(), scorer=scorer)
+
+        result = await reranker.rerank(
+            CaseRerankRequest(
+                query=(
+                    "각질 제거를 자주 했더니 볼이 화끈거립니다. "
+                    "모공 관리와 장벽 회복 중 무엇을 우선해야 할까요?"
+                ),
+                candidates=candidates,
+                care_context=fixture.recovery_context(),
+                limit=3,
+            )
+        )
+
+        assert [hit.case_id for hit in result.hits] == [
+            "CASE-BARRIER",
+            "CASE-SOOTHING",
+            "CASE-HYDRATION",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_활성_자극_회복_요청이_아니면_BHA_권고의_BGE_순위를_유지한다(
+        self,
+    ) -> None:
+        fixture = CaseRuntimeFixture()
+        candidates = [
+            fixture.hit(
+                "CASE-BHA",
+                "[질문]\n피지 고민\n[답변]\n살리실산(BHA) 토너를 꾸준히 사용해주세요.",
+                0.95,
+            ),
+            fixture.hit("CASE-2", "두 번째", 0.85),
+            fixture.hit("CASE-3", "세 번째", 0.75),
+            fixture.hit("CASE-4", "네 번째", 0.65),
+        ]
+        model = FakeCaseCrossEncoder([0.99, 0.8, 0.7, 0.6])
+        scorer = LocalBgeCrossEncoderScorer(LocalRerankerConfig())
+        scorer._model = cast(Any, model)
+        reranker = LocalBgeCaseRerankerV2M3(LocalRerankerConfig(), scorer=scorer)
+
+        result = await reranker.rerank(
+            CaseRerankRequest(
+                query="피지가 많고 모공이 막혀서 BHA 성분을 찾고 있어요.",
+                candidates=candidates,
+                limit=3,
+            )
+        )
+
+        assert [hit.case_id for hit in result.hits] == ["CASE-BHA", "CASE-2", "CASE-3"]
+
+    @pytest.mark.asyncio
+    async def test_도와달라는_표현의_BHA_권고도_안전_감점을_적용한다(self) -> None:
+        fixture = CaseRuntimeFixture()
+        candidates = [
+            fixture.hit(
+                "CASE-BHA",
+                (
+                    "[질문]\n모공 고민\n[답변]\n살리실산(BHA)으로 각질과 피지를 "
+                    "녹여내고 피부 장벽 강화를 도와주세요."
+                ),
+                0.95,
+            ),
+            fixture.hit("CASE-2", "두 번째", 0.85),
+            fixture.hit("CASE-3", "세 번째", 0.75),
+            fixture.hit("CASE-4", "네 번째", 0.65),
+        ]
+        model = FakeCaseCrossEncoder([0.99, 0.8, 0.7, 0.6])
+        scorer = LocalBgeCrossEncoderScorer(LocalRerankerConfig())
+        scorer._model = cast(Any, model)
+        reranker = LocalBgeCaseRerankerV2M3(LocalRerankerConfig(), scorer=scorer)
+
+        result = await reranker.rerank(
+            CaseRerankRequest(
+                query="볼이 화끈거립니다. 장벽 회복을 먼저 하고 싶어요.",
+                candidates=candidates,
+                care_context=fixture.recovery_context(),
+                limit=3,
+            )
+        )
+
+        assert [hit.case_id for hit in result.hits] == ["CASE-2", "CASE-3", "CASE-4"]
+
+    @pytest.mark.asyncio
+    async def test_앞_절의_자극_최소화가_뒤_절의_각질제거_권고를_가리지_않는다(
+        self,
+    ) -> None:
+        fixture = CaseRuntimeFixture()
+        candidates = [
+            fixture.hit(
+                "CASE-EXFOLIATION",
+                (
+                    "[질문]\n장벽 고민\n[답변]\n세안 자극을 최소화하고, "
+                    "주 1~2회 부드러운 각질 제거를 병행하세요."
+                ),
+                0.95,
+            ),
+            fixture.hit("CASE-2", "두 번째", 0.85),
+            fixture.hit("CASE-3", "세 번째", 0.75),
+            fixture.hit("CASE-4", "네 번째", 0.65),
+        ]
+        model = FakeCaseCrossEncoder([0.99, 0.8, 0.7, 0.6])
+        scorer = LocalBgeCrossEncoderScorer(LocalRerankerConfig())
+        scorer._model = cast(Any, model)
+        reranker = LocalBgeCaseRerankerV2M3(LocalRerankerConfig(), scorer=scorer)
+
+        result = await reranker.rerank(
+            CaseRerankRequest(
+                query="볼이 화끈거립니다. 장벽 회복을 먼저 하고 싶어요.",
+                candidates=candidates,
+                care_context=fixture.recovery_context(),
+                limit=3,
+            )
+        )
+
+        assert [hit.case_id for hit in result.hits] == ["CASE-2", "CASE-3", "CASE-4"]
+
+    @pytest.mark.asyncio
+    async def test_성분과_활용_문구가_쉼표로_분리돼도_안전_감점을_적용한다(
+        self,
+    ) -> None:
+        fixture = CaseRuntimeFixture()
+        candidates = [
+            fixture.hit(
+                "CASE-ACTIVES",
+                (
+                    "[질문]\n모공 고민\n[답변]\nBHA, 나이아신아마이드, 레티놀을 "
+                    "적절히 활용하여 꾸준히 관리하세요."
+                ),
+                0.95,
+            ),
+            fixture.hit("CASE-2", "두 번째", 0.85),
+            fixture.hit("CASE-3", "세 번째", 0.75),
+            fixture.hit("CASE-4", "네 번째", 0.65),
+        ]
+        model = FakeCaseCrossEncoder([0.99, 0.8, 0.7, 0.6])
+        scorer = LocalBgeCrossEncoderScorer(LocalRerankerConfig())
+        scorer._model = cast(Any, model)
+        reranker = LocalBgeCaseRerankerV2M3(LocalRerankerConfig(), scorer=scorer)
+
+        result = await reranker.rerank(
+            CaseRerankRequest(
+                query="볼이 화끈거립니다. 장벽 회복을 먼저 하고 싶어요.",
+                candidates=candidates,
+                care_context=fixture.recovery_context(),
+                limit=3,
+            )
+        )
+
+        assert [hit.case_id for hit in result.hits] == ["CASE-2", "CASE-3", "CASE-4"]
+
+    @pytest.mark.asyncio
+    async def test_자극적인_관리를_피하라는_답변에는_안전_감점을_적용하지_않는다(
+        self,
+    ) -> None:
+        fixture = CaseRuntimeFixture()
+        candidates = [
+            fixture.hit(
+                "CASE-AVOID",
+                "[질문]\n민감 고민\n[답변]\nBHA 각질 제거는 피하고 장벽 회복에 집중하세요.",
+                0.95,
+            ),
+            fixture.hit("CASE-2", "두 번째", 0.85),
+            fixture.hit("CASE-3", "세 번째", 0.75),
+            fixture.hit("CASE-4", "네 번째", 0.65),
+        ]
+        model = FakeCaseCrossEncoder([0.99, 0.8, 0.7, 0.6])
+        scorer = LocalBgeCrossEncoderScorer(LocalRerankerConfig())
+        scorer._model = cast(Any, model)
+        reranker = LocalBgeCaseRerankerV2M3(LocalRerankerConfig(), scorer=scorer)
+
+        result = await reranker.rerank(
+            CaseRerankRequest(
+                query="볼이 따갑고 붉어집니다. 피부를 먼저 안정시키고 싶어요.",
+                candidates=candidates,
+                care_context=fixture.recovery_context(),
+                limit=3,
+            )
+        )
+
+        assert [hit.case_id for hit in result.hits] == ["CASE-AVOID", "CASE-2", "CASE-3"]
+
+    @pytest.mark.asyncio
+    async def test_활성_자극_질의의_모든_후보가_부적합하면_빈_결과를_반환한다(
+        self,
+    ) -> None:
+        fixture = CaseRuntimeFixture()
+        candidates = [
+            fixture.hit(
+                f"CASE-BHA-{index}",
+                (
+                    "[질문]\n모공 고민\n[답변]\n살리실산(BHA) 제품을 "
+                    "주 2~3회 사용해주세요."
+                ),
+                1.0 - (index * 0.1),
+            )
+            for index in range(4)
+        ]
+        model = FakeCaseCrossEncoder([0.9, 0.8, 0.7, 0.6])
+        scorer = LocalBgeCrossEncoderScorer(LocalRerankerConfig())
+        scorer._model = cast(Any, model)
+        reranker = LocalBgeCaseRerankerV2M3(LocalRerankerConfig(), scorer=scorer)
+
+        result = await reranker.rerank(
+            CaseRerankRequest(
+                query="볼이 화끈거립니다. 장벽 회복을 먼저 하고 싶어요.",
+                candidates=candidates,
+                care_context=fixture.recovery_context(),
+                limit=3,
+            )
+        )
+
+        assert result.hits == []
 
 
 class TestChatModelCaseClaimExtractor:

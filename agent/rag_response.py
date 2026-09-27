@@ -224,7 +224,7 @@ class RagResponseAssembler:
             )
             if state.case_bundle is not None and state.case_bundle.rerank_fallback_used:
                 state.response_parts.append(
-                    "Case 재정렬 실패로 복수 질의 RRF 융합 순위 Top-3를 사용했습니다."
+                    "Case 재정렬 실패로 관리 적합성 검사 후 벡터 순위 사례를 사용했습니다."
                 )
             return
         bundle = state.claim_bundle

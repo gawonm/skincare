@@ -3,6 +3,32 @@ from agent.task_planning import TaskPlanBuilder
 
 
 class TestTaskPlanBuilder:
+    def test_case_기반_루틴은_상품_탐색을_먼저_추가한다(self) -> None:
+        request = ParsedRequest(
+            intents=[Intent.ROUTINE_PLANNING],
+            query="사례를 바탕으로 루틴을 짜줘",
+            rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+        )
+
+        assert TaskPlanBuilder().build(request) == [
+            Intent.EVIDENCE_QA,
+            Intent.PRODUCT_DISCOVERY,
+            Intent.ROUTINE_PLANNING,
+        ]
+
+    def test_기존_후보를_참조한_case_루틴에는_상품_탐색을_추가하지_않는다(self) -> None:
+        request = ParsedRequest(
+            intents=[Intent.ROUTINE_PLANNING],
+            query="1번 제품으로 루틴을 짜줘",
+            rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+            referenced_candidate_number=1,
+        )
+
+        assert TaskPlanBuilder().build(request) == [
+            Intent.EVIDENCE_QA,
+            Intent.ROUTINE_PLANNING,
+        ]
+
     def test_상품보다_먼저_반환된_루틴을_의존성_순서로_정렬한다(self) -> None:
         request = ParsedRequest(
             intents=[Intent.ROUTINE_PLANNING, Intent.PRODUCT_DISCOVERY],

@@ -1,4 +1,4 @@
-"""실제 NIA Case DB에서 단일 질의와 복수 질의 검색 품질을 비교한다.
+"""실제 NIA Case DB에서 단일 질의의 후보 폭과 메타데이터 선별을 비교한다.
 
 실행 예:
     uv run python -m tests.agent.case_retrieval_recall_eval --golden <검토된 JSONL 경로>
@@ -15,6 +15,7 @@ from pydantic import Field, ValidationError, model_validator
 
 from agent.query_planning import IntentQueryPlanner
 from agent.rag.case_schemas import (
+    DEFAULT_CASE_CANDIDATE_LIMIT,
     CaseRerankRequest,
     CaseSearchHit,
     CaseSearchRequest,
@@ -22,12 +23,11 @@ from agent.rag.case_schemas import (
 )
 from agent.rag.embedding.factory import TextEmbedderFactory
 from agent.rag.ports import CaseReranker, CaseRetriever, TextEmbedder
-from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
-from agent.rag.retrieval.case_result_fusion import (
-    CaseSearchContribution,
-    CaseSearchFusionRequest,
-    CaseSearchResultFusion,
+from agent.rag.retrieval.case_candidate_selector import (
+    CaseCandidateSelectionRequest,
+    CaseMetadataCandidateSelector,
 )
+from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
 from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.schemas import (
     BGE_M3_EMBEDDING_DIMENSIONS,
@@ -53,9 +53,9 @@ from tests.agent.interactive_two_layer_rag_cli import (
 
 
 class CaseRetrievalExperiment(StrEnum):
-    BASELINE = "baseline"
-    MULTI_QUERY = "multi_query"
-    MULTI_QUERY_RERANK = "multi_query_rerank"
+    BASELINE_TOP20 = "baseline_top20"
+    SINGLE_TOP40 = "single_top40"
+    SINGLE_TOP40_METADATA = "single_top40_metadata"
 
 
 class CaseRetrievalGoldenItem(RagModel):
@@ -89,6 +89,8 @@ class CaseRetrievalMetricRequest(RagModel):
 class CaseRetrievalMetrics(RagModel):
     hit_at_20: bool
     recall_at_20: float = Field(ge=0.0, le=1.0)
+    hit_at_40: bool
+    recall_at_40: float = Field(ge=0.0, le=1.0)
     mrr_at_3: float = Field(ge=0.0, le=1.0)
     ndcg_at_3: float = Field(ge=0.0, le=1.0)
 
@@ -112,6 +114,8 @@ class CaseRetrievalExperimentSummary(RagModel):
     query_count: int = Field(ge=1)
     hit_at_20: float = Field(ge=0.0, le=1.0)
     recall_at_20: float = Field(ge=0.0, le=1.0)
+    hit_at_40: float = Field(ge=0.0, le=1.0)
+    recall_at_40: float = Field(ge=0.0, le=1.0)
     mrr_at_3: float = Field(ge=0.0, le=1.0)
     ndcg_at_3: float = Field(ge=0.0, le=1.0)
 
@@ -159,19 +163,18 @@ class CaseRetrievalGoldenSetLoader:
 
 class CaseRetrievalMetricCalculator:
     RETRIEVAL_CUTOFF: ClassVar[int] = 20
+    EXPANDED_RETRIEVAL_CUTOFF: ClassVar[int] = 40
     FINAL_CUTOFF: ClassVar[int] = 3
 
     def calculate(self, request: CaseRetrievalMetricRequest) -> CaseRetrievalMetrics:
         relevant = set(request.relevant_case_ids)
         retrieved = request.retrieved_case_ids[: self.RETRIEVAL_CUTOFF]
+        expanded_retrieved = request.retrieved_case_ids[: self.EXPANDED_RETRIEVAL_CUTOFF]
         final = request.final_case_ids[: self.FINAL_CUTOFF]
         matched = relevant.intersection(retrieved)
+        expanded_matched = relevant.intersection(expanded_retrieved)
         reciprocal_rank = next(
-            (
-                1.0 / rank
-                for rank, case_id in enumerate(final, start=1)
-                if case_id in relevant
-            ),
+            (1.0 / rank for rank, case_id in enumerate(final, start=1) if case_id in relevant),
             0.0,
         )
         dcg = sum(
@@ -180,12 +183,12 @@ class CaseRetrievalMetricCalculator:
             if case_id in relevant
         )
         ideal_count = min(len(relevant), self.FINAL_CUTOFF)
-        ideal_dcg = sum(
-            1.0 / math.log2(rank + 1) for rank in range(1, ideal_count + 1)
-        )
+        ideal_dcg = sum(1.0 / math.log2(rank + 1) for rank in range(1, ideal_count + 1))
         return CaseRetrievalMetrics(
             hit_at_20=bool(matched),
             recall_at_20=len(matched) / len(relevant),
+            hit_at_40=bool(expanded_matched),
+            recall_at_40=len(expanded_matched) / len(relevant),
             mrr_at_3=reciprocal_rank,
             ndcg_at_3=dcg / ideal_dcg,
         )
@@ -193,6 +196,7 @@ class CaseRetrievalMetricCalculator:
 
 class CaseRetrievalEvaluator:
     TEXT_VERSION: ClassVar[str] = "nia_case_text/v1"
+    BASELINE_CANDIDATE_LIMIT: ClassVar[int] = 20
 
     def __init__(
         self,
@@ -204,7 +208,7 @@ class CaseRetrievalEvaluator:
         self._retriever = retriever
         self._reranker = reranker
         self._planner = IntentQueryPlanner()
-        self._fusion = CaseSearchResultFusion()
+        self._candidate_selector = CaseMetadataCandidateSelector()
         self._metrics = CaseRetrievalMetricCalculator()
 
     async def evaluate(
@@ -217,80 +221,53 @@ class CaseRetrievalEvaluator:
                 parsed_request=ParsedRequest(
                     intents=[Intent.PRODUCT_DISCOVERY],
                     query=golden.original_message,
-                    query_plan=IntentQueryPlan(
-                        case_query=golden.canonical_case_query
-                    ),
+                    query_plan=IntentQueryPlan(case_query=golden.canonical_case_query),
                     skin_concerns=golden.skin_concerns,
                     rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
                 ),
             )
         )
-        canonical_query = query_plan.case_query
-        if canonical_query is None:
+        single_query = query_plan.case_query
+        if single_query is None:
             raise RuntimeError(f"Case 질의가 생성되지 않았습니다: {golden.evaluation_id}")
-        retrieval_queries = query_plan.case_retrieval_queries
-        if not retrieval_queries:
-            raise RuntimeError(f"복수 검색 질의가 생성되지 않았습니다: {golden.evaluation_id}")
-
-        texts = list(
-            dict.fromkeys(
-                [canonical_query, *[query.text for query in retrieval_queries]]
-            )
-        )
+        baseline_query = golden.canonical_case_query
+        texts = list(dict.fromkeys([baseline_query, single_query]))
         embedding = await self._embedder.embed(EmbeddingRequest(texts=texts))
         if embedding.model != LocalEmbeddingModel.BGE_M3.value:
             raise RuntimeError(
-                "NIA Case 평가 임베딩 모델이 BGE-M3가 아닙니다: "
-                f"actual={embedding.model}"
+                f"NIA Case 평가 임베딩 모델이 BGE-M3가 아닙니다: actual={embedding.model}"
             )
         if len(embedding.vectors) != len(texts):
             raise RuntimeError(
                 "NIA Case 평가 질의와 임베딩 수가 다릅니다: "
                 f"queries={len(texts)}, vectors={len(embedding.vectors)}"
             )
-        if any(
-            len(vector.values) != BGE_M3_EMBEDDING_DIMENSIONS
-            for vector in embedding.vectors
-        ):
+        if any(len(vector.values) != BGE_M3_EMBEDDING_DIMENSIONS for vector in embedding.vectors):
             raise RuntimeError("NIA Case 평가 임베딩에 1,024차원이 아닌 벡터가 있습니다.")
         vectors_by_text = dict(zip(texts, embedding.vectors, strict=True))
 
         baseline = await self._search(
             CaseSearchRequest(
-                query=canonical_query,
-                query_embedding=vectors_by_text[canonical_query],
+                query=baseline_query,
+                query_embedding=vectors_by_text[baseline_query],
                 text_version=self.TEXT_VERSION,
                 embedding_model=embedding.model,
+                candidate_limit=self.BASELINE_CANDIDATE_LIMIT,
             )
         )
-        contributions = [
-            CaseSearchContribution(
-                query=query.text,
-                result=await self._search(
-                    CaseSearchRequest(
-                        query=query.text,
-                        query_embedding=vectors_by_text[query.text],
-                        text_version=self.TEXT_VERSION,
-                        embedding_model=embedding.model,
-                    )
-                ),
+        expanded = await self._search(
+            CaseSearchRequest(
+                query=single_query,
+                query_embedding=vectors_by_text[single_query],
+                text_version=self.TEXT_VERSION,
+                embedding_model=embedding.model,
+                candidate_limit=DEFAULT_CASE_CANDIDATE_LIMIT,
             )
-            for query in retrieval_queries
-        ]
-        fusion = self._fusion.fuse(
-            CaseSearchFusionRequest(contributions=contributions)
         )
-        if fusion.failures:
-            details = "; ".join(
-                f"{failure.query}: {failure.message}" for failure in fusion.failures
-            )
-            raise RuntimeError(f"NIA Case 복수 질의 평가 검색이 일부 실패했습니다: {details}")
-        fused = fusion.search_result
-
-        baseline_reranked = await self._rerank(canonical_query, baseline)
-        multi_query_reranked = await self._rerank(canonical_query, fused)
-        full_rerank_query = query_plan.case_rerank_query or canonical_query
-        full_reranked = await self._rerank(full_rerank_query, fused)
+        baseline_reranked = await self._rerank(baseline_query, baseline)
+        expanded_reranked = await self._rerank(single_query, expanded)
+        selected = self._select(single_query, golden.skin_concerns, expanded)
+        selected_reranked = await self._rerank(single_query, selected)
 
         return CaseRetrievalEvaluationResult(
             evaluation_id=golden.evaluation_id,
@@ -298,21 +275,21 @@ class CaseRetrievalEvaluator:
             relevant_case_ids=golden.relevant_case_ids,
             rankings=[
                 self._ranking(
-                    CaseRetrievalExperiment.BASELINE,
+                    CaseRetrievalExperiment.BASELINE_TOP20,
                     baseline.hits,
                     baseline_reranked,
                     golden,
                 ),
                 self._ranking(
-                    CaseRetrievalExperiment.MULTI_QUERY,
-                    fused.hits,
-                    multi_query_reranked,
+                    CaseRetrievalExperiment.SINGLE_TOP40,
+                    expanded.hits,
+                    expanded_reranked,
                     golden,
                 ),
                 self._ranking(
-                    CaseRetrievalExperiment.MULTI_QUERY_RERANK,
-                    fused.hits,
-                    full_reranked,
+                    CaseRetrievalExperiment.SINGLE_TOP40_METADATA,
+                    selected.hits,
+                    selected_reranked,
                     golden,
                 ),
             ],
@@ -335,10 +312,25 @@ class CaseRetrievalEvaluator:
     ) -> list[CaseSearchHit]:
         if search.status is not LookupStatus.SUCCESS:
             return []
-        result = await self._reranker.rerank(
-            CaseRerankRequest(query=query, candidates=search.hits)
-        )
+        result = await self._reranker.rerank(CaseRerankRequest(query=query, candidates=search.hits))
         return result.hits
+
+    def _select(
+        self,
+        query: str,
+        skin_concerns: list[str],
+        search: CaseSearchResult,
+    ) -> CaseSearchResult:
+        if search.status is not LookupStatus.SUCCESS:
+            return search
+        selection = self._candidate_selector.select(
+            CaseCandidateSelectionRequest(
+                query=query,
+                skin_concerns=skin_concerns,
+                candidates=search.hits,
+            )
+        )
+        return search.model_copy(update={"hits": selection.candidates})
 
     def _ranking(
         self,
@@ -385,6 +377,8 @@ class CaseRetrievalEvaluationReporter:
                     query_count=count,
                     hit_at_20=sum(float(metric.hit_at_20) for metric in metrics) / count,
                     recall_at_20=sum(metric.recall_at_20 for metric in metrics) / count,
+                    hit_at_40=sum(float(metric.hit_at_40) for metric in metrics) / count,
+                    recall_at_40=sum(metric.recall_at_40 for metric in metrics) / count,
                     mrr_at_3=sum(metric.mrr_at_3 for metric in metrics) / count,
                     ndcg_at_3=sum(metric.ndcg_at_3 for metric in metrics) / count,
                 )
@@ -420,9 +414,7 @@ class CaseRetrievalEvaluationCli:
                     scorer=scorer,
                 ),
             )
-            results = [
-                await evaluator.evaluate(golden) for golden in golden_set.items
-            ]
+            results = [await evaluator.evaluate(golden) for golden in golden_set.items]
             CaseRetrievalEvaluationReporter().print(results)
         finally:
             await database.dispose()

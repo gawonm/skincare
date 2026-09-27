@@ -4,13 +4,17 @@ import re
 from enum import StrEnum
 from typing import ClassVar
 
+from agent.rag.retrieval.ingredient_alias_mapper import (
+    CommonIngredientAliasMapper,
+    IngredientMentionDetectionRequest,
+)
 from agent.rag_route_policy import SkinConcernCue
 from agent.schemas import (
-    CaseRetrievalQuery,
-    CaseRetrievalQueryKind,
+    CaseQueryInputForm,
     Intent,
     IntentQueryPlan,
     QueryPlanningRequest,
+    QueryTurnKind,
     RagRoute,
 )
 
@@ -39,37 +43,33 @@ class EvidenceQueryAxis(StrEnum):
     PRECAUTION = "주의사항"
 
 
-class CaseQueryInstructionCue(StrEnum):
-    """Case 유사도와 무관한 상품 선택·루틴 실행 지시의 고정 신호."""
-
-    PRODUCT = "제품"
-    PRODUCT_SYNONYM = "상품"
-    RECOMMEND = "추천"
-    ROUTINE = "루틴"
-    WHAT_TO_USE = "뭘 써"
-    WHAT_USE = "뭐 써"
-    WHAT_SHOULD_I_USE = "무엇을 써"
-    WHAT_TO_APPLY = "뭘 발라"
-    WHAT_APPLY = "뭐 발라"
-    WHAT_SHOULD_I_APPLY = "무엇을 발라"
-
-
-class CaseQueryExpansion(StrEnum):
-    """원문 피부 고민에서 안전하게 파생할 수 있는 검색용 도메인 표현."""
-
-    MOISTURIZING = "보습"
-    DEHYDRATION = "수분 부족"
-    SOOTHING = "진정"
-    IRRITATION_PRECAUTION = "자극 주의"
+class CaseBodyAreaCue(StrEnum):
+    FOREHEAD = "이마"
+    NOSE = "코"
+    CHEEK = "볼"
+    CHIN = "턱"
+    JAWLINE = "턱선"
+    EYE = "눈가"
+    MOUTH = "입가"
+    T_ZONE = "T존"
+    U_ZONE = "U존"
 
 
 class IntentQueryPlanner:
     """LLM의 질의 분리를 보완하되 사용자가 명시한 Case 문맥은 삭제하지 않는다."""
 
-    _AGE_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?<!\d)(?:[1-9]0대|\d{1,2}(?:세|살))"
+    _AGE_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"(?<!\d)(?:[1-9]0대|\d{1,2}(?:세|살))")
+    _CASE_INSTRUCTION_PATTERNS: ClassVar[tuple[re.Pattern[str], ...]] = (
+        re.compile(
+            r"(?:스킨케어\s*)?(?:제품|상품)\s*"
+            r"(?:뭘|뭐|무엇을|어떤\s*(?:것|걸))\s*(?:써|사용|발라).*$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"(?:뭘|뭐|무엇을)\s*(?:써|사용|발라).*$", re.IGNORECASE),
+        re.compile(r"(?:추천\s*(?:제품|상품)|(?:제품|상품)\s*추천).*$", re.IGNORECASE),
+        re.compile(r"\d+\s*일(?:간)?[^.!?]*(?:스킨케어\s*)?루틴.*$", re.IGNORECASE),
+        re.compile(r"(?:스킨케어\s*)?루틴\s*(?:짜|구성).*$", re.IGNORECASE),
     )
-    _CASE_QUERY_PURPOSE: ClassVar[str] = "피부 관련 성분 및 주의사항"
     _CONTEXT_ALIASES: ClassVar[dict[ExplicitCaseContext, tuple[str, ...]]] = {
         ExplicitCaseContext.MALE: ("남성", "남자"),
         ExplicitCaseContext.FEMALE: ("여성", "여자"),
@@ -84,139 +84,24 @@ class IntentQueryPlanner:
         ExplicitCaseContext.NORMAL: ("중성",),
         ExplicitCaseContext.SENSITIVE: ("민감성",),
     }
-    _CONCERN_EXPANSIONS: ClassVar[dict[SkinConcernCue, tuple[CaseQueryExpansion, ...]]] = {
-        SkinConcernCue.DRYNESS: (
-            CaseQueryExpansion.MOISTURIZING,
-            CaseQueryExpansion.DEHYDRATION,
-        ),
-        SkinConcernCue.SENSITIVITY: (
-            CaseQueryExpansion.SOOTHING,
-            CaseQueryExpansion.IRRITATION_PRECAUTION,
-        ),
-    }
+    _NUMBER_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"\d+")
+
+    def __init__(self) -> None:
+        self._ingredient_aliases = CommonIngredientAliasMapper()
 
     def build(self, request: QueryPlanningRequest) -> IntentQueryPlan:
         parsed = request.parsed_request
         draft = parsed.query_plan
         case_query = self._case_query(request)
-        explicit_context = self._explicit_context(request.original_message)
-        concerns = self._evidence_concerns(request)
         return IntentQueryPlan(
             case_query=case_query,
-            case_retrieval_queries=self._case_retrieval_queries(
-                case_query,
-                explicit_context,
-                concerns,
-            ),
-            case_rerank_query=self._case_rerank_query(
-                case_query,
-                explicit_context,
-                concerns,
-            ),
+            # Case 검색과 재정렬이 같은 의미를 보도록 별도 확장 질의를 만들지 않는다.
+            case_retrieval_queries=[],
+            case_rerank_query=None,
             evidence_query=self._evidence_query(request),
             product_query=self._effective_query(draft.product_query, parsed.query),
             routine_query=self._effective_query(draft.routine_query, parsed.query),
         )
-
-    def _case_retrieval_queries(
-        self,
-        case_query: str | None,
-        explicit_context: list[str],
-        concerns: list[str],
-    ) -> list[CaseRetrievalQuery]:
-        if case_query is None:
-            return []
-
-        context_text = " ".join(explicit_context)
-        concern_text = " ".join(concerns) or "피부 고민"
-        expansions = self._case_query_expansions([*explicit_context, *concerns])
-        expansion_text = " ".join(expansion.value for expansion in expansions)
-        age_group_context = " ".join(
-            self._age_group(term) if self._AGE_PATTERN.fullmatch(term) else term
-            for term in explicit_context
-        )
-
-        candidates = [
-            CaseRetrievalQuery(
-                kind=CaseRetrievalQueryKind.PROFILE,
-                text=self._normalize(
-                    f"{context_text} {concern_text} 피부에 적합한 성분 및 주의사항"
-                ),
-            ),
-            CaseRetrievalQuery(
-                kind=CaseRetrievalQueryKind.CONCERN,
-                text=self._normalize(
-                    f"{concern_text} 피부 {expansion_text} 관련 성분 및 사용 주의사항"
-                ),
-            ),
-            CaseRetrievalQuery(
-                kind=CaseRetrievalQueryKind.NATURAL_QUESTION,
-                text=self._normalize(
-                    f"{age_group_context} {concern_text} 피부에 어떤 성분이 좋으며 "
-                    "무엇을 주의해야 하나"
-                ),
-            ),
-        ]
-        return self._deduplicate_case_queries(candidates)
-
-    def _case_rerank_query(
-        self,
-        case_query: str | None,
-        explicit_context: list[str],
-        concerns: list[str],
-    ) -> str | None:
-        if case_query is None:
-            return None
-        concern_text = "·".join(concerns) or "피부 고민"
-        context_text = " ".join(explicit_context) or "사용자"
-        expansions = self._case_query_expansions([*explicit_context, *concerns])
-        expansion_text = "·".join(expansion.value for expansion in expansions)
-        relevance = f"{expansion_text}에 관한 " if expansion_text else ""
-        return self._normalize(
-            f"{concern_text} 피부 고민과 관련된 사례를 찾는다. "
-            f"{context_text} 문맥과 유사하고 {relevance}성분 및 사용 주의사항을 "
-            "구체적으로 설명한 사례를 우선한다."
-        )
-
-    def _case_query_expansions(self, terms: list[str]) -> list[CaseQueryExpansion]:
-        normalized_terms = [term.casefold() for term in terms]
-        expansions: list[CaseQueryExpansion] = []
-        for concern, concern_expansions in self._CONCERN_EXPANSIONS.items():
-            aliases = [concern.value.casefold()]
-            if concern is SkinConcernCue.DRYNESS:
-                aliases.append(ExplicitCaseContext.DRY.value.casefold())
-            if concern is SkinConcernCue.SENSITIVITY:
-                aliases.append(ExplicitCaseContext.SENSITIVE.value.casefold())
-            if not any(
-                alias in term or term in alias for alias in aliases for term in normalized_terms
-            ):
-                continue
-            for expansion in concern_expansions:
-                if expansion not in expansions:
-                    expansions.append(expansion)
-        return expansions
-
-    def _deduplicate_case_queries(
-        self,
-        candidates: list[CaseRetrievalQuery],
-    ) -> list[CaseRetrievalQuery]:
-        queries: list[CaseRetrievalQuery] = []
-        normalized_texts: set[str] = set()
-        for candidate in candidates:
-            normalized = candidate.text.casefold()
-            if normalized in normalized_texts:
-                continue
-            normalized_texts.add(normalized)
-            queries.append(candidate)
-        return queries
-
-    def _age_group(self, age: str) -> str:
-        if age.endswith("대"):
-            return age
-        numeric = re.sub(r"\D", "", age)
-        if not numeric:
-            return age
-        return f"{int(numeric) // 10 * 10}대"
 
     def _evidence_query(self, request: QueryPlanningRequest) -> str | None:
         parsed = request.parsed_request
@@ -259,15 +144,30 @@ class IntentQueryPlanner:
         if not needs_case_query:
             return None
 
-        base_query = self._effective_query(parsed.query_plan.case_query, parsed.query)
+        base_query = self._effective_query(request.original_message, parsed.query)
         if base_query is None:
             return None
+        if (
+            request.turn_kind is QueryTurnKind.INITIAL
+            and parsed.case_query_input_form is CaseQueryInputForm.FRAGMENT
+        ):
+            rewritten = self._strip_case_instructions(parsed.query_plan.case_query or "")
+            if rewritten and self._preserves_explicit_case_terms(
+                request.original_message, rewritten
+            ):
+                # 이미 수행한 의도 해석의 초안을 사용하되, 없는 조건을 보탠 초안은 원문으로 되돌린다.
+                return rewritten
+        # 원문을 기반으로 해야 생활·환경 표현을 보존할 수 있다. 상품 선택과 루틴 실행 부분만
+        # 제거해 임베딩 질의를 짧은 키워드 목록으로 다시 축약하지 않는다.
+        base_query = self._strip_case_instructions(base_query)
+        if base_query:
+            return base_query
+
+        base_query = self._strip_case_instructions(
+            self._effective_query(parsed.query_plan.case_query, parsed.query) or ""
+        )
         explicit_context = self._explicit_context(request.original_message)
         concerns = self._evidence_concerns(request)
-        if self._has_case_instruction(base_query):
-            # LLM이 상품 선택 문구를 Case 질의에 남겨도 임베딩·리랭크의 의미를 흐리지 않도록
-            # 원문에서 결정적으로 확인한 사용자 문맥과 고민만으로 Case 질의를 다시 만든다.
-            return self._rebuild_case_query(explicit_context, concerns)
         missing_terms = [
             term
             for term in [*explicit_context, *concerns]
@@ -275,26 +175,33 @@ class IntentQueryPlanner:
         ]
         return self._normalize(" ".join([*missing_terms, base_query]))
 
-    def _has_case_instruction(self, query: str) -> bool:
-        normalized = query.casefold()
-        return any(cue.value.casefold() in normalized for cue in CaseQueryInstructionCue)
+    def _preserves_explicit_case_terms(self, original: str, rewritten: str) -> bool:
+        source = original.casefold()
+        candidate = rewritten.casefold()
+        if set(self._NUMBER_PATTERN.findall(candidate)) - set(
+            self._NUMBER_PATTERN.findall(source)
+        ):
+            return False
+        if set(self._explicit_context(rewritten)) - set(self._explicit_context(original)):
+            return False
+        for cues in (SkinConcernCue, CaseBodyAreaCue):
+            source_cues = {cue for cue in cues if cue.value.casefold() in source}
+            candidate_cues = {cue for cue in cues if cue.value.casefold() in candidate}
+            if source_cues != candidate_cues:
+                return False
+        source_ingredients = self._ingredient_aliases.detect_mentions(
+            IngredientMentionDetectionRequest(text=original)
+        )
+        candidate_ingredients = self._ingredient_aliases.detect_mentions(
+            IngredientMentionDetectionRequest(text=rewritten)
+        )
+        return set(source_ingredients.mentions) == set(candidate_ingredients.mentions)
 
-    def _rebuild_case_query(
-        self,
-        explicit_context: list[str],
-        concerns: list[str],
-    ) -> str:
-        terms: list[str] = []
-        for term in [*explicit_context, *concerns]:
-            normalized_term = term.casefold()
-            if any(
-                normalized_term in existing.casefold()
-                or existing.casefold() in normalized_term
-                for existing in terms
-            ):
-                continue
-            terms.append(term)
-        return self._normalize(" ".join([*terms, self._CASE_QUERY_PURPOSE]))
+    def _strip_case_instructions(self, query: str) -> str:
+        stripped = query
+        for pattern in self._CASE_INSTRUCTION_PATTERNS:
+            stripped = pattern.sub("", stripped)
+        return self._normalize(stripped.strip(" ,"))
 
     def _explicit_context(self, message: str) -> list[str]:
         positioned: list[tuple[int, str]] = [
