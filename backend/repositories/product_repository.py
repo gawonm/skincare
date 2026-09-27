@@ -102,6 +102,19 @@ class ProductRepository:
         result = await self._session.execute(statement)
         return result.scalar_one_or_none()
 
+    async def list_by_ids(self, product_ids: list[UUID]) -> list[Product]:
+        """주어진 id 목록에 해당하는 상품을 한 번에 조회한다. 순서는 보장하지 않는다.
+
+        채팅 응답 카드(`backend/services/chat_response_builder.py`)처럼 이미 다른 곳에서
+        정해진 id 목록을 한꺼번에 보강할 때 쓴다. `in_` 조건에 빈 목록을 그대로 넘기면
+        불필요한 쿼리가 나가므로 먼저 걸러낸다.
+        """
+        if not product_ids:
+            return []
+        statement = select(Product).where(Product.id.in_(product_ids))
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())
+
     async def list_popular(
         self, *, service_category: ProductServiceCategory | None, limit: int
     ) -> list[Product]:
