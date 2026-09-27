@@ -4,11 +4,17 @@ import re
 from enum import StrEnum
 from typing import ClassVar
 
+from agent.rag.retrieval.ingredient_alias_mapper import (
+    CommonIngredientAliasMapper,
+    IngredientMentionDetectionRequest,
+)
 from agent.rag_route_policy import SkinConcernCue
 from agent.schemas import (
+    CaseQueryInputForm,
     Intent,
     IntentQueryPlan,
     QueryPlanningRequest,
+    QueryTurnKind,
     RagRoute,
 )
 
@@ -35,6 +41,18 @@ class EvidenceQueryAxis(StrEnum):
 
     EFFICACY = "효능"
     PRECAUTION = "주의사항"
+
+
+class CaseBodyAreaCue(StrEnum):
+    FOREHEAD = "이마"
+    NOSE = "코"
+    CHEEK = "볼"
+    CHIN = "턱"
+    JAWLINE = "턱선"
+    EYE = "눈가"
+    MOUTH = "입가"
+    T_ZONE = "T존"
+    U_ZONE = "U존"
 
 
 class IntentQueryPlanner:
@@ -66,6 +84,10 @@ class IntentQueryPlanner:
         ExplicitCaseContext.NORMAL: ("중성",),
         ExplicitCaseContext.SENSITIVE: ("민감성",),
     }
+    _NUMBER_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"\d+")
+
+    def __init__(self) -> None:
+        self._ingredient_aliases = CommonIngredientAliasMapper()
 
     def build(self, request: QueryPlanningRequest) -> IntentQueryPlan:
         parsed = request.parsed_request
@@ -125,6 +147,16 @@ class IntentQueryPlanner:
         base_query = self._effective_query(request.original_message, parsed.query)
         if base_query is None:
             return None
+        if (
+            request.turn_kind is QueryTurnKind.INITIAL
+            and parsed.case_query_input_form is CaseQueryInputForm.FRAGMENT
+        ):
+            rewritten = self._strip_case_instructions(parsed.query_plan.case_query or "")
+            if rewritten and self._preserves_explicit_case_terms(
+                request.original_message, rewritten
+            ):
+                # 이미 수행한 의도 해석의 초안을 사용하되, 없는 조건을 보탠 초안은 원문으로 되돌린다.
+                return rewritten
         # 원문을 기반으로 해야 생활·환경 표현을 보존할 수 있다. 상품 선택과 루틴 실행 부분만
         # 제거해 임베딩 질의를 짧은 키워드 목록으로 다시 축약하지 않는다.
         base_query = self._strip_case_instructions(base_query)
@@ -142,6 +174,28 @@ class IntentQueryPlanner:
             if term.casefold() not in base_query.casefold()
         ]
         return self._normalize(" ".join([*missing_terms, base_query]))
+
+    def _preserves_explicit_case_terms(self, original: str, rewritten: str) -> bool:
+        source = original.casefold()
+        candidate = rewritten.casefold()
+        if set(self._NUMBER_PATTERN.findall(candidate)) - set(
+            self._NUMBER_PATTERN.findall(source)
+        ):
+            return False
+        if set(self._explicit_context(rewritten)) - set(self._explicit_context(original)):
+            return False
+        for cues in (SkinConcernCue, CaseBodyAreaCue):
+            source_cues = {cue for cue in cues if cue.value.casefold() in source}
+            candidate_cues = {cue for cue in cues if cue.value.casefold() in candidate}
+            if source_cues != candidate_cues:
+                return False
+        source_ingredients = self._ingredient_aliases.detect_mentions(
+            IngredientMentionDetectionRequest(text=original)
+        )
+        candidate_ingredients = self._ingredient_aliases.detect_mentions(
+            IngredientMentionDetectionRequest(text=rewritten)
+        )
+        return set(source_ingredients.mentions) == set(candidate_ingredients.mentions)
 
     def _strip_case_instructions(self, query: str) -> str:
         stripped = query

@@ -19,6 +19,7 @@ from agent.rag.case_claim_schemas import (
 from agent.rag.case_claim_validator import CaseClaimValidator
 from agent.rag.case_schemas import (
     DEFAULT_CASE_CANDIDATE_LIMIT,
+    DEFAULT_CASE_RERANK_LIMIT,
     CaseBundle,
     CaseRerankRequest,
     CaseSearchRequest,
@@ -50,6 +51,7 @@ from agent.rag.retrieval.case_candidate_selector import (
     CaseCandidateSelectionRequest,
     CaseMetadataCandidateSelector,
 )
+from agent.rag.retrieval.case_care_compatibility import CaseCareCompatibilityPolicy
 from agent.rag.retrieval.ingredient_alias_mapper import CommonIngredientAliasMapper
 from agent.rag.schemas import (
     BGE_M3_EMBEDDING_DIMENSIONS,
@@ -101,6 +103,7 @@ class RagWorkflowNodes:
         self._ingredient_repository = ingredient_repository
         self._case_claim_validator = CaseClaimValidator()
         self._case_candidate_selector = CaseMetadataCandidateSelector()
+        self._case_care_compatibility = CaseCareCompatibilityPolicy()
         self._case_claim_anchor_adapter = CaseClaimToEvidenceQueryAnchorAdapter()
         self._case_usage_guidance = CaseUsageGuidanceExtractor()
         self._ingredient_aliases = CommonIngredientAliasMapper()
@@ -195,15 +198,34 @@ class RagWorkflowNodes:
                 CaseRerankRequest(
                     query=self._case_query(state),
                     candidates=selection.candidates,
+                    care_context=parsed.care_context,
                 )
             )
             state.case_bundle = selected_bundle.model_copy(update={"rerank": rerank})
         except (OSError, RuntimeError, TypeError, ValueError) as error:
-            # 재정렬 실패 시에도 메타데이터 선별 뒤의 벡터 순위는 출처가 보존된 후보이므로 쓴다.
-            state.case_bundle = selected_bundle.model_copy(update={"rerank_fallback_used": True})
+            # 리랭커가 실패해도 같은 관리 적합성 정책을 거쳐야 우회 노출을 막을 수 있다.
+            parsed = state.parsed_request
+            fallback_hits = (
+                [
+                    hit
+                    for hit in selected_bundle.search.hits
+                    if not self._case_care_compatibility.assess(
+                        care_context=parsed.care_context,
+                        page_content=hit.page_content,
+                    ).is_incompatible()
+                ]
+                if parsed is not None
+                else []
+            )[:DEFAULT_CASE_RERANK_LIMIT]
+            state.case_bundle = selected_bundle.model_copy(
+                update={
+                    "rerank_fallback_used": True,
+                    "fallback_hits": fallback_hits,
+                }
+            )
             self._runtime.add_tool_failure(
                 state,
-                f"NIA Case rerank 실패로 메타데이터 선별 벡터 순위를 사용합니다: {error}",
+                f"NIA Case rerank 실패로 관리 적합성 검사 후 벡터 순위를 사용합니다: {error}",
             )
         self._runtime.record_node(
             state,

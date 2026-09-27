@@ -34,12 +34,15 @@ from agent.rag.ports import (
     TextEmbedder,
 )
 from agent.rag.schemas import (
+    CareContext,
+    CarePriority,
     EmbeddingRequest,
     EmbeddingResult,
     EvidenceSearchRequest,
     EvidenceSearchResult,
     IngredientResolveRequest,
     IngredientResolveResult,
+    IrritationStatus,
     LookupStatus,
     ProductCandidateSet,
     ProductGetRequest,
@@ -49,6 +52,8 @@ from agent.rag.schemas import (
 )
 from agent.schemas import (
     AuthenticatedChatContext,
+    CaseQueryInputForm,
+    CaseQueryTaskStatus,
     ChatServiceRequest,
     ChatStatus,
     ChatTurnInput,
@@ -112,6 +117,28 @@ class FailingCaseRetriever(CaseRetriever):
         self._calls.append(CaseWorkflowCall.CASE_SEARCH)
         self.requests.append(request.model_copy(deep=True))
         raise RuntimeError("단일 Case 검색 실패 테스트")
+
+
+class FallbackSafetyCaseRetriever(CaseRetriever):
+    def __init__(self, include_safe_case: bool) -> None:
+        self._include_safe_case = include_safe_case
+        self._delegate = FixtureCaseRetriever()
+
+    async def search(self, request: CaseSearchRequest) -> CaseSearchResult:
+        result = await self._delegate.search(request)
+        safe_case = result.hits[0]
+        risky_case = safe_case.model_copy(
+            update={
+                "case_id": "fixture-risky-case",
+                "page_content": (
+                    "[질문]\n피지가 많고 볼이 화끈거립니다.\n"
+                    "[답변]\n살리실산(BHA) 필링 제품을 꾸준히 사용하세요."
+                ),
+                "vector_similarity": 1.1,
+            }
+        )
+        hits = [risky_case, safe_case] if self._include_safe_case else [risky_case]
+        return result.model_copy(update={"hits": hits})
 
 
 class TrackingCaseReranker(CaseReranker):
@@ -279,6 +306,61 @@ class CaseWorkflowHarness:
 
 
 class TestCaseTwoLayerRagWorkflow:
+    async def test_목적_없는_첫_고민_키워드는_Case_선정_뒤_조건을_묻는다(self) -> None:
+        calls: list[CaseWorkflowCall] = []
+        harness = CaseWorkflowHarness()
+        retriever = TrackingCaseRetriever(calls)
+        extractor = TrackingCaseClaimExtractor(calls)
+        llm = FixedCaseWorkflowLlm(
+            ParsedRequest(
+                intents=[Intent.CLARIFICATION],
+                query="여드름",
+                query_plan=IntentQueryPlan(case_query="여드름"),
+                case_query_input_form=CaseQueryInputForm.FRAGMENT,
+                case_query_task_status=CaseQueryTaskStatus.UNSPECIFIED,
+                skin_concerns=["여드름"],
+            )
+        )
+        app = harness.create(
+            calls,
+            llm=llm,
+            case_retriever=retriever,
+            case_claim_extractor=extractor,
+        )
+
+        output = await app.service.handle_turn(harness.request("keyword-1", "여드름"))
+
+        assert [request.query for request in retriever.requests] == ["여드름"]
+        assert CaseWorkflowCall.CASE_RERANK in calls
+        assert not extractor.requests
+        assert CaseWorkflowCall.PRODUCT not in calls
+        assert output.status is ChatStatus.NEEDS_INPUT
+        assert output.follow_up_question is not None
+        assert "관련 유사 사례" in output.follow_up_question
+        assert "어느 부위" in output.follow_up_question
+
+    async def test_첫_키워드형_입력만_LLM_Case_질의로_검색한다(self) -> None:
+        calls: list[CaseWorkflowCall] = []
+        harness = CaseWorkflowHarness()
+        original = "코 블랙헤드 자극 덜"
+        rewritten = "코 블랙헤드를 자극을 줄이면서 관리하고 싶습니다."
+        retriever = TrackingCaseRetriever(calls)
+        llm = FixedCaseWorkflowLlm(
+            ParsedRequest(
+                intents=[Intent.PRODUCT_DISCOVERY],
+                query=rewritten,
+                query_plan=IntentQueryPlan(case_query=rewritten),
+                case_query_input_form=CaseQueryInputForm.FRAGMENT,
+                rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+            )
+        )
+        app = harness.create(calls, llm=llm, case_retriever=retriever)
+
+        await app.service.handle_turn(harness.request("fragment-1", original))
+        await app.service.handle_turn(harness.request("fragment-2", original))
+
+        assert [request.query for request in retriever.requests] == [rewritten, original]
+
     async def test_복합_요청의_문맥을_단일_Case_질의로_사용한다(
         self,
     ) -> None:
@@ -307,6 +389,10 @@ class TestCaseTwoLayerRagWorkflow:
                     routine_query="추천 상품으로 3일간 스킨케어 루틴 구성",
                 ),
                 skin_concerns=["여드름", "지성 피부"],
+                care_context=CareContext(
+                    irritation_status=IrritationStatus.ACTIVE,
+                    priority=CarePriority.RECOVERY,
+                ),
                 rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
             )
         )
@@ -336,6 +422,7 @@ class TestCaseTwoLayerRagWorkflow:
         assert "상품" not in retrieval_queries[0]
         assert "루틴" not in retrieval_queries[0]
         assert reranker.requests[0].query == case_query
+        assert reranker.requests[0].care_context.requires_recovery_first()
         assert extractor.requests[0].query == case_query
 
     async def test_Evidence가_없어도_Case_Claim_상품을_유지한다(self) -> None:
@@ -418,7 +505,82 @@ class TestCaseTwoLayerRagWorkflow:
         assert CaseWorkflowCall.EVIDENCE in calls
         assert CaseWorkflowCall.PRODUCT in calls
         assert output.status is ChatStatus.PARTIAL
-        assert "메타데이터 선별 후 벡터 순위 Top-3" in output.message
+        assert "관리 적합성 검사 후 벡터 순위 사례" in output.message
+        assert output.retryable is True
+
+    async def test_reranker_실패_시_부적합_Case를_제외하고_안전한_후보를_사용한다(
+        self,
+    ) -> None:
+        calls: list[CaseWorkflowCall] = []
+        harness = CaseWorkflowHarness()
+        extractor = TrackingCaseClaimExtractor(calls)
+        llm = FixedCaseWorkflowLlm(
+            ParsedRequest(
+                intents=[Intent.PRODUCT_DISCOVERY],
+                query="피지가 많고 볼이 화끈거려 회복을 우선하고 싶어요.",
+                skin_concerns=["피지"],
+                care_context=CareContext(
+                    irritation_status=IrritationStatus.ACTIVE,
+                    priority=CarePriority.RECOVERY,
+                ),
+                rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+            )
+        )
+        app = harness.create(
+            calls,
+            llm=llm,
+            case_retriever=FallbackSafetyCaseRetriever(include_safe_case=True),
+            case_reranker=FailingCaseReranker(calls),
+            case_claim_extractor=extractor,
+        )
+
+        output = await app.service.handle_turn(
+            harness.request(
+                "case-safe-fallback-1",
+                "피지가 많고 볼이 화끈거려 회복을 우선하고 싶어요.",
+            )
+        )
+
+        assert len(extractor.requests) == 1
+        assert [case.case_id for case in extractor.requests[0].cases] == [
+            "fixture-nia-case-1"
+        ]
+        assert "관리 적합성 검사 후 벡터 순위 사례" in output.message
+
+    async def test_reranker_실패_시_안전한_후보가_없으면_Claim을_추출하지_않는다(
+        self,
+    ) -> None:
+        calls: list[CaseWorkflowCall] = []
+        harness = CaseWorkflowHarness()
+        llm = FixedCaseWorkflowLlm(
+            ParsedRequest(
+                intents=[Intent.PRODUCT_DISCOVERY],
+                query="피지가 많고 볼이 화끈거려 회복을 우선하고 싶어요.",
+                skin_concerns=["피지"],
+                care_context=CareContext(
+                    irritation_status=IrritationStatus.ACTIVE,
+                    priority=CarePriority.RECOVERY,
+                ),
+                rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+            )
+        )
+        app = harness.create(
+            calls,
+            llm=llm,
+            case_retriever=FallbackSafetyCaseRetriever(include_safe_case=False),
+            case_reranker=FailingCaseReranker(calls),
+        )
+
+        output = await app.service.handle_turn(
+            harness.request(
+                "case-safe-fallback-empty-1",
+                "피지가 많고 볼이 화끈거려 회복을 우선하고 싶어요.",
+            )
+        )
+
+        assert CaseWorkflowCall.CLAIM_EXTRACTION not in calls
+        assert CaseWorkflowCall.PRODUCT not in calls
+        assert "살리실산" not in output.message
         assert output.retryable is True
 
     async def test_단일_Case_검색_실패는_후속_Case_처리를_중단한다(self) -> None:

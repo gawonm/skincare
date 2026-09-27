@@ -25,7 +25,15 @@ from agent.rag.case_schemas import (
 )
 from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
 from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
-from agent.rag.schemas import ChatModelConfig, LlmProvider, LocalChatConfig, LocalRerankerConfig
+from agent.rag.schemas import (
+    CareContext,
+    CarePriority,
+    ChatModelConfig,
+    IrritationStatus,
+    LlmProvider,
+    LocalChatConfig,
+    LocalRerankerConfig,
+)
 
 
 class FakeStructuredCaseClaimClient:
@@ -69,6 +77,12 @@ class FakeCaseCrossEncoder:
 
 
 class CaseRuntimeFixture:
+    def recovery_context(self) -> CareContext:
+        return CareContext(
+            irritation_status=IrritationStatus.ACTIVE,
+            priority=CarePriority.RECOVERY,
+        )
+
     def hit(
         self,
         case_id: str,
@@ -218,6 +232,7 @@ class TestLocalBgeCaseRerankerV2M3:
                     "모공 관리와 장벽 회복 중 무엇을 우선해야 할까요?"
                 ),
                 candidates=candidates,
+                care_context=fixture.recovery_context(),
                 limit=3,
             )
         )
@@ -283,6 +298,7 @@ class TestLocalBgeCaseRerankerV2M3:
             CaseRerankRequest(
                 query="볼이 화끈거립니다. 장벽 회복을 먼저 하고 싶어요.",
                 candidates=candidates,
+                care_context=fixture.recovery_context(),
                 limit=3,
             )
         )
@@ -316,6 +332,7 @@ class TestLocalBgeCaseRerankerV2M3:
             CaseRerankRequest(
                 query="볼이 화끈거립니다. 장벽 회복을 먼저 하고 싶어요.",
                 candidates=candidates,
+                care_context=fixture.recovery_context(),
                 limit=3,
             )
         )
@@ -349,6 +366,7 @@ class TestLocalBgeCaseRerankerV2M3:
             CaseRerankRequest(
                 query="볼이 화끈거립니다. 장벽 회복을 먼저 하고 싶어요.",
                 candidates=candidates,
+                care_context=fixture.recovery_context(),
                 limit=3,
             )
         )
@@ -379,6 +397,7 @@ class TestLocalBgeCaseRerankerV2M3:
             CaseRerankRequest(
                 query="볼이 따갑고 붉어집니다. 피부를 먼저 안정시키고 싶어요.",
                 candidates=candidates,
+                care_context=fixture.recovery_context(),
                 limit=3,
             )
         )
@@ -410,6 +429,7 @@ class TestLocalBgeCaseRerankerV2M3:
             CaseRerankRequest(
                 query="볼이 화끈거립니다. 장벽 회복을 먼저 하고 싶어요.",
                 candidates=candidates,
+                care_context=fixture.recovery_context(),
                 limit=3,
             )
         )
