@@ -193,16 +193,16 @@ class CandidatePoolArguments(RagModel):
 
 class CandidatePoolArgumentParser:
     DEFAULT_CALIBRATION_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_v1.jsonl"
     )
     DEFAULT_CORPUS_PATH: ClassVar[Path] = Path(
         "data/processed/nia_case_documents_10s_30s.jsonl"
     )
     DEFAULT_INTERNAL_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_pool_v1.jsonl"
     )
     DEFAULT_BLIND_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_blind_v1.jsonl"
     )
 
     def parse(self) -> CandidatePoolArguments:

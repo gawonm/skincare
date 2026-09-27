@@ -238,22 +238,22 @@ class NiaCaseCorpusRelativeAnchorSampler:
 
 class NiaCaseCorpusRelativeGoldenCli:
     QUERY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_queries_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_queries_v1.jsonl"
     )
     INTERNAL_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
     BLIND_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_blind_v1.jsonl"
     )
     QUERY_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_queries_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_queries_v1.jsonl"
     )
     MANIFEST_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_anchor_manifest_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_anchor_manifest_v1.jsonl"
     )
     BLIND_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_anchor_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_anchor_blind_v1.jsonl"
     )
 
     @classmethod

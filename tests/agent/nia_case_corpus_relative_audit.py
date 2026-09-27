@@ -271,19 +271,19 @@ class NiaCaseCorpusRelativeAuditMarkdownReporter:
 
 class NiaCaseCorpusRelativeAuditCli:
     SOURCE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_anchor_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_anchor_blind_v1.jsonl"
     )
     MANIFEST_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_audit_manifest_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_audit_manifest_v1.jsonl"
     )
     BLIND_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_audit_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_audit_blind_v1.jsonl"
     )
     JUDGMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_audit_judgments_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_audit_judgments_v1.jsonl"
     )
     GOLDEN_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v2.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v2.jsonl"
     )
     REPORT_OUTPUT_PATH: ClassVar[Path] = Path(
         "docs/agent/RAG_YK/2026-09-26_NIA_CASE_CORPUS_RELATIVE_GOLDEN_AUDIT.md"

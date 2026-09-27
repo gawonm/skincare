@@ -309,16 +309,16 @@ class NiaCaseOpenAiE2EMarkdownReporter:
 class NiaCaseOpenAiE2ECli:
     RUN_ID: ClassVar[str] = "openai_e2e_20260926_1740_v1"
     ROUTING_RESULT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_openai_routing_once_20260926_1740_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_openai_routing_once_20260926_1740_v1.jsonl"
     )
     ROUTING_SUMMARY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_openai_routing_once_summary_20260926_1740_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_openai_routing_once_summary_20260926_1740_v1.jsonl"
     )
     RETRIEVAL_RESULT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_results_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_results_20260926_1416_v1.jsonl"
     )
     RESULT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_openai_e2e_summary_20260926_1740_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_openai_e2e_summary_20260926_1740_v1.jsonl"
     )
     REPORT_PATH: ClassVar[Path] = Path(
         "docs/agent/RAG_YK/2026-09-26_1740_NIA_CASE_OPENAI_E2E_REPORT.md"

@@ -489,7 +489,7 @@ Agent 전체 테스트: 265 passed
 2026-09-24 Anchor 골든셋 평가 결과:
 
 - 실제 Case를 먼저 선정하고 사용자형 질의를 작성한 24건의 `relevant_case_ids` 골든 JSONL을
-  `tests/agent/nia_case_retrieval_golden_24.jsonl`에 구축했다.
+  `tests/agent/nia_case_eval_data/nia_case_retrieval_golden_24.jsonl`에 구축했다.
 - baseline Hit@20은 91.7%였으나 복수 질의+RRF는 50.0%로 하락했다.
 - 전용 rerank 질의도 MRR@3 0.2847로 canonical rerank의 0.4583보다 낮았다.
 - 따라서 현재 구현을 품질 개선 완료로 판정하지 않으며 운영 기본값은 baseline을 유지한다.

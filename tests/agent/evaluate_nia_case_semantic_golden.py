@@ -484,17 +484,17 @@ class NiaCaseSemanticEvaluationWriter:
 
 class NiaCaseSemanticEvaluationCli:
     QUERY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_queries_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_queries_v1.jsonl"
     )
-    GOLDEN_PATH: ClassVar[Path] = Path("tests/agent/nia_case_semantic_golden_v1.jsonl")
+    GOLDEN_PATH: ClassVar[Path] = Path("tests/agent/nia_case_eval_data/nia_case_semantic_golden_v1.jsonl")
     INTERNAL_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
     RERANK_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_rerank_probe_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_rerank_probe_v1.jsonl"
     )
     OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_results_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_results_v1.jsonl"
     )
     REPORT_PATH: ClassVar[Path] = Path(
         "docs/agent/RAG_YK/2026-09-26_0112_NIA_CASE_SEMANTIC_GOLDEN_EVAL_REPORT.md"

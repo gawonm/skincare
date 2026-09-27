@@ -150,22 +150,22 @@ class NiaCaseCalibrationSupplementSampler:
 
 class NiaCaseCalibrationSupplementCli:
     CALIBRATION_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_v1.jsonl"
     )
     INTERNAL_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_pool_v1.jsonl"
     )
     BLIND_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_blind_v1.jsonl"
     )
     SAMPLE_MANIFEST_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_sample_manifest_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_sample_manifest_v1.jsonl"
     )
     MANIFEST_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_supplement_manifest_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_supplement_manifest_v1.jsonl"
     )
     BLIND_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_supplement_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_supplement_blind_v1.jsonl"
     )
 
     @classmethod

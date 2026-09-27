@@ -292,16 +292,16 @@ class NiaCaseCorpusRelativeAdjudicationMarkdownReporter:
 
 class NiaCaseCorpusRelativeAdjudicationCli:
     AUDIT_JUDGMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_audit_judgments_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_audit_judgments_v1.jsonl"
     )
     ADJUDICATION_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_adjudications_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_adjudications_v1.jsonl"
     )
     GOLDEN_V3_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v3.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v3.jsonl"
     )
     EVALUATION_V3_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_evaluation_results_v3.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_evaluation_results_v3.jsonl"
     )
     REPORT_OUTPUT_PATH: ClassVar[Path] = Path(
         "docs/agent/RAG_YK/2026-09-26_NIA_CASE_CORPUS_RELATIVE_GOLDEN_V3_ADJUDICATION_REPORT.md"

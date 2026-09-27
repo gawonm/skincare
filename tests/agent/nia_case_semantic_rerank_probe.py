@@ -230,17 +230,17 @@ class NiaCaseSemanticRerankProbeWriter:
 
 class NiaCaseSemanticRerankProbeCli:
     QUERY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_queries_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_queries_v1.jsonl"
     )
     INTERNAL_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
-    GOLDEN_PATH: ClassVar[Path] = Path("tests/agent/nia_case_semantic_golden_v1.jsonl")
+    GOLDEN_PATH: ClassVar[Path] = Path("tests/agent/nia_case_eval_data/nia_case_semantic_golden_v1.jsonl")
     OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_rerank_probe_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_rerank_probe_v1.jsonl"
     )
     UNJUDGED_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_rerank_unjudged_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_rerank_unjudged_blind_v1.jsonl"
     )
 
     @classmethod

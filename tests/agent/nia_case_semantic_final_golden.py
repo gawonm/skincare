@@ -263,20 +263,20 @@ class NiaCaseSemanticGoldenArtifact:
 
 class NiaCaseSemanticGoldenCli:
     QUERY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_queries_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_queries_v1.jsonl"
     )
     REFERENCE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_references_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_references_v1.jsonl"
     )
     INTERNAL_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
-    JUDGMENT_DIRECTORY: ClassVar[Path] = Path("tests/agent")
+    JUDGMENT_DIRECTORY: ClassVar[Path] = Path("tests/agent/nia_case_eval_data")
     JUDGMENT_PATTERNS: ClassVar[tuple[str, ...]] = (
         "nia_case_semantic_evaluation_anchor_judgments_*_v1.jsonl",
         "nia_case_semantic_evaluation_rerank_judgments_*_v1.jsonl",
     )
-    OUTPUT_PATH: ClassVar[Path] = Path("tests/agent/nia_case_semantic_golden_v1.jsonl")
+    OUTPUT_PATH: ClassVar[Path] = Path("tests/agent/nia_case_eval_data/nia_case_semantic_golden_v1.jsonl")
     GOLDEN_VERSION: ClassVar[str] = "nia_case_semantic_golden/v1"
     CORPUS_DOCUMENT_COUNT: ClassVar[int] = 3_581
     CORPUS_TEXT_VERSION: ClassVar[str] = "nia_case_text/v1"

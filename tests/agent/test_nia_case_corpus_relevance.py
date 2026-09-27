@@ -163,13 +163,13 @@ class TestNiaCaseCorpusRelevanceJudgment:
 
 class TestNiaCaseCorpusRelevanceReviewBuilder:
     ANCHOR_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_anchor_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_blind_v1.jsonl"
     )
     RERANK_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_rerank_unjudged_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_rerank_unjudged_blind_v1.jsonl"
     )
     FINAL_GOLDEN_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_golden_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_golden_v1.jsonl"
     )
 
     def test_merges_all_681_candidates_without_exposing_old_labels(self) -> None:
@@ -204,10 +204,10 @@ class TestNiaCaseCorpusRelevanceReviewBuilder:
 
 class TestNiaCaseCorpusRelevanceJudgmentArtifacts:
     REVIEW_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relevance_review_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relevance_review_blind_v1.jsonl"
     )
     JUDGMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relevance_judgments_acne_02_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relevance_judgments_acne_02_v1.jsonl"
     )
 
     def test_acne_02_judgments_cover_the_entire_blind_batch(self) -> None:
@@ -229,13 +229,13 @@ class TestNiaCaseCorpusRelevanceJudgmentArtifacts:
 
 class TestNiaCaseCorpusRelativeGoldenSelection:
     QUERY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_queries_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_queries_v1.jsonl"
     )
     INTERNAL_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
     BLIND_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_blind_v1.jsonl"
     )
 
     def test_selects_twenty_four_queries_without_calibration_query(self) -> None:
@@ -299,16 +299,16 @@ class TestNiaCaseCorpusRelativeGoldenSelection:
 
 class TestNiaCaseCorpusRelativeAuditSampler:
     BLIND_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_anchor_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_anchor_blind_v1.jsonl"
     )
     AUDIT_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_audit_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_audit_blind_v1.jsonl"
     )
     AUDIT_JUDGMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_audit_judgments_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_audit_judgments_v1.jsonl"
     )
     GOLDEN_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v2.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v2.jsonl"
     )
 
     def test_samples_one_blind_candidate_per_active_query(self) -> None:
@@ -364,16 +364,16 @@ class TestNiaCaseCorpusRelativeAuditSampler:
 
 class TestNiaCaseCorpusRelativeGoldenAdjudicator:
     GOLDEN_V2_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v2.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v2.jsonl"
     )
     GOLDEN_V3_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v3.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v3.jsonl"
     )
     AUDIT_JUDGMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_audit_judgments_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_audit_judgments_v1.jsonl"
     )
     ADJUDICATION_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_adjudications_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_adjudications_v1.jsonl"
     )
 
     def test_applies_only_five_recorded_changes_and_reproduces_v3(self) -> None:
@@ -441,16 +441,16 @@ class TestNiaCaseCorpusRelativeLiveMarkdownReporter:
 
 class TestNiaCaseCorpusRelativeLiveGoldenExpander:
     GOLDEN_V3_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v3.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v3.jsonl"
     )
     LIVE_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
     )
     LIVE_UNJUDGED_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_unjudged_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_unjudged_20260926_1416_v1.jsonl"
     )
     SUPPLEMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_supplement_judgments_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_supplement_judgments_20260926_1416_v1.jsonl"
     )
 
     def test_expands_v3_with_all_twenty_live_top3_judgments(self) -> None:
@@ -488,16 +488,16 @@ class TestNiaCaseCorpusRelativeLiveGoldenExpander:
 
 class TestNiaCaseRerankerRepeatChecker:
     BASELINE_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
     LIVE_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
     )
     FIRST_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_probe_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_probe_20260926_1416_v1.jsonl"
     )
     REPEAT_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_probe_repeat_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_probe_repeat_20260926_1416_v1.jsonl"
     )
 
     def test_current_reranker_repeats_all_twenty_four_ordered_top3(self) -> None:
@@ -548,15 +548,15 @@ class TestNiaCaseRerankerRepeatChecker:
 
 class TestNiaCaseCorpusRelativeJudgmentArtifacts:
     REVIEW_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_anchor_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_anchor_blind_v1.jsonl"
     )
-    JUDGMENT_DIRECTORY: ClassVar[Path] = Path("tests/agent")
+    JUDGMENT_DIRECTORY: ClassVar[Path] = Path("tests/agent/nia_case_eval_data")
     JUDGMENT_GLOB: ClassVar[str] = "nia_case_corpus_relative_judgments_*_v1.jsonl"
     RERANK_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_rerank_unjudged_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_rerank_unjudged_blind_v1.jsonl"
     )
     RERANK_JUDGMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_rerank_judgments_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_rerank_judgments_v1.jsonl"
     )
 
     def test_each_active_judgment_batch_covers_one_blind_query(self) -> None:

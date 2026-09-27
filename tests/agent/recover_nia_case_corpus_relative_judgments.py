@@ -332,10 +332,10 @@ class NiaCaseCorpusRelativeRecoveryVerifier:
 
 class NiaCaseCorpusRelativeRecoveryCli:
     ANCHOR_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_anchor_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_anchor_blind_v1.jsonl"
     )
     RERANK_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_rerank_unjudged_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_rerank_unjudged_blind_v1.jsonl"
     )
 
     @classmethod
