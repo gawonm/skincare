@@ -218,10 +218,200 @@ HTTP 상태 코드는 아래 셋만 쓰고, Agent가 돌려주는 오류는 상�
   "다시 시도"를 함께 보여 준다. 다시 시도할 때는 같은 `request_id`를 그대로 보낸다(멱등성).
 - `503`: 서버에 Agent가 아직 준비되지 않았을 때(배포·기동 중 일시적 상태).
 
+## 응답 확장: 섹션 (2026-09-24 확정)
+
+위 "출력" 절의 필드는 그대로 유지하고, **필드를 추가만** 한다. **Agent 코드 변경을 요구하지
+않는다.** backend 와 front 만으로 구현한다.
+
+### 왜 필요한가
+
+Agent 의 `message`는 LLM 이 쓴 글이 아니라 처리 단계별 문단을 `"\n\n"`로 이어 붙인 것이다
+(`agent/nodes.py` `finalize_response`). 그래서 다음 문제가 있다.
+
+- 같은 내용이 `message` 글과 `artifacts`/`unresolved` 양쪽에 있다. 카드를 그리면 말풍선 글과 중복된다.
+- 프론트가 `Artifact`를 `"candidate_set_id" in artifact` 같은 키 유무로 구분한다(종류 태그 없음).
+- `ProductRecord`에는 이름·성분 id 정도만 있어 카드에 넣을 이미지·브랜드·가격이 없다.
+- `message` 글은 Agent 가 다음 턴의 대화 기억으로 다시 읽으므로, Agent 쪽에서 글을 줄일 수 없다.
+
+### 해법: `message`를 종류 태그가 붙은 섹션 목록으로 나눠서 내려준다
+
+backend 가 `message`를 문단으로 나누고, 각 문단을 **구조화 데이터와 대조해 증명될 때만** 풍부한
+섹션으로 바꾼다. 증명되지 않으면 그냥 글(`text`)로 둔다. 원문 문단은 어느 섹션에서도 버리지 않는다.
+
+타입은 `backend/schemas/chat.py`가 소유한다(규칙 11). 프론트는 `frontend/src/schemas/chat.ts`에 zod 로
+미러링만 한다.
+
+```python
+class ChatSectionType(StrEnum):
+    TEXT = "text"
+    PRODUCT_LIST = "product_list"
+    ROUTINE = "routine"
+    EVIDENCE = "evidence"
+    NOTICE = "notice"
+
+
+class ChatTextSection(BaseModel):
+    type: Literal[ChatSectionType.TEXT]
+    text: str
+
+
+class ProductCardView(BaseModel):
+    rank: int
+    product_id: str
+    name: str
+    # 아래 4개는 product 테이블에서 보강한다. Agent 데모 상품 등 테이블에 없으면 None.
+    brand: str | None
+    image_url: str | None          # CDN 원본 URL 그대로 (docs/data/README.md 규칙)
+    lowest_price: int | None
+    service_category: ProductServiceCategory | None
+    reasons: list[str]             # ProductCandidate.reasons
+    cautions: list[str]            # ProductCandidate.unresolved (검증 한계)
+    basis_label: str | None        # 문단 줄 끝 "(…)" 안의 근거 표시. 없으면 None
+
+
+class ProductGroupView(BaseModel):
+    role_label: str | None         # "토너" 등. 문단의 "[역할]" 머리글이 Agent 라벨과 일치할 때만
+    items: list[ProductCardView]
+
+
+class ChatProductListSection(BaseModel):
+    type: Literal[ChatSectionType.PRODUCT_LIST]
+    candidate_set_id: str
+    groups: list[ProductGroupView]
+    text: str                      # 원문 문단(대체 표시용)
+
+
+class RoutineStepView(BaseModel):
+    period: DayPeriod
+    order: int
+    product_id: str
+    product_name: str
+    reason: str
+
+
+class RoutineDayView(BaseModel):
+    weekday: Weekday
+    steps: list[RoutineStepView]
+
+
+class ChatRoutineSection(BaseModel):
+    type: Literal[ChatSectionType.ROUTINE]
+    routine_id: str
+    version: int
+    days: list[RoutineDayView]
+    constraints: list[str]
+    changes: list[str]
+    text: str                      # 원문 문단. 역할 라벨·"배치하지 않음" 줄은 여기에만 있다
+
+
+class ReferenceView(BaseModel):
+    source_title: str
+    locator: str
+    url: str | None
+    source_type: EvidenceSourceType
+
+
+class ChatEvidenceSection(BaseModel):
+    type: Literal[ChatSectionType.EVIDENCE]
+    answer_id: str
+    subject: str
+    text: str                      # EvidenceAnswer.summary 와 같은 문단
+    references: list[ReferenceView]
+
+
+class ChatNoticeSection(BaseModel):
+    type: Literal[ChatSectionType.NOTICE]
+    kind: UnresolvedKind
+    detail: str
+    retryable: bool
+
+
+ChatSection = Annotated[
+    ChatTextSection | ChatProductListSection | ChatRoutineSection
+    | ChatEvidenceSection | ChatNoticeSection,
+    Field(discriminator="type"),
+]
+```
+
+`ChatTurnResponse`에는 아래 필드를 **추가만** 한다.
+
+```python
+sections: list[ChatSection]    # message 를 문단 순서대로 나눈 것. 항상 1개 이상
+```
+
+기존 `message`, `artifacts`, `citations`, `unresolved`, `intents`, `save_handoff` 등은 **그대로 둔다**
+(추가형 전환). 프론트가 `sections`로 갈아탄 뒤 옛 필드를 정리하는 것은 별도 후속 변경으로 하며, 그때
+필드 삭제를 먼저 알린다.
+
+### 문단을 어떻게 알아보나 (backend `ChatSectionBuilder`)
+
+문단은 `message.split("\n\n")`로 나눈다. 각 문단은 아래 순서로 검사하고, **모두 구조화 데이터와 대조**한다.
+자유 문장의 표현을 추측하지 않는다.
+
+| 섹션 | 인정 조건 | 근거 |
+| --- | --- | --- |
+| `notice` | 문단 전체가 어떤 `UnresolvedItem.detail`과 **정확히 같다** | Agent 가 같은 문자열을 `response_parts`와 `unresolved`에 함께 넣는다 |
+| `evidence` | 문단 전체가 어떤 `EvidenceAnswer.summary`와 정확히 같다 | `summary`가 그대로 문단이 된다 |
+| `product_list` | 첫 줄 뒤의 모든 줄이 `"[역할]"` 머리글(Agent 의 `KoreanRoutineRoleLabel` 값) 또는 `"N번. 이름…"` 이고, `N`·이름이 `ProductCandidateSet.candidates`의 `rank`·`product.name`과 일치 | 후보 목록과 대조 |
+| `routine` | `RoutinePlan`이 있고 문단이 모든 `placements`의 `product_name`을 포함 | 루틴 산출물과 대조 |
+| `text` | 위 어디에도 해당하지 않음 | 그대로 글로 표시 |
+
+**실패는 안전한 쪽으로 한다.** 어느 검사에서든 하나라도 어긋나면 그 문단은 `text`가 된다. 정보는
+사라지지 않고, 최악의 경우 이전처럼 글과 카드가 중복될 뿐이다. 각 섹션의 원문(`text`)을 순서대로
+이어 붙이면 원래 `message`가 복원된다. 이 성질은 테스트로 강제한다.
+
+### Agent 와의 암묵적 결합 (변경 요구 아님, 공유 사항)
+
+backend 는 Agent 의 다음 두 형식에 기댄다.
+
+1. 문단 구분자 `"\n\n"` (`finalize_response`)
+2. 상품 목록 문단의 `"[역할]"` 머리글과 `"N번. 이름"` 줄 형식 (`_append_role_product_message`)
+
+어긋나면 위 규칙대로 조용히 `text`로 떨어질 뿐 깨지지는 않는다. 다만 카드가 사라진 것처럼 보일 수
+있으므로 다음으로 대비한다.
+
+- 문자열 상수·Enum(`KoreanRoutineRoleLabel` 등)은 Agent 모듈에서 **import 해서** 쓴다. 이름이 바뀌면
+  import 오류로 바로 드러난다. 문구를 backend 에 복사해 두지 않는다.
+- 실제 Agent 형식의 샘플 문단으로 회귀 테스트를 둔다.
+- Agent 담당에게는 "이 두 형식에 backend 가 기대고 있다"를 알린다. 형식을 바꿀 때 알려 달라는 부탁이지
+  변경 요구가 아니다.
+
+### 상품 카드 보강
+
+`product_id`는 `product.id`(UUID)와 같은 값이다(`backend/repositories/agent_product_repository.py`).
+backend 가 후보의 `product_id`를 모아 `ProductRepository`로 **한 번에** 조회해 브랜드·이미지·최저가·
+분류를 붙인다. UUID 가 아니거나 테이블에 없는 상품(개발용 fixture 등)은 해당 필드를 `None`으로 두고
+카드는 그대로 낸다. 응답 시점에 조회하므로 가격이 바뀌어도 최신이다. 조회 SQL 은 리포지토리에만 둔다
+(규칙 12).
+
+### front 표시 규칙
+
+- `sections`를 **순서대로** 그린다. `text`는 글, `product_list`는 카드(그룹 머리글은 `role_label`),
+  `notice`는 안내 스타일.
+- `evidence`는 `text`를 본문으로 그리고 `references`를 출처로 붙인다.
+- `routine`은 1차로 `text`를 그대로 그린다(역할 라벨이 여기에만 있다). `save_handoff`가 있으면 "루틴
+  저장" 안내를 붙인다. `days` 기반 격자 표시는 필요할 때 2차로 한다.
+- 알 수 없는 `type`이 오면 무시하지 말고 `text` 필드가 있으면 글로 보여 준다.
+- 프론트는 더 이상 `artifacts`의 키 유무로 종류를 구분하지 않는다. `sections[i].type`으로 분기한다.
+
+### 이 변경이 Agent 에 요구하는 것
+
+**없음.** backend 는 `ChatTurnOutput`을 읽기만 한다. 저장된 대화 기록과 Agent 의 기억도 그대로다.
+
+### 구현 순서
+
+1. backend: `backend/schemas/chat.py`에 위 모델·Enum 추가, `ProductRepository`에 ID 목록 조회 추가,
+   `backend/services/chat_response_builder.py`(`ChatSectionBuilder`) 작성, `ChatTurnService._to_response`가
+   `sections`를 채우도록 연결, 테스트.
+2. front: `schemas/chat.ts`에 zod 미러 추가, `sections` 기반 렌더링으로 전환.
+3. front 전환이 끝나면 별도 계약 변경으로 옛 필드(`artifacts` 등) 정리를 논의한다.
+
 ## 아직 안 정한 것
 
 임의로 채우지 않는다 (규칙 3). front·agent 담당과 합의 후 기록한다.
 
+0. 응답 섹션 확장 후속: 프론트가 `intents`, `is_demo`를 실제로 쓰는지 확인해서 옛 필드 정리 대상에
+   넣을지 정한다(추가형 전환이라 지금은 그대로 둔다).
 1. `candidate_set_id`/`routine_version`을 프론트가 언제 어떻게 채우는지.
 2. "대화 초기화"(에이전트 기억만 새로 시작) 기능이 필요한지. 필요하면 별도 엔드포인트가 필요하다.
 3. 화면은 비어 있는데 Agent가 이전 대화를 언급할 때의 사용자 경험(안내 문구 등)은 front·기획이 판단한다.
