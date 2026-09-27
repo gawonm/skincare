@@ -16,6 +16,7 @@ from agent.rag.claim_schemas import (
 )
 from agent.rag.schemas import (
     ApplicabilityAssessment,
+    CareContext,
     CaseUsageGuidance,
     EvidenceBundle,
     EvidenceConditions,
@@ -171,6 +172,11 @@ class TaskRoute(StrEnum):
     VALIDATE_RESULT = "validate_result"
 
 
+class CaseRerankRoute(StrEnum):
+    ASK_USER = "ask_user"
+    EXTRACT_CLAIMS = "extract_claims"
+
+
 class ValidationRoute(StrEnum):
     REVISE_RESULT = "revise_result"
     FINALIZE_RESPONSE = "finalize_response"
@@ -211,6 +217,21 @@ class CaseRetrievalQueryKind(StrEnum):
     NATURAL_QUESTION = "natural_question"
 
 
+class CaseQueryInputForm(StrEnum):
+    COMPLETE = "complete"
+    FRAGMENT = "fragment"
+
+
+class CaseQueryTaskStatus(StrEnum):
+    REQUESTED = "requested"
+    UNSPECIFIED = "unspecified"
+
+
+class QueryTurnKind(StrEnum):
+    INITIAL = "initial"
+    FOLLOW_UP = "follow_up"
+
+
 class CaseRetrievalQuery(AgentModel):
     kind: CaseRetrievalQueryKind
     text: str = Field(min_length=1)
@@ -243,6 +264,14 @@ class ParsedRequest(AgentModel):
         default_factory=IntentQueryPlan,
         description="Case·Evidence·Product·Routine 단계별 독립 질의",
     )
+    case_query_input_form: CaseQueryInputForm = Field(
+        default=CaseQueryInputForm.COMPLETE,
+        description="이번 사용자 메시지가 Case 검색에 필요한 서술형 질문인지 키워드형 단편인지",
+    )
+    case_query_task_status: CaseQueryTaskStatus = Field(
+        default=CaseQueryTaskStatus.REQUESTED,
+        description="이번 사용자 메시지에 원하는 도움의 방향이 드러나는지",
+    )
     category: ProductCategory | None = Field(default=None, description="특정 상품 카테고리 요청")
     texture: ProductTexture | None = Field(default=None, description="원하는 제형")
     skin_feel: ProductSkinFeel | None = Field(default=None, description="원하는 사용감")
@@ -258,6 +287,10 @@ class ParsedRequest(AgentModel):
     )
     excluded_weekdays: list[Weekday] = Field(default_factory=list, description="제외할 요일")
     reported_experiences: list[str] = Field(default_factory=list, description="사용자가 겪은 피부 반응이나 경험")
+    care_context: CareContext = Field(
+        default_factory=CareContext,
+        description="현재 자극 여부와 사용자가 요청한 관리 우선순위",
+    )
     is_modification: bool = Field(default=False, description="기존 조건이나 루틴의 수정 요청인지 여부")
     pending_answer: bool = Field(default=False, description="시스템의 확인 질문에 대한 답변인지 여부")
     ingredient_mentions: list[str] = Field(default_factory=list, description="사용자가 직접 언급한 성분명 목록")
@@ -270,6 +303,7 @@ class QueryPlanningRequest(AgentModel):
     original_message: str = Field(min_length=1)
     parsed_request: ParsedRequest
     profile_concerns: list[str] = Field(default_factory=list)
+    turn_kind: QueryTurnKind = QueryTurnKind.FOLLOW_UP
 
 
 class TaskContext(AgentModel):
@@ -549,6 +583,7 @@ class AgentState(AgentModel):
     parsed_request: ParsedRequest | None = None
     resolved_entities: ResolvedEntities = Field(default_factory=ResolvedEntities)
     rag_route: RagRoute | None = None
+    ask_after_case_rerank: bool = False
     case_bundle: CaseBundle | None = None
     case_claim_bundle: CaseClaimBundle | None = None
     claim_bundle: ClaimBundle | None = None

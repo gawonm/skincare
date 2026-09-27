@@ -35,6 +35,47 @@ class RagModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
+class IrritationStatus(StrEnum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    UNKNOWN = "unknown"
+
+
+class CarePriority(StrEnum):
+    RECOVERY = "recovery"
+    STANDARD = "standard"
+    UNKNOWN = "unknown"
+
+
+class SkinReaction(StrEnum):
+    BURNING = "burning"
+    STINGING = "stinging"
+    REDNESS = "redness"
+    BARRIER_DAMAGE = "barrier_damage"
+
+
+class CareContext(RagModel):
+    """자연어 표현과 안전 정책 사이에서 현재 피부 상태를 구조화한다."""
+
+    irritation_status: IrritationStatus = IrritationStatus.UNKNOWN
+    priority: CarePriority = CarePriority.UNKNOWN
+    symptoms: list[SkinReaction] = Field(default_factory=list)
+    source_quotes: list[str] = Field(default_factory=list)
+
+    def is_unknown(self) -> bool:
+        return (
+            self.irritation_status is IrritationStatus.UNKNOWN
+            and self.priority is CarePriority.UNKNOWN
+            and not self.symptoms
+        )
+
+    def requires_recovery_first(self) -> bool:
+        return (
+            self.irritation_status is IrritationStatus.ACTIVE
+            and self.priority is CarePriority.RECOVERY
+        )
+
+
 class LookupStatus(StrEnum):
     SUCCESS = "success"
     NO_RESULTS = "no_results"

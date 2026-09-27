@@ -32,6 +32,14 @@ class TaskPlanBuilder:
         ):
             # Claim에서 찾은 성분 ID가 뒤의 상품 필터에 들어가야 하므로 RAG를 항상 먼저 실행한다.
             intents.append(Intent.EVIDENCE_QA)
+        if (
+            request.rag_route is RagRoute.CLAIM_THEN_EVIDENCE
+            and Intent.ROUTINE_PLANNING in intents
+            and Intent.PRODUCT_DISCOVERY not in intents
+            and request.referenced_candidate_number is None
+        ):
+            # Case 기반 루틴은 현재 턴에서 고른 상품 후보를 먼저 받아야 근거와 제품이 연결된다.
+            intents.append(Intent.PRODUCT_DISCOVERY)
         indexed = list(enumerate(intents))
         return [
             intent

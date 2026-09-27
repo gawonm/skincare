@@ -5,7 +5,7 @@ from typing import Self
 
 from pydantic import Field, FiniteFloat, model_validator
 
-from agent.rag.schemas import EmbeddingVector, LookupStatus, RagModel
+from agent.rag.schemas import CareContext, EmbeddingVector, LookupStatus, RagModel
 
 DEFAULT_CASE_CANDIDATE_LIMIT = 40
 # 관련 후보가 메타데이터 단계에서 사라지면 리랭커가 복구할 수 없으므로
@@ -71,6 +71,7 @@ class CaseSearchResult(RagModel):
 class CaseRerankRequest(RagModel):
     query: str = Field(min_length=1)
     candidates: list[CaseSearchHit] = Field(min_length=1)
+    care_context: CareContext = Field(default_factory=CareContext)
     limit: int = Field(default=DEFAULT_CASE_RERANK_LIMIT, ge=1, le=DEFAULT_CASE_RERANK_LIMIT)
 
 
@@ -93,10 +94,13 @@ class CaseBundle(RagModel):
     search: CaseSearchResult
     rerank: CaseRerankResult | None = None
     rerank_fallback_used: bool = False
+    fallback_hits: list[CaseSearchHit] | None = None
 
     def selected_hits(self) -> list[CaseSearchHit]:
         if self.rerank is not None:
             return list(self.rerank.hits)
+        if self.fallback_hits is not None:
+            return list(self.fallback_hits[:DEFAULT_CASE_RERANK_LIMIT])
         if self.search.status is not LookupStatus.SUCCESS:
             return []
         return list(self.search.hits[:DEFAULT_CASE_RERANK_LIMIT])

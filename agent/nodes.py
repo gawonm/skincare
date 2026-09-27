@@ -9,6 +9,7 @@ from agent.evidence_query_policy import EvidenceQueryPolicy
 from agent.ports import IngredientRepository, LlmClient, ProductRepository, RoutinePlanner
 from agent.prompts import PromptCatalog, PromptPurpose, PromptRequest
 from agent.query_planning import IntentQueryPlanner
+from agent.rag.care_context import CareContextResolutionRequest, CareContextResolver
 from agent.rag.claim_schemas import (
     RecommendationBasis,
     RecommendationProductMatch,
@@ -19,6 +20,7 @@ from agent.rag.retrieval.ingredient_alias_mapper import (
     CommonIngredientAliasMapper,
     IngredientMentionDetectionRequest,
 )
+from agent.rag.retrieval.product_care_compatibility import ProductCareCompatibilityPolicy
 from agent.rag.retrieval.product_filter_validator import ProductFilterValidator
 from agent.rag.routine_planner import RoutineFrequencyInterpreter
 from agent.rag.routine_product_selector import (
@@ -50,7 +52,7 @@ from agent.rag.schemas import (
     RoutineValidationRequest,
     Weekday,
 )
-from agent.rag_route_policy import RagRoutePolicy
+from agent.rag_route_policy import RagRoutePolicy, RagRouteRequest
 from agent.runtime import AgentRuntime
 from agent.schemas import (
     AgentState,
@@ -64,6 +66,7 @@ from agent.schemas import (
     ParsedRequest,
     PendingQuestion,
     QueryPlanningRequest,
+    QueryTurnKind,
     RagRoute,
     ResolvedEntities,
     RoutineSaveHandoff,
@@ -156,6 +159,8 @@ class AgentNodes:
         self._routine_frequency = RoutineFrequencyInterpreter()
         self._routine_product_selector = RoutineProductSelector()
         self._recommendation_product_selector = RecommendationProductSelector()
+        self._product_care_compatibility = ProductCareCompatibilityPolicy()
+        self._care_context_resolver = CareContextResolver()
 
     async def prepare_turn(self, state: AgentState) -> AgentState:
         self._require_turn_fields(state)
@@ -180,6 +185,7 @@ class AgentNodes:
         state.parsed_request = None
         state.resolved_entities = ResolvedEntities()
         state.rag_route = None
+        state.ask_after_case_rerank = False
         state.case_bundle = None
         state.case_claim_bundle = None
         state.claim_bundle = None
@@ -254,6 +260,11 @@ class AgentNodes:
                             + parsed.unsupported_product_conditions
                         )
                     ),
+                    "care_context": (
+                        original.care_context
+                        if parsed.care_context.is_unknown()
+                        else parsed.care_context
+                    ),
                     "ingredient_mentions": list(
                         dict.fromkeys(
                             (
@@ -284,6 +295,12 @@ class AgentNodes:
             )
         elif not parsed.pending_answer:
             state.pending_question = None
+        parsed.care_context = self._care_context_resolver.resolve(
+            CareContextResolutionRequest(
+                query=parsed.query,
+                interpreted=parsed.care_context,
+            )
+        )
         if not parsed.ingredient_mentions:
             detected_mentions = self._ingredient_aliases.detect_mentions(
                 IngredientMentionDetectionRequest(text=turn.message)
@@ -333,7 +350,22 @@ class AgentNodes:
 
     async def decide_rag_route(self, state: AgentState) -> AgentState:
         parsed = self._require_parsed(state)
-        decision = self._rag_route_policy.decide(parsed)
+        turn = self._require_turn(state)
+        turn_kind = (
+            QueryTurnKind.INITIAL
+            if state.summary is None
+            and len(state.messages) == 1
+            and state.messages[0].role is MessageRole.USER
+            and state.messages[0].request_id == turn.request_id
+            else QueryTurnKind.FOLLOW_UP
+        )
+        decision = self._rag_route_policy.decide(
+            RagRouteRequest(
+                parsed_request=parsed,
+                turn_kind=turn_kind,
+                original_message=turn.message,
+            )
+        )
         parsed = parsed.model_copy(
             deep=True,
             update={
@@ -342,16 +374,17 @@ class AgentNodes:
                 "skin_concerns": decision.normalized_skin_concerns or parsed.skin_concerns,
             },
         )
-        turn = self._require_turn(state)
         parsed.query_plan = self._query_planner.build(
             QueryPlanningRequest(
                 original_message=turn.message,
                 parsed_request=parsed,
                 profile_concerns=[concern.value for concern in state.profile.concerns],
+                turn_kind=turn_kind,
             )
         )
         state.parsed_request = parsed
         state.rag_route = decision.route
+        state.ask_after_case_rerank = decision.ask_after_case_rerank
         state.task_queue = self._task_plan.build(state.parsed_request)
         self._record_event(
             state,
@@ -457,7 +490,7 @@ class AgentNodes:
         reason: str | None = None
         turn = self._require_turn(state)
 
-        if Intent.CLARIFICATION in parsed.intents:
+        if Intent.CLARIFICATION in parsed.intents and not state.ask_after_case_rerank:
             question = "성분 확인, 상품 추천, 루틴 만들기 중 어떤 도움이 필요한가요?"
             target_field = "intent"
             reason = "질문 목적을 추측해서 다른 작업을 실행하지 않습니다."
@@ -538,6 +571,17 @@ class AgentNodes:
         return state
 
     async def ask_user(self, state: AgentState) -> AgentState:
+        if state.ask_after_case_rerank:
+            count = len(state.case_bundle.selected_hits()) if state.case_bundle else 0
+            case_result = (
+                f"관련 유사 사례 {count}건을 찾았습니다."
+                if count
+                else "현재 입력만으로 적합한 유사 사례를 찾지 못했습니다."
+            )
+            state.follow_up_question = (
+                f"{case_result} 어느 부위에 나타나고 현재 따갑거나 건조한가요? "
+                "성분 설명·제품 선택·루틴 중 어떤 도움이 필요한지도 알려주세요."
+            )
         if not state.follow_up_question:
             raise RuntimeError("질문 노드에 후속 질문이 없습니다.")
         state.status = ChatStatus.NEEDS_INPUT
@@ -709,6 +753,16 @@ class AgentNodes:
             for product in products
             if product.product_id not in state.task_context.rejected_product_ids
         ]
+        compatible_products = [
+            product
+            for product in products
+            if not self._product_care_compatibility.assess(
+                parsed.care_context,
+                product,
+            ).is_incompatible()
+        ]
+        excluded_products = len(compatible_products) != len(products)
+        products = compatible_products
         if recommendation_matches:
             allowed_product_ids = {product.product_id for product in products}
             recommendation_matches = [
@@ -718,6 +772,16 @@ class AgentNodes:
             ]
         if not products:
             state.status = ChatStatus.PARTIAL
+            if excluded_products:
+                state.unresolved.append(
+                    UnresolvedItem(
+                        kind=UnresolvedKind.MISSING_INFORMATION,
+                        detail="활성 자극이 가라앉을 때까지 각질 제거 상품을 제외했습니다.",
+                    )
+                )
+                state.response_parts.append(
+                    "피부 자극이 가라앉을 때까지 각질 제거 상품은 추천 후보에서 제외했습니다."
+                )
             state.unresolved.append(
                 UnresolvedItem(kind=UnresolvedKind.MISSING_INFORMATION, detail=NO_RESULT_MESSAGE)
             )
@@ -1010,6 +1074,37 @@ class AgentNodes:
     async def _process_routine(self, state: AgentState) -> None:
         parsed = self._require_parsed(state)
         selection = await self._routine_products(state)
+        all_selection_products = [
+            product
+            for group in selection.groups
+            for product in group.products
+        ]
+        if all_selection_products:
+            safe_products = [
+                product
+                for product in all_selection_products
+                if not self._product_care_compatibility.assess(
+                    parsed.care_context,
+                    product,
+                ).is_incompatible()
+            ]
+            if len(safe_products) != len(all_selection_products):
+                state.unresolved.append(
+                    UnresolvedItem(
+                        kind=UnresolvedKind.MISSING_INFORMATION,
+                        detail="활성 자극이 가라앉을 때까지 각질 제거 상품을 루틴 후보에서 제외했습니다.",
+                    )
+                )
+                selection = (
+                    self._routine_product_selector.select(
+                        RoutineProductSelectionRequest(
+                            products=safe_products,
+                            rejected_product_ids=state.task_context.rejected_product_ids,
+                        )
+                    )
+                    if safe_products
+                    else RoutineProductSelection()
+                )
         products = selection.products
         user_request = parsed.query_plan.routine_query or parsed.query
         schedule_constraints = self._routine_frequency.schedule(user_request)

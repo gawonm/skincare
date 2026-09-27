@@ -22,7 +22,7 @@ from agent.rag.schemas import (
     ProductTaxonomy,
     ProductTexture,
 )
-from agent.rag_route_policy import RagRoutePolicy
+from agent.rag_route_policy import RagRoutePolicy, RagRouteRequest
 from agent.schemas import (
     ChatStatus,
     Intent,
@@ -125,10 +125,12 @@ class RenamedCodeLlm(FakeLlmClient):
 class TestDynamicProductContract:
     def test_skin_concern_in_query_keeps_rag_path_despite_unsupported_filter(self) -> None:
         decision = RagRoutePolicy().decide(
-            ParsedRequest(
-                intents=[Intent.PRODUCT_DISCOVERY],
-                query="27살 지성 피부인데 피지와 모공 관리에 뭘 써야 해?",
-                unsupported_product_conditions=["27살 남성 환절기"],
+            RagRouteRequest(
+                parsed_request=ParsedRequest(
+                    intents=[Intent.PRODUCT_DISCOVERY],
+                    query="27살 지성 피부인데 피지와 모공 관리에 뭘 써야 해?",
+                    unsupported_product_conditions=["27살 남성 환절기"],
+                )
             )
         )
 
