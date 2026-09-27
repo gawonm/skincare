@@ -1,0 +1,426 @@
+.venv/Scripts/python.exe : Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to en
+able higher rate limits and faster downloads.
+At line:2 char:1
++ .venv/Scripts/python.exe -m tests.agent.interactive_two_layer_rag_cli ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Warning: You ar...ster downloads.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+
+======================================================================
+ 2-Layer 스킨케어 Agent LangGraph CLI
+DB: skincare_reference_20260923_v5_2
+Intent·답변 모델: openai / gpt-4o-mini
+Claim·Evidence 임베딩: BAAI/bge-m3 / 1024차원
+Evidence 리랭커: BAAI/bge-reranker-v2-m3
+Claim·Evidence·성분·상품: skincare_reference_20260923_v5_2 실제 DB
+상품 taxonomy: product-taxonomy/db-v1:297fb5629083
+히스토리·체크포인터·루틴: 개발용 메모리 구현
+실제 OpenAI API 호출 비용이 발생합니다.
+출력 모드: verbose
+======================================================================
+
+Loading weights:   0%|          | 0/391 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 391/391 [00:00<00:00, 35275.06it/s]
+
+Loading weights:   0%|          | 0/393 [00:00<?, ?it/s]
+Loading weights:   1%|          | 4/393 [00:00<00:10, 35.61it/s]
+Loading weights:   5%|▌         | 20/393 [00:00<00:03, 100.58it/s]
+Loading weights:   9%|▊         | 34/393 [00:00<00:03, 102.25it/s]
+Loading weights:  11%|█▏        | 45/393 [00:00<00:03, 102.43it/s]
+Loading weights:  16%|█▋        | 64/393 [00:00<00:02, 129.86it/s]
+Loading weights:  20%|██        | 80/393 [00:00<00:02, 135.69it/s]
+Loading weights:  25%|██▌       | 99/393 [00:00<00:01, 151.92it/s]
+Loading weights:  30%|██▉       | 117/393 [00:00<00:01, 156.13it/s]
+Loading weights:  36%|███▌      | 140/393 [00:00<00:01, 173.97it/s]
+Loading weights: 100%|██████████| 393/393 [00:01<00:00, 372.75it/s]
+
+======================================================================
+질문: 34살 복합성 피부입니다. 운동 후 세안을 자주 하면서 볼이 붉고 화끈거리고, 코의 블랙헤드와 턱의 뾰루지는 남아 있습니다. 지금 각질 제거를 계속해도 되는지, 피부가 가라앉을 때까지 어떤 관리와 제품을 택해야 하는지 알려주세요.
+실행 결과: partial | 의도: product_discovery
+======================================================================
+
+[1. NIA Case Document 임베딩 검색]
+- 검색 질의: 34살 복합성 피부입니다. 운동 후 세안을 자주 하면서 볼이 붉고 화끈거리고, 코의 블랙헤드와 턱의 뾰루지는 남아 있습니다. 지금 각질 제거를 계속해도 되는지, 피부가 가라앉을 때까지 어떤 관리와 제품을 택해야 하는지 알려주세요.
+- 후보 요청 수: 40
+- 상태: success, 반환: 40건
+  1. case_id=COT_DRY_M_O30_06176 vector_similarity=0.7182 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 복합성
+     question=34세 남성입니다. 복합성 피부를 가지고 있는데, 특히 볼, 턱, 코 주변에 과각질이 심하고 매우 건조하여 고민이 많습니다. 세안 후에는 피부가 너무 땅기고, 하얗게 각질이 일어나 보기에도 좋지 않습니다. 피부가 전반적으로 칙칙해 보이며, 가끔은 가려움증까지 동반됩니다. 이러한 문제를 해결하고 전반적인 피부 상태를 개선하...
+  2. case_id=COT_DRY_M_O30_00448 vector_similarity=0.7120 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 복합성
+     question=34세 남성입니다. 복합성 피부인데, 특히 볼, 턱, 코 주변에 과각질과 극심한 건조함이 느껴집니다. 세안 후에는 피부가 땅기고 각질이 하얗게 들뜨는 현상이 심해 보습제를 발라도 금방 건조해지는 것 같습니다. 이로 인해 피부가 거칠고 예민해지는 느낌인데, 제 피부 고민을 해결하고 건강하게 관리하기 위한 효과적인 스킨케어 ...
+  3. case_id=COT_WHT_F_O30_08686 vector_similarity=0.7034 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 여성 복합성
+     question=34세 복합성 피부를 가진 여성입니다. 최근 몇 년간 볼과 코 주변에 기미와 색소침착이 점점 짙어지고 피부 톤이 전반적으로 칙칙해지는 것이 큰 고민입니다. 특히 여름철 강한 자외선에 노출이 많았고, 출산 후 호르몬 변화로 인해 이러한 현상이 더욱 심해진 것 같기도 합니다. 이러한 색소침착과 칙칙함을 효과적으로 개선하고 밝...
+  4. case_id=COT_DRY_M_O30_07200 vector_similarity=0.7022 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 복합성
+     question=저는 34세 남성으로 복합성 피부를 가지고 있으며, 특히 볼과 턱 부분에 극심한 건조함과 과각질이 심해서 고민이 많습니다. 세안 후에는 피부가 당기고 각질이 하얗게 들뜨는 현상이 잦으며, 심할 때는 가려움까지 느껴져 일상생활에 불편함이 큽니다. 이러한 피부 문제는 겨울철뿐만 아니라 사계절 내내 지속되어 스트레스가 이만저만...
+  5. case_id=COT_RED_F_O30_06928 vector_similarity=0.7014 rerank_input=yes
+     target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=37세 여성 복합성
+     question=안녕하세요, 37세 여성입니다. 복합성 피부인데 특히 볼 쪽에 붉어짐, 즉 홍조가 너무 심해서 고민입니다. 생활 환경이 스트레스가 많고 수면도 부족하며 일상도 복잡합니다. 화장품을 자주 많이 사용하는 편인데, 이게 볼 홍조에 영향을 줄까요? 햇빛에도 자주 노출되고, 온습도 변화에도 민감하게 반응합니다. 혹시 볼 붉어짐을 ...
+  6. case_id=COT_DRY_M_O30_06296 vector_similarity=0.6991 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 건성
+     question=34세 남성으로 볼, 이마, 코 부위에 과각질과 악건성으로 인해 피부가 매우 거칠고 당기는 증상이 심해 일상생활에서 불편함을 겪고 있습니다. 특히 세안 후에는 피부가 더욱 건조해지고 각질이 들뜨는 현상이 자주 발생하며, 외부 자극에도 쉽게 붉어지는 민감함까지 느껴집니다. 현재의 피부 상태를 개선하고 건강한 피부 장벽을 회...
+  7. case_id=COT_WHT_F_U30_03866 vector_similarity=0.6974 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=25세 여성 복합성
+     question=안녕하세요. 25세 복합성 피부를 가진 여성입니다. 현재 가장 큰 피부 고민은 볼과 코 주변에 생겨난 색소침착, 기미, 그리고 전체적으로 칙칙해 보이는 피부 톤입니다. 특히, 햇빛 노출이 많았던 여름 이후로 더 두드러지는 것 같아요. 어떤 성분들을 활용해야 효과적으로 미백 관리를 할 수 있을지, 그리고 어떤 방식으로 꾸준...
+  8. case_id=COT_DRY_M_O30_07375 vector_similarity=0.6935 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=36세 남성 지성
+     question=안녕하세요, 36세 지성 피부 남성입니다. 평소 유분이 많은 편임에도 불구하고, 특히 볼과 코 주변에 과도한 각질이 쌓이고 심한 건조함이 동시에 느껴져 피부가 푸석하고 거칠어 보입니다. 속건조가 심해 세안 후 당김이 심하고, 각질 때문에 화장품 흡수도 더딘 것 같습니다. 이러한 복합적인 피부 문제를 해결하고 건강한 피부 ...
+  9. case_id=COT_WHT_M_O30_05934 vector_similarity=0.6934 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 남성 중성
+     question=34세 남성입니다. 볼과 코 주변에 전반적으로 피부 톤이 칙칙하고, 특히 햇빛에 노출되면서 생긴 것 같은 색소침착과 기미가 점차 눈에 띄게 늘어나고 있습니다. 중성 피부 타입이라 건조하거나 번들거림은 크게 없지만, 미백 관리를 어떻게 시작해야 할지 막막합니다. 피부를 전반적으로 밝고 균일하게 만들면서, 현재 생긴 색소침착...
+  10. case_id=COT_POR_F_O30_05518 vector_similarity=0.6931 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=31세 여성 복합성
+     question=안녕하세요, 저는 31세 복합성 피부를 가진 여성입니다. T존은 유분이 많고, U존은 건조한 편인데, 특히 화장할 때마다 나비존이라고 불리는 볼 부분의 모공이 너무 도드라져 보여서 스트레스를 받습니다. 메이크업으로 가리려고 할수록 오히려 모공에 파운데이션이 끼고 더 부각되는 느낌이에요. 화장품을 두껍게 바르는 습관 때문인...
+  11. case_id=COT_DRY_M_U20_00977 vector_similarity=0.6915 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=19세 남성 복합성
+     question=안녕하세요, 저는 19살 남성으로 복합성 피부를 가지고 있습니다. 특히 이마와 볼 부위에 과각질과 극심한 건조함으로 인해 피부가 거칠고 하얗게 들뜨는 현상으로 고민이 많습니다. 세안 후에는 피부가 땅기고 각질이 더욱 두드러져 보여 스트레스를 받고 있습니다. 이러한 과각질과 악건성을 효과적으로 관리하고 개선하기 위한 구체적...
+  12. case_id=COT_ACN_M_O30_01137 vector_similarity=0.6910 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=34세 남성 복합성
+     question=34세 남성, 복합성 피부입니다. 특히 코 주변과 볼에 반복적으로 발생하는 여드름과 뾰루지 때문에 고민이 많습니다. 현재 사용하고 있는 스킨케어 제품만으로는 눈에 띄는 개선 효과를 보지 못하고 있어, 보다 근본적인 해결책과 함께 재발을 막을 수 있는 효과적인 스킨케어 루틴과 성분 추천을 받고 싶습니다. 저의 피부 고민을 ...
+  13. case_id=COT_POR_F_O30_03192 vector_similarity=0.6906 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=37세 여성 복합성
+     question=30대 후반 복합성 피부를 가진 여성입니다. 요즘 들어 스트레스 때문인지, 아니면 날씨가 더워져서인지 유독 볼 주변 모공이 눈에 띄게 커지고 늘어지는 것 같아 고민입니다. 특히 화장을 하면 오히려 모공이 더 부각되어 보이고, 수면 부족까지 겹치니 피부 탄력도 떨어지는 기분이에요. 제 볼 모공을 효과적으로 관리할 수 있는 ...
+  14. case_id=COT_DRY_M_O30_01379 vector_similarity=0.6890 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 복합성
+     question=34세 남성입니다. 복합성 피부인데 특히 볼, 입 주변, 코 밑에 과각질과 악건성이 심하여 고민입니다. 세안 후 당김이 심하고 각질이 하얗게 들뜨는 현상이 잦은데, 이러한 문제들을 해결하고 피부를 효과적으로 진정시키며 수분을 공급할 수 있는 스킨케어 루틴과 성분 추천을 받고 싶습니다. 특히, 추천해주신 쑥과 대나무 추출물...
+  15. case_id=COT_DRY_M_O30_02521 vector_similarity=0.6890 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 건성
+     question=34세 남성으로 건성 피부를 가지고 있으며, 특히 볼, 이마, 눈썹 주변에 과도한 각질과 극심한 건조함으로 인해 피부가 거칠고 당기는 느낌이 심합니다. 세안 후에는 항상 피부가 당기며 하얗게 각질이 들뜨는 현상이 반복되어 일상생활에 불편함을 겪고 있습니다. 이러한 문제들을 효과적으로 개선하고 피부 본연의 건강한 수분 장벽...
+  16. case_id=COT_RED_F_O30_06640 vector_similarity=0.6884 rerank_input=yes
+     target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=31세 여성 복합성
+     question=31세 복합성 피부를 가진 여성입니다. 특히 볼과 코 주변에 붉은 기(홍조)가 심하고 민감하게 반응하여 고민이 많습니다. 이 붉어짐을 효과적으로 진정시키고 완화할 수 있는 스킨케어 루틴과 성분 추천에 대해 자세히 알려주세요. 어떤 성분들이 붉은 피부 진정에 도움이 되는지, 그리고 어떤 방식으로 꾸준히 관리해야 건강하고 균...
+  17. case_id=COT_WHT_F_O30_03847 vector_similarity=0.6873 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 복합성
+     question=저는 38세 복합성 피부를 가진 여성입니다. 몇 년 전부터 볼과 턱 주변에 기미와 색소침착이 심해지고 피부 톤이 전반적으로 칙칙해지는 것이 가장 큰 고민입니다. 특히 여름철 햇빛 노출 후에는 더욱 두드러져 스트레스를 많이 받습니다. 효과적인 미백 관리와 함께 색소 침착을 개선하고 피부 톤을 맑게 만들 수 있는 구체적인 스...
+  18. case_id=COT_ACN_F_O30_01785 vector_similarity=0.6864 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=31세 여성 복합성
+     question=안녕하세요, 저는 31세 복합성 피부를 가진 여성입니다. 평소 T존은 유분기가 있는데 최근 들어 유독 건조한 양쪽 볼에만 붉고 아픈 뾰루지가 계속 올라와서 스트레스가 너무 심합니다. 최근 업무가 바빠지면서 수면도 부족하고, 환절기라 바람도 많이 부는데다 새로 바꾼 화장품 때문인지 볼 피부가 더 예민해지고 트러블이 심해지는...
+  19. case_id=COT_DRY_M_O30_03218 vector_similarity=0.6855 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 복합성
+     question=저는 34세 남성으로 복합성 피부를 가지고 있으며, 특히 볼 부위가 심하게 건조하고 각질이 과도하게 쌓이는 과각질 현상으로 고민이 많습니다. 세안 후에는 피부가 땅기고 각질이 들뜨는 것이 육안으로도 확인될 정도입니다. 이러한 볼 부위의 과각질과 악건성 문제를 해결하기 위해 어떤 스킨케어 루틴과 성분들을 활용해야 하는지, ...
+  20. case_id=COT_POR_F_O30_04732 vector_similarity=0.6850 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=30세 여성 복합성
+     question=30대 복합성 피부를 가진 직장인입니다. 최근 잦은 야근과 수면 부족으로 스트레스가 극심한데, 날씨가 더워지면서 유독 코 옆 볼 모공이 나비존을 따라 눈에 띄게 넓어지고 까맣게 보이는 것 같아요. 얼마 전 기초 화장품을 바꾼 탓인지 복합적인 원인 때문인지 모르겠습니다. 이렇게 늘어지고 거뭇해진 볼 모공을 효과적으로 관리할...
+  21. case_id=COT_POR_F_O30_07199 vector_similarity=0.6843 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=39세 여성 복합성
+     question=안녕하세요, 저는 39세 복합성 피부를 가진 여성입니다. 요즘 들어 스트레스도 많이 받고 수면도 부족한데다, 환절기라 바람도 많이 불어서 그런지 유독 볼 쪽 모공이 점점 더 넓어지고 눈에 띄게 도드라져 보입니다. 나이가 들면서 탄력이 떨어져서 그런 것 같기도 한데, 이렇게 복합적인 원인으로 인해 커진 볼 모공을 효과적으로...
+  22. case_id=COT_RED_F_U30_04678 vector_similarity=0.6838 rerank_input=yes
+     target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=26세 여성 복합성
+     question=저는 26세 복합성 피부를 가진 여성입니다. 평소에도 볼 부위가 쉽게 붉어지는 편인데, 특히 생리 주기가 다가오거나, 덥고 습한 여름철 혹은 춥고 건조한 겨울철만 되면 볼 홍조가 유독 심해집니다. 게다가 요즘 핸드폰을 장시간 사용해서 그런지 블루라이트 때문인지 볼 쪽 붉은 기운이 더 오래가는 것 같아요. 이런 복합적인 원...
+  23. case_id=COT_RED_F_O30_07833 vector_similarity=0.6838 rerank_input=yes
+     target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=37세 여성 복합성
+     question=37세 복합성 피부를 가진 여성입니다. 특히 코와 볼 부위에 붉어짐(홍조)이 심해서 고민이 많습니다. 이 붉어짐을 완화하고 피부를 진정시키기 위한 효과적인 스킨케어 루틴과 함께, 제가 사용해야 할 성분은 무엇이며, 어떻게 관리해야 하는지에 대한 상세한 정보와 조언을 얻고 싶습니다. 민감해진 피부를 건강하게 회복시키고 장기...
+  24. case_id=COT_WHT_F_O30_02094 vector_similarity=0.6831 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 복합성
+     question=36세 복합성 피부를 가진 여성입니다. 특히 볼 부위에 색소침착, 기미, 전반적인 칙칙함 때문에 고민이 많습니다. 피부 톤을 균일하게 만들고 환하게 개선하며, 새로 생기는 색소침착을 예방하고 기존의 기미와 칙칙함을 효과적으로 관리하기 위한 구체적인 스킨케어 루틴과 추천 성분들을 포함한 상세한 관리 방안을 알려주세요. 민감...
+  25. case_id=COT_WHT_F_O30_07121 vector_similarity=0.6826 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 여성 복합성
+     question=34세 복합성 피부를 가진 여성입니다. 최근 들어 볼과 눈 밑에 색소침착이 심해지고 기미가 짙어지면서 전체적으로 피부 톤이 칙칙해 보여 고민이 많습니다. 미백 기능성 화장품을 사용해 보았지만 큰 효과를 보지 못했습니다. 이러한 색소침착과 기미, 칙칙한 피부 톤을 개선하고 다시 맑고 균일한 피부를 되찾기 위해 어떤 성분들이...
+  26. case_id=COT_WHT_F_O30_05373 vector_similarity=0.6823 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=37세 여성 복합성
+     question=저는 37세 복합성 피부를 가진 여성으로, 특히 볼과 코 부위에 색소 침착, 기미, 전반적인 피부 칙칙함이 주된 고민입니다. 이로 인해 피부 톤이 고르지 못하고 생기 없어 보여 스트레스가 많습니다. 이러한 문제들을 효과적으로 개선하고 밝고 균일한 피부 톤을 되찾기 위한 구체적인 스킨케어 루틴과 어떤 성분들이 제 피부 고민...
+  27. case_id=COT_RED_F_U30_05123 vector_similarity=0.6810 rerank_input=yes
+     target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=21세 여성 복합성
+     question=안녕하세요. 저는 21세 복합성 피부를 가진 여성입니다. 특히 볼과 코 주변에 잦은 붉어짐, 즉 홍조가 심해 고민이 많습니다. 세안 후나 외부 자극을 받으면 더욱 붉어지고 화장으로 가리기도 쉽지 않습니다. 이러한 붉어짐을 완화하고 피부를 진정시키기 위한 효과적인 스킨케어 루틴과 함께, 어떤 성분들이 저에게 특히 도움이 될...
+  28. case_id=COT_DRY_M_U20_02756 vector_similarity=0.6805 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=19세 남성 지성
+     question=저는 19세 남성으로 지성 피부인데, 특히 코 주변과 볼 부위에 과도한 각질과 심한 건조함으로 고민이 많습니다. 세안 후에도 피부가 당기고 하얗게 각질이 일어나며, 이로 인해 메이크업이 들뜨거나 피부가 거칠어 보여 스트레스가 큽니다. 지성 피부라고 해서 보습을 소홀히 할 수도 없고, 각질 제거를 너무 자주 하면 더 건조해...
+  29. case_id=COT_WHT_F_O30_02827 vector_similarity=0.6803 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 복합성
+     question=저는 38세 복합성 피부를 가진 여성입니다. 최근 몇 년간 볼과 이마 부위에 색소침착, 기미, 전반적인 피부 칙칙함이 두드러져 고민이 많습니다. 피부 톤을 밝게 하고 이러한 색소 문제를 개선하기 위해 어떤 성분이 함유된 스킨케어 제품을 선택해야 할까요? 또한, 효과적인 미백 관리를 위한 구체적인 데일리 루틴과 주의해야 할...
+  30. case_id=COT_WHT_M_O30_00552 vector_similarity=0.6800 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 남성 복합성
+     question=34세 복합성 피부를 가진 남성입니다. 최근 들어 볼과 코 주변에 전반적으로 피부 톤이 칙칙해지고, 과거 여드름 자국이나 자외선 노출로 인한 색소 침착이 심해져 고민이 많습니다. 특히 옅은 기미처럼 보이는 부분도 있어 피부가 전반적으로 균일하지 못하고 생기 없어 보입니다. 이러한 색소 침착, 칙칙함, 기미를 효과적으로 개...
+  31. case_id=COT_POR_F_O30_00366 vector_similarity=0.6799 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=37세 여성 복합성
+     question=37세 복합성 피부를 가진 여성입니다. 특히 코와 볼 부위의 넓어진 모공 때문에 고민이 많고, 화장이 쉽게 들뜨며 피부 결도 매끄럽지 못하다고 느낍니다. 모공 축소와 피부 결 개선을 위한 효과적인 스킨케어 루틴과 성분은 무엇인지, 그리고 어떤 제품을 선택해야 하는지 자세히 알려주세요. 블랙헤드와 피지 관리도 함께 할 수 ...
+  32. case_id=COT_ACN_M_O30_00600 vector_similarity=0.6797 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=36세 남성 복합성
+     question=36세 남성으로 복합성 피부를 가지고 있으며, 특히 볼과 코 주변에 자주 발생하는 여드름과 뾰루지 때문에 고민이 많습니다. 이 부위에 여드름이 반복적으로 생기고 색소침착이 남는 경우가 많아 피부 상태가 악화되는 것 같습니다. 효과적인 여드름 관리를 위해 어떤 성분을 중심으로 스킨케어 제품을 선택해야 할지, 그리고 평소 어...
+  33. case_id=COT_WHT_F_U30_03119 vector_similarity=0.6795 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=29세 여성 복합성
+     question=29세 복합성 피부를 가진 여성입니다. 특히 볼과 코 주변에 색소침착, 기미, 전반적인 피부 칙칙함이 고민입니다. 미백 효과를 기대할 수 있는 성분들을 활용하여 피부 톤을 균일하고 밝게 개선하고 싶은데, 어떤 성분들을 선택하고 어떻게 관리해야 효과적일까요? 햇빛 노출이 많았던 여름 이후로 고민이 더욱 깊어졌습니다. 현재 ...
+  34. case_id=COT_WHT_F_O30_00092 vector_similarity=0.6793 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=33세 여성 복합성
+     question=33세 복합성 피부를 가진 여성입니다. 특히 볼과 턱 주변에 색소침착과 기미가 두드러지고 전체적으로 피부가 칙칙해 보여 고민이 많습니다. 피부 톤을 균일하게 만들고 미백 효과를 볼 수 있는 스킨케어 루틴과 어떤 성분들을 우선적으로 고려해야 하는지 구체적인 정보와 함께 자세한 관리 방법을 알고 싶습니다. 현재 사용 중인 제...
+  35. case_id=COT_WHT_F_O30_04675 vector_similarity=0.6792 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=37세 여성 복합성
+     question=37세 여성으로, 복합성 피부를 가지고 있으며 가장 큰 고민은 볼과 코 주변의 색소침착, 기미, 전반적인 피부 칙칙함입니다. 최근 들어 이러한 문제들이 더욱 도드라져 보이기 시작했습니다. 어떤 원인으로 이러한 증상들이 심해지는지 궁금하며, 효과적인 미백 관리를 위해 제가 선택해야 할 스킨케어 성분들은 무엇인지, 그리고 일...
+  36. case_id=COT_DRY_M_U30_06282 vector_similarity=0.6792 rerank_input=yes
+     target=과각질/악건성 | concerns=['과각질/악건성'] | profile=28세 남성 건성
+     question=28세 남성으로, 건성 피부인데 볼, 코 주변, 이마에 과각질과 악건성으로 인해 피부가 매우 거칠고 당기는 불편함을 겪고 있습니다. 특히 세안 후에는 심하게 당기며, 각질이 하얗게 들뜨는 현상도 자주 나타납니다. 이러한 복합적인 피부 문제를 해결하고 건강한 피부 장벽을 회복하기 위해 어떤 성분을 포함한 스킨케어 제품을 사...
+  37. case_id=COT_RED_F_O30_06126 vector_similarity=0.6789 rerank_input=yes
+     target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=37세 여성 복합성
+     question=37세 복합성 피부를 가진 여성입니다. 특히 볼과 코 주변에 붉어짐(홍조)이 심해서 고민이 많습니다. 피부가 쉽게 붉어지고 민감해지는 경향이 있어 어떤 스킨케어 루틴과 성분을 사용해야 할지 모르겠습니다. 현재 사용하는 제품들이 오히려 자극을 주지는 않는지, 그리고 붉은 기를 완화하고 피부 장벽을 건강하게 관리하기 위한 구...
+  38. case_id=COT_POR_F_O30_07637 vector_similarity=0.6785 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=34세 여성 복합성
+     question=34세 복합성 피부를 가진 여성입니다. 특히 코와 볼 부위의 모공이 눈에 띄게 커져서 고민이 많습니다. 모공 관리를 위해 어떤 성분들을 활용하고 어떤 루틴으로 관리해야 할지 궁금합니다. 과도한 피지 분비와 각질 축적으로 인한 모공 막힘 문제를 효과적으로 해결하고 싶습니다. 매끄럽고 건강한 피부를 유지하기 위한 구체적인 스...
+  39. case_id=COT_POR_M_O30_04941 vector_similarity=0.6785 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=34세 남성 복합성
+     question=안녕하세요, 저는 34세 직장인 남성입니다. 제 피부 타입은 T존은 유분기가 많고 양 볼은 건조한 전형적인 복합성 피부입니다. 특히 요즘처럼 바람이 많이 부는 환절기에는 피부 속은 당기면서 겉은 번들거리는 현상이 심해지는데, 이 때문인지 유독 양쪽 볼 모공이 탄력을 잃고 세로로 길게 늘어져 보이는 것 같아 고민이 많습니다...
+  40. case_id=COT_POR_F_U30_06855 vector_similarity=0.6784 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=25세 여성 복합성
+     question=안녕하세요. 25세 여성이고 복합성 피부를 가지고 있습니다. 최근 볼 쪽에 모공이 눈에 띄게 넓어지고 블랙헤드도 심해져서 고민입니다. 특히 생리 기간이 되면 호르몬 변화 때문인지 볼 모공이 더욱 도드라져 보이는 것 같아요. 평소 화장을 자주 하는 편이고, 잠도 부족하고 스트레스도 많이 받아서 피부 컨디션이 좋지 않습니다....
+- 단일 벡터 검색 결과를 고민 메타데이터로 선별한 뒤 재정렬합니다.
+
+[2. BGE 리랭커 Top-3 Case]
+- 리랭크 질의: 34살 복합성 피부입니다. 운동 후 세안을 자주 하면서 볼이 붉고 화끈거리고, 코의 블랙헤드와 턱의 뾰루지는 남아 있습니다. 지금 각질 제거를 계속해도 되는지, 피부가 가라앉을 때까지 어떤 관리와 제품을 택해야 하는지 알려주세요.
+- 입력 후보: 40건, 선택 상한: 3건
+  입력 1. case_id=COT_ACN_M_O30_01137 vector_similarity=0.6910 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=34세 남성 복합성
+          question=34세 남성, 복합성 피부입니다. 특히 코 주변과 볼에 반복적으로 발생하는 여드름과 뾰루지 때문에 고민이 많습니다. 현재 사용하고 있는 스킨케어 제품만으로는 눈에 띄는 개선 효과를 보지 못하고 있어, 보다 근본적인 해결책과 함께 재발을 막을 수 있는 효과적인 스킨케어 루틴과 성분 추천을 받고 싶습니다. 저의 피부 고민을 ...
+  입력 2. case_id=COT_ACN_F_O30_01785 vector_similarity=0.6864 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=31세 여성 복합성
+          question=안녕하세요, 저는 31세 복합성 피부를 가진 여성입니다. 평소 T존은 유분기가 있는데 최근 들어 유독 건조한 양쪽 볼에만 붉고 아픈 뾰루지가 계속 올라와서 스트레스가 너무 심합니다. 최근 업무가 바빠지면서 수면도 부족하고, 환절기라 바람도 많이 부는데다 새로 바꾼 화장품 때문인지 볼 피부가 더 예민해지고 트러블이 심해지는...
+  입력 3. case_id=COT_ACN_M_O30_00600 vector_similarity=0.6797 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=36세 남성 복합성
+          question=36세 남성으로 복합성 피부를 가지고 있으며, 특히 볼과 코 주변에 자주 발생하는 여드름과 뾰루지 때문에 고민이 많습니다. 이 부위에 여드름이 반복적으로 생기고 색소침착이 남는 경우가 많아 피부 상태가 악화되는 것 같습니다. 효과적인 여드름 관리를 위해 어떤 성분을 중심으로 스킨케어 제품을 선택해야 할지, 그리고 평소 어...
+  입력 4. case_id=COT_DRY_M_O30_06176 vector_similarity=0.7182 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 복합성
+          question=34세 남성입니다. 복합성 피부를 가지고 있는데, 특히 볼, 턱, 코 주변에 과각질이 심하고 매우 건조하여 고민이 많습니다. 세안 후에는 피부가 너무 땅기고, 하얗게 각질이 일어나 보기에도 좋지 않습니다. 피부가 전반적으로 칙칙해 보이며, 가끔은 가려움증까지 동반됩니다. 이러한 문제를 해결하고 전반적인 피부 상태를 개선하...
+  입력 5. case_id=COT_DRY_M_O30_00448 vector_similarity=0.7120 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 복합성
+          question=34세 남성입니다. 복합성 피부인데, 특히 볼, 턱, 코 주변에 과각질과 극심한 건조함이 느껴집니다. 세안 후에는 피부가 땅기고 각질이 하얗게 들뜨는 현상이 심해 보습제를 발라도 금방 건조해지는 것 같습니다. 이로 인해 피부가 거칠고 예민해지는 느낌인데, 제 피부 고민을 해결하고 건강하게 관리하기 위한 효과적인 스킨케어 ...
+  입력 6. case_id=COT_WHT_F_O30_08686 vector_similarity=0.7034 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 여성 복합성
+          question=34세 복합성 피부를 가진 여성입니다. 최근 몇 년간 볼과 코 주변에 기미와 색소침착이 점점 짙어지고 피부 톤이 전반적으로 칙칙해지는 것이 큰 고민입니다. 특히 여름철 강한 자외선에 노출이 많았고, 출산 후 호르몬 변화로 인해 이러한 현상이 더욱 심해진 것 같기도 합니다. 이러한 색소침착과 칙칙함을 효과적으로 개선하고 밝...
+  입력 7. case_id=COT_DRY_M_O30_07200 vector_similarity=0.7022 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 복합성
+          question=저는 34세 남성으로 복합성 피부를 가지고 있으며, 특히 볼과 턱 부분에 극심한 건조함과 과각질이 심해서 고민이 많습니다. 세안 후에는 피부가 당기고 각질이 하얗게 들뜨는 현상이 잦으며, 심할 때는 가려움까지 느껴져 일상생활에 불편함이 큽니다. 이러한 피부 문제는 겨울철뿐만 아니라 사계절 내내 지속되어 스트레스가 이만저만...
+  입력 8. case_id=COT_RED_F_O30_06928 vector_similarity=0.7014 | target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=37세 여성 복합성
+          question=안녕하세요, 37세 여성입니다. 복합성 피부인데 특히 볼 쪽에 붉어짐, 즉 홍조가 너무 심해서 고민입니다. 생활 환경이 스트레스가 많고 수면도 부족하며 일상도 복잡합니다. 화장품을 자주 많이 사용하는 편인데, 이게 볼 홍조에 영향을 줄까요? 햇빛에도 자주 노출되고, 온습도 변화에도 민감하게 반응합니다. 혹시 볼 붉어짐을 ...
+  입력 9. case_id=COT_WHT_F_U30_03866 vector_similarity=0.6974 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=25세 여성 복합성
+          question=안녕하세요. 25세 복합성 피부를 가진 여성입니다. 현재 가장 큰 피부 고민은 볼과 코 주변에 생겨난 색소침착, 기미, 그리고 전체적으로 칙칙해 보이는 피부 톤입니다. 특히, 햇빛 노출이 많았던 여름 이후로 더 두드러지는 것 같아요. 어떤 성분들을 활용해야 효과적으로 미백 관리를 할 수 있을지, 그리고 어떤 방식으로 꾸준...
+  입력 10. case_id=COT_POR_F_O30_05518 vector_similarity=0.6931 | target=모공 | concerns=['모공'] | profile=31세 여성 복합성
+          question=안녕하세요, 저는 31세 복합성 피부를 가진 여성입니다. T존은 유분이 많고, U존은 건조한 편인데, 특히 화장할 때마다 나비존이라고 불리는 볼 부분의 모공이 너무 도드라져 보여서 스트레스를 받습니다. 메이크업으로 가리려고 할수록 오히려 모공에 파운데이션이 끼고 더 부각되는 느낌이에요. 화장품을 두껍게 바르는 습관 때문인...
+  입력 11. case_id=COT_DRY_M_U20_00977 vector_similarity=0.6915 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=19세 남성 복합성
+          question=안녕하세요, 저는 19살 남성으로 복합성 피부를 가지고 있습니다. 특히 이마와 볼 부위에 과각질과 극심한 건조함으로 인해 피부가 거칠고 하얗게 들뜨는 현상으로 고민이 많습니다. 세안 후에는 피부가 땅기고 각질이 더욱 두드러져 보여 스트레스를 받고 있습니다. 이러한 과각질과 악건성을 효과적으로 관리하고 개선하기 위한 구체적...
+  입력 12. case_id=COT_POR_F_O30_03192 vector_similarity=0.6906 | target=모공 | concerns=['모공'] | profile=37세 여성 복합성
+          question=30대 후반 복합성 피부를 가진 여성입니다. 요즘 들어 스트레스 때문인지, 아니면 날씨가 더워져서인지 유독 볼 주변 모공이 눈에 띄게 커지고 늘어지는 것 같아 고민입니다. 특히 화장을 하면 오히려 모공이 더 부각되어 보이고, 수면 부족까지 겹치니 피부 탄력도 떨어지는 기분이에요. 제 볼 모공을 효과적으로 관리할 수 있는 ...
+  입력 13. case_id=COT_DRY_M_O30_01379 vector_similarity=0.6890 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 복합성
+          question=34세 남성입니다. 복합성 피부인데 특히 볼, 입 주변, 코 밑에 과각질과 악건성이 심하여 고민입니다. 세안 후 당김이 심하고 각질이 하얗게 들뜨는 현상이 잦은데, 이러한 문제들을 해결하고 피부를 효과적으로 진정시키며 수분을 공급할 수 있는 스킨케어 루틴과 성분 추천을 받고 싶습니다. 특히, 추천해주신 쑥과 대나무 추출물...
+  입력 14. case_id=COT_RED_F_O30_06640 vector_similarity=0.6884 | target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=31세 여성 복합성
+          question=31세 복합성 피부를 가진 여성입니다. 특히 볼과 코 주변에 붉은 기(홍조)가 심하고 민감하게 반응하여 고민이 많습니다. 이 붉어짐을 효과적으로 진정시키고 완화할 수 있는 스킨케어 루틴과 성분 추천에 대해 자세히 알려주세요. 어떤 성분들이 붉은 피부 진정에 도움이 되는지, 그리고 어떤 방식으로 꾸준히 관리해야 건강하고 균...
+  입력 15. case_id=COT_WHT_F_O30_03847 vector_similarity=0.6873 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 복합성
+          question=저는 38세 복합성 피부를 가진 여성입니다. 몇 년 전부터 볼과 턱 주변에 기미와 색소침착이 심해지고 피부 톤이 전반적으로 칙칙해지는 것이 가장 큰 고민입니다. 특히 여름철 햇빛 노출 후에는 더욱 두드러져 스트레스를 많이 받습니다. 효과적인 미백 관리와 함께 색소 침착을 개선하고 피부 톤을 맑게 만들 수 있는 구체적인 스...
+  입력 16. case_id=COT_DRY_M_O30_03218 vector_similarity=0.6855 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 복합성
+          question=저는 34세 남성으로 복합성 피부를 가지고 있으며, 특히 볼 부위가 심하게 건조하고 각질이 과도하게 쌓이는 과각질 현상으로 고민이 많습니다. 세안 후에는 피부가 땅기고 각질이 들뜨는 것이 육안으로도 확인될 정도입니다. 이러한 볼 부위의 과각질과 악건성 문제를 해결하기 위해 어떤 스킨케어 루틴과 성분들을 활용해야 하는지, ...
+  입력 17. case_id=COT_POR_F_O30_04732 vector_similarity=0.6850 | target=모공 | concerns=['모공'] | profile=30세 여성 복합성
+          question=30대 복합성 피부를 가진 직장인입니다. 최근 잦은 야근과 수면 부족으로 스트레스가 극심한데, 날씨가 더워지면서 유독 코 옆 볼 모공이 나비존을 따라 눈에 띄게 넓어지고 까맣게 보이는 것 같아요. 얼마 전 기초 화장품을 바꾼 탓인지 복합적인 원인 때문인지 모르겠습니다. 이렇게 늘어지고 거뭇해진 볼 모공을 효과적으로 관리할...
+  입력 18. case_id=COT_POR_F_O30_07199 vector_similarity=0.6843 | target=모공 | concerns=['모공'] | profile=39세 여성 복합성
+          question=안녕하세요, 저는 39세 복합성 피부를 가진 여성입니다. 요즘 들어 스트레스도 많이 받고 수면도 부족한데다, 환절기라 바람도 많이 불어서 그런지 유독 볼 쪽 모공이 점점 더 넓어지고 눈에 띄게 도드라져 보입니다. 나이가 들면서 탄력이 떨어져서 그런 것 같기도 한데, 이렇게 복합적인 원인으로 인해 커진 볼 모공을 효과적으로...
+  입력 19. case_id=COT_RED_F_U30_04678 vector_similarity=0.6838 | target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=26세 여성 복합성
+          question=저는 26세 복합성 피부를 가진 여성입니다. 평소에도 볼 부위가 쉽게 붉어지는 편인데, 특히 생리 주기가 다가오거나, 덥고 습한 여름철 혹은 춥고 건조한 겨울철만 되면 볼 홍조가 유독 심해집니다. 게다가 요즘 핸드폰을 장시간 사용해서 그런지 블루라이트 때문인지 볼 쪽 붉은 기운이 더 오래가는 것 같아요. 이런 복합적인 원...
+  입력 20. case_id=COT_RED_F_O30_07833 vector_similarity=0.6838 | target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=37세 여성 복합성
+          question=37세 복합성 피부를 가진 여성입니다. 특히 코와 볼 부위에 붉어짐(홍조)이 심해서 고민이 많습니다. 이 붉어짐을 완화하고 피부를 진정시키기 위한 효과적인 스킨케어 루틴과 함께, 제가 사용해야 할 성분은 무엇이며, 어떻게 관리해야 하는지에 대한 상세한 정보와 조언을 얻고 싶습니다. 민감해진 피부를 건강하게 회복시키고 장기...
+  입력 21. case_id=COT_WHT_F_O30_02094 vector_similarity=0.6831 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 복합성
+          question=36세 복합성 피부를 가진 여성입니다. 특히 볼 부위에 색소침착, 기미, 전반적인 칙칙함 때문에 고민이 많습니다. 피부 톤을 균일하게 만들고 환하게 개선하며, 새로 생기는 색소침착을 예방하고 기존의 기미와 칙칙함을 효과적으로 관리하기 위한 구체적인 스킨케어 루틴과 추천 성분들을 포함한 상세한 관리 방안을 알려주세요. 민감...
+  입력 22. case_id=COT_WHT_F_O30_07121 vector_similarity=0.6826 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 여성 복합성
+          question=34세 복합성 피부를 가진 여성입니다. 최근 들어 볼과 눈 밑에 색소침착이 심해지고 기미가 짙어지면서 전체적으로 피부 톤이 칙칙해 보여 고민이 많습니다. 미백 기능성 화장품을 사용해 보았지만 큰 효과를 보지 못했습니다. 이러한 색소침착과 기미, 칙칙한 피부 톤을 개선하고 다시 맑고 균일한 피부를 되찾기 위해 어떤 성분들이...
+  입력 23. case_id=COT_WHT_F_O30_05373 vector_similarity=0.6823 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=37세 여성 복합성
+          question=저는 37세 복합성 피부를 가진 여성으로, 특히 볼과 코 부위에 색소 침착, 기미, 전반적인 피부 칙칙함이 주된 고민입니다. 이로 인해 피부 톤이 고르지 못하고 생기 없어 보여 스트레스가 많습니다. 이러한 문제들을 효과적으로 개선하고 밝고 균일한 피부 톤을 되찾기 위한 구체적인 스킨케어 루틴과 어떤 성분들이 제 피부 고민...
+  입력 24. case_id=COT_RED_F_U30_05123 vector_similarity=0.6810 | target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=21세 여성 복합성
+          question=안녕하세요. 저는 21세 복합성 피부를 가진 여성입니다. 특히 볼과 코 주변에 잦은 붉어짐, 즉 홍조가 심해 고민이 많습니다. 세안 후나 외부 자극을 받으면 더욱 붉어지고 화장으로 가리기도 쉽지 않습니다. 이러한 붉어짐을 완화하고 피부를 진정시키기 위한 효과적인 스킨케어 루틴과 함께, 어떤 성분들이 저에게 특히 도움이 될...
+  입력 25. case_id=COT_WHT_F_O30_02827 vector_similarity=0.6803 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 복합성
+          question=저는 38세 복합성 피부를 가진 여성입니다. 최근 몇 년간 볼과 이마 부위에 색소침착, 기미, 전반적인 피부 칙칙함이 두드러져 고민이 많습니다. 피부 톤을 밝게 하고 이러한 색소 문제를 개선하기 위해 어떤 성분이 함유된 스킨케어 제품을 선택해야 할까요? 또한, 효과적인 미백 관리를 위한 구체적인 데일리 루틴과 주의해야 할...
+  입력 26. case_id=COT_WHT_M_O30_00552 vector_similarity=0.6800 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 남성 복합성
+          question=34세 복합성 피부를 가진 남성입니다. 최근 들어 볼과 코 주변에 전반적으로 피부 톤이 칙칙해지고, 과거 여드름 자국이나 자외선 노출로 인한 색소 침착이 심해져 고민이 많습니다. 특히 옅은 기미처럼 보이는 부분도 있어 피부가 전반적으로 균일하지 못하고 생기 없어 보입니다. 이러한 색소 침착, 칙칙함, 기미를 효과적으로 개...
+  입력 27. case_id=COT_POR_F_O30_00366 vector_similarity=0.6799 | target=모공 | concerns=['모공'] | profile=37세 여성 복합성
+          question=37세 복합성 피부를 가진 여성입니다. 특히 코와 볼 부위의 넓어진 모공 때문에 고민이 많고, 화장이 쉽게 들뜨며 피부 결도 매끄럽지 못하다고 느낍니다. 모공 축소와 피부 결 개선을 위한 효과적인 스킨케어 루틴과 성분은 무엇인지, 그리고 어떤 제품을 선택해야 하는지 자세히 알려주세요. 블랙헤드와 피지 관리도 함께 할 수 ...
+  입력 28. case_id=COT_WHT_F_U30_03119 vector_similarity=0.6795 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=29세 여성 복합성
+          question=29세 복합성 피부를 가진 여성입니다. 특히 볼과 코 주변에 색소침착, 기미, 전반적인 피부 칙칙함이 고민입니다. 미백 효과를 기대할 수 있는 성분들을 활용하여 피부 톤을 균일하고 밝게 개선하고 싶은데, 어떤 성분들을 선택하고 어떻게 관리해야 효과적일까요? 햇빛 노출이 많았던 여름 이후로 고민이 더욱 깊어졌습니다. 현재 ...
+  입력 29. case_id=COT_WHT_F_O30_00092 vector_similarity=0.6793 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=33세 여성 복합성
+          question=33세 복합성 피부를 가진 여성입니다. 특히 볼과 턱 주변에 색소침착과 기미가 두드러지고 전체적으로 피부가 칙칙해 보여 고민이 많습니다. 피부 톤을 균일하게 만들고 미백 효과를 볼 수 있는 스킨케어 루틴과 어떤 성분들을 우선적으로 고려해야 하는지 구체적인 정보와 함께 자세한 관리 방법을 알고 싶습니다. 현재 사용 중인 제...
+  입력 30. case_id=COT_WHT_F_O30_04675 vector_similarity=0.6792 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=37세 여성 복합성
+          question=37세 여성으로, 복합성 피부를 가지고 있으며 가장 큰 고민은 볼과 코 주변의 색소침착, 기미, 전반적인 피부 칙칙함입니다. 최근 들어 이러한 문제들이 더욱 도드라져 보이기 시작했습니다. 어떤 원인으로 이러한 증상들이 심해지는지 궁금하며, 효과적인 미백 관리를 위해 제가 선택해야 할 스킨케어 성분들은 무엇인지, 그리고 일...
+  입력 31. case_id=COT_RED_F_O30_06126 vector_similarity=0.6789 | target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=37세 여성 복합성
+          question=37세 복합성 피부를 가진 여성입니다. 특히 볼과 코 주변에 붉어짐(홍조)이 심해서 고민이 많습니다. 피부가 쉽게 붉어지고 민감해지는 경향이 있어 어떤 스킨케어 루틴과 성분을 사용해야 할지 모르겠습니다. 현재 사용하는 제품들이 오히려 자극을 주지는 않는지, 그리고 붉은 기를 완화하고 피부 장벽을 건강하게 관리하기 위한 구...
+  입력 32. case_id=COT_POR_F_O30_07637 vector_similarity=0.6785 | target=모공 | concerns=['모공'] | profile=34세 여성 복합성
+          question=34세 복합성 피부를 가진 여성입니다. 특히 코와 볼 부위의 모공이 눈에 띄게 커져서 고민이 많습니다. 모공 관리를 위해 어떤 성분들을 활용하고 어떤 루틴으로 관리해야 할지 궁금합니다. 과도한 피지 분비와 각질 축적으로 인한 모공 막힘 문제를 효과적으로 해결하고 싶습니다. 매끄럽고 건강한 피부를 유지하기 위한 구체적인 스...
+  입력 33. case_id=COT_POR_M_O30_04941 vector_similarity=0.6785 | target=모공 | concerns=['모공'] | profile=34세 남성 복합성
+          question=안녕하세요, 저는 34세 직장인 남성입니다. 제 피부 타입은 T존은 유분기가 많고 양 볼은 건조한 전형적인 복합성 피부입니다. 특히 요즘처럼 바람이 많이 부는 환절기에는 피부 속은 당기면서 겉은 번들거리는 현상이 심해지는데, 이 때문인지 유독 양쪽 볼 모공이 탄력을 잃고 세로로 길게 늘어져 보이는 것 같아 고민이 많습니다...
+  입력 34. case_id=COT_POR_F_U30_06855 vector_similarity=0.6784 | target=모공 | concerns=['모공'] | profile=25세 여성 복합성
+          question=안녕하세요. 25세 여성이고 복합성 피부를 가지고 있습니다. 최근 볼 쪽에 모공이 눈에 띄게 넓어지고 블랙헤드도 심해져서 고민입니다. 특히 생리 기간이 되면 호르몬 변화 때문인지 볼 모공이 더욱 도드라져 보이는 것 같아요. 평소 화장을 자주 하는 편이고, 잠도 부족하고 스트레스도 많이 받아서 피부 컨디션이 좋지 않습니다....
+  입력 35. case_id=COT_DRY_M_O30_06296 vector_similarity=0.6991 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 건성
+          question=34세 남성으로 볼, 이마, 코 부위에 과각질과 악건성으로 인해 피부가 매우 거칠고 당기는 증상이 심해 일상생활에서 불편함을 겪고 있습니다. 특히 세안 후에는 피부가 더욱 건조해지고 각질이 들뜨는 현상이 자주 발생하며, 외부 자극에도 쉽게 붉어지는 민감함까지 느껴집니다. 현재의 피부 상태를 개선하고 건강한 피부 장벽을 회...
+  입력 36. case_id=COT_DRY_M_O30_07375 vector_similarity=0.6935 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=36세 남성 지성
+          question=안녕하세요, 36세 지성 피부 남성입니다. 평소 유분이 많은 편임에도 불구하고, 특히 볼과 코 주변에 과도한 각질이 쌓이고 심한 건조함이 동시에 느껴져 피부가 푸석하고 거칠어 보입니다. 속건조가 심해 세안 후 당김이 심하고, 각질 때문에 화장품 흡수도 더딘 것 같습니다. 이러한 복합적인 피부 문제를 해결하고 건강한 피부 ...
+  입력 37. case_id=COT_WHT_M_O30_05934 vector_similarity=0.6934 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 남성 중성
+          question=34세 남성입니다. 볼과 코 주변에 전반적으로 피부 톤이 칙칙하고, 특히 햇빛에 노출되면서 생긴 것 같은 색소침착과 기미가 점차 눈에 띄게 늘어나고 있습니다. 중성 피부 타입이라 건조하거나 번들거림은 크게 없지만, 미백 관리를 어떻게 시작해야 할지 막막합니다. 피부를 전반적으로 밝고 균일하게 만들면서, 현재 생긴 색소침착...
+  입력 38. case_id=COT_DRY_M_O30_02521 vector_similarity=0.6890 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=34세 남성 건성
+          question=34세 남성으로 건성 피부를 가지고 있으며, 특히 볼, 이마, 눈썹 주변에 과도한 각질과 극심한 건조함으로 인해 피부가 거칠고 당기는 느낌이 심합니다. 세안 후에는 항상 피부가 당기며 하얗게 각질이 들뜨는 현상이 반복되어 일상생활에 불편함을 겪고 있습니다. 이러한 문제들을 효과적으로 개선하고 피부 본연의 건강한 수분 장벽...
+  입력 39. case_id=COT_DRY_M_U20_02756 vector_similarity=0.6805 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=19세 남성 지성
+          question=저는 19세 남성으로 지성 피부인데, 특히 코 주변과 볼 부위에 과도한 각질과 심한 건조함으로 고민이 많습니다. 세안 후에도 피부가 당기고 하얗게 각질이 일어나며, 이로 인해 메이크업이 들뜨거나 피부가 거칠어 보여 스트레스가 큽니다. 지성 피부라고 해서 보습을 소홀히 할 수도 없고, 각질 제거를 너무 자주 하면 더 건조해...
+  입력 40. case_id=COT_DRY_M_U30_06282 vector_similarity=0.6792 | target=과각질/악건성 | concerns=['과각질/악건성'] | profile=28세 남성 건성
+          question=28세 남성으로, 건성 피부인데 볼, 코 주변, 이마에 과각질과 악건성으로 인해 피부가 매우 거칠고 당기는 불편함을 겪고 있습니다. 특히 세안 후에는 심하게 당기며, 각질이 하얗게 들뜨는 현상도 자주 나타납니다. 이러한 복합적인 피부 문제를 해결하고 건강한 피부 장벽을 회복하기 위해 어떤 성분을 포함한 스킨케어 제품을 사...
+- 모델: BAAI/bge-reranker-v2-m3
+  1. case_id=COT_ACN_M_O30_01137 rerank_score=0.9988
+  2. case_id=COT_DRY_M_O30_06176 rerank_score=0.9972
+  3. case_id=COT_DRY_M_O30_01379 rerank_score=0.9957
+
+[3. Top-3 원문 LLM 관련 성분 선별]
+- LLM 입력 case_id: ['COT_ACN_M_O30_01137', 'COT_DRY_M_O30_06176', 'COT_DRY_M_O30_01379']
+- 상태: success, model=gpt-4o-mini, prompt=nia-case-ingredient-selection/v2
+  1. case_id=COT_ACN_M_O30_01137 ingredients=['ALOE BARBADENSIS LEAF JUICE POWDER']
+     quote=첫째, 'ALOE BARBADENSIS LEAF JUICE POWDER'는 강력한 진정 및 보습 효과로 피부 자극을 완화하고 여드름으로 인한 붉은기를 줄이는 데 도움을 줍니다.
+  2. case_id=COT_ACN_M_O30_01137 ingredients=['CARAPA GUAIANENSIS SEED OIL']
+     quote=둘째, 'CARAPA GUAIANENSIS SEED OIL'은 항염 및 항균 특성으로 여드름균 활동을 억제하고 피부 진정을 돕습니다.
+  3. case_id=COT_ACN_M_O30_01137 ingredients=['CHITIN']
+     quote=셋째, 'CHITIN'은 피부 보호막을 형성하고 항균 특성으로 여드름균 증식을 막는 데 기여할 수 있습니다.
+  4. case_id=COT_ACN_M_O30_01137 ingredients=['COCHLEARIA ARMORACIA (HORSERADISH) ROOT EXTRACT']
+     quote=넷째, 'COCHLEARIA ARMORACIA (HORSERADISH) ROOT EXTRACT'는 강력한 항산화 및 항염 효과로 피부 개선과 여드름 완화에 탁월합니다.
+  5. case_id=COT_ACN_M_O30_01137 ingredients=['MINERAL SALTS']
+     quote=마지막으로, 'MINERAL SALTS'는 피부 해독 및 진정 효과로 전반적인 피부 건강을 유지하고 여드름 발생을 억제하는 데 도움을 줄 수 있습니다.
+  6. case_id=COT_DRY_M_O30_06176 ingredients=['쑥 추출물']
+     quote=쑥 추출물은 염증 완화와 피부 진정에 도움을 주며, 다양한 대나무 추출물은 깊은 수분 공급과 피부 장벽 강화, 항산화 작용을 통해 건조함과 각질 문제를 근본적으로 개선합니다.
+  7. case_id=COT_DRY_M_O30_06176 ingredients=['대나무 추출물']
+     quote=쑥 추출물은 염증 완화와 피부 진정에 도움을 주며, 다양한 대나무 추출물은 깊은 수분 공급과 피부 장벽 강화, 항산화 작용을 통해 건조함과 각질 문제를 근본적으로 개선합니다.
+  8. case_id=COT_DRY_M_O30_01379 ingredients=['쑥잎 추출물']
+     quote=쑥잎 추출물은 강력한 항염 및 항산화 효능으로 민감해진 피부를 진정시키고 보호하며, 손상된 피부 장벽 회복에 도움을 주어 건조함과 각질을 완화합니다.
+  9. case_id=COT_DRY_M_O30_01379 ingredients=['대나무 추출물']
+     quote=대나무 추출물들은 풍부한 수분 공급과 보습 효과로 피부 속 깊은 곳까지 촉촉함을 채워주고, 항산화 작용으로 피부 노화를 방지하며 탄력을 증진시킵니다.
+
+[4. Agent 별칭 처리 및 표준 ingredient_id 확정]
+- ALOE BARBADENSIS LEAF JUICE POWDER → 알로에베라잎즙가루 → 알로에베라잎즙가루 / 7989ceef-b0d9-49a9-9791-c25cde0cb730
+- CARAPA GUAIANENSIS SEED OIL → 안디로바씨오일 → 안디로바씨오일 / c165de49-0f65-40cf-b6b6-3c1c709b8aa2
+- CHITIN → 키틴 → 키틴 / c4399298-58ae-4df1-8f6b-eeaae7a98ce3
+- COCHLEARIA ARMORACIA (HORSERADISH) ROOT EXTRACT → 호스래디시뿌리추출물 → 호스래디시뿌리추출물 / 79338929-c204-4577-9b3d-dc0a24e83c04
+- MINERAL SALTS → 미네랄솔트 → 미네랄솔트 / 8c3a04b5-9741-4cb4-b1d4-5260b3e25382
+- 쑥 추출물 → 쑥 추출물 → success
+- 대나무 추출물 → 대나무 추출물 → 밤부사 불가리스추출물 / f85f62fe-9737-42ae-acd7-38094ae64e82
+- 쑥잎 추출물 → 쑥잎 추출물 → 쑥잎추출물 / d2c2f8bb-cee7-4f95-ac7b-5185f81dab69
+- 대나무 추출물 → 대나무 추출물 → 밤부사 불가리스추출물 / f85f62fe-9737-42ae-acd7-38094ae64e82
+
+[5. 성분별 Evidence 검색 및 청크 상세]
+1. Evidence 질의: 알로에베라잎즙가루: 볼 붉음 화끈거림 코 블랙헤드 턱 뾰루지 관련 효능 및 주의사항
+   ingredient_id: ['7989ceef-b0d9-49a9-9791-c25cde0cb730']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+2. Evidence 질의: 안디로바씨오일: 볼 붉음 화끈거림 코 블랙헤드 턱 뾰루지 관련 효능 및 주의사항
+   ingredient_id: ['c165de49-0f65-40cf-b6b6-3c1c709b8aa2']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+3. Evidence 질의: 키틴: 볼 붉음 화끈거림 코 블랙헤드 턱 뾰루지 관련 효능 및 주의사항
+   ingredient_id: ['c4399298-58ae-4df1-8f6b-eeaae7a98ce3']
+   Claim당 Evidence 반환 상한: 5건
+   상태: success, 반환 Evidence: 2건
+   [1] Chitin-glucan, a natural cell scaffold for skin moisturization and rejuvenation. (abstract:0) | 검수: unreviewed | RRF: 0.0164, Vec: 0.4865, Rerank: 0.2903
+       본문: Two clinical studies were conducted to evaluate the tolerance and effects of a copolymer of chitin and beta-glucan, forming the exoskeleton of fungal cell walls, now supplied for cosmetic applications...
+   [2] Fungal chitin-glucan scaffold for managing diabetic xerosis of the feet in menopausal women. (abstract:0) | 검수: unreviewed | RRF: 0.0161, Vec: 0.4366, Rerank: 0.1926
+       본문: BACKGROUND: Corneocyte accumulation (hyperkeratosis, xerosis) commonly occurs in the stratum corneum (SC) of the feet of diabetic patients, as well as menopausal women. OBJECTIVE: To compare the effec...
+4. Evidence 질의: 호스래디시뿌리추출물: 볼 붉음 화끈거림 코 블랙헤드 턱 뾰루지 관련 효능 및 주의사항
+   ingredient_id: ['79338929-c204-4577-9b3d-dc0a24e83c04']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+5. Evidence 질의: 미네랄솔트: 볼 붉음 화끈거림 코 블랙헤드 턱 뾰루지 관련 효능 및 주의사항
+   ingredient_id: ['8c3a04b5-9741-4cb4-b1d4-5260b3e25382']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+6. Evidence 질의: 밤부사 불가리스추출물: 볼 붉음 화끈거림 코 블랙헤드 턱 뾰루지 관련 효능 및 주의사항
+   ingredient_id: ['f85f62fe-9737-42ae-acd7-38094ae64e82']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+7. Evidence 질의: 쑥잎추출물: 볼 붉음 화끈거림 코 블랙헤드 턱 뾰루지 관련 효능 및 주의사항
+   ingredient_id: ['d2c2f8bb-cee7-4f95-ac7b-5185f81dab69']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+
+[6. 상품 검색]
+1. ingredient_ids=['7989ceef-b0d9-49a9-9791-c25cde0cb730', 'c165de49-0f65-40cf-b6b6-3c1c709b8aa2', 'c4399298-58ae-4df1-8f6b-eeaae7a98ce3', '79338929-c204-4577-9b3d-dc0a24e83c04', '8c3a04b5-9741-4cb4-b1d4-5260b3e25382', 'f85f62fe-9737-42ae-acd7-38094ae64e82', 'd2c2f8bb-cee7-4f95-ac7b-5185f81dab69'], category=None
+   상태: success, 반환 상품: 35건
+   - 썸바이미 Bye Bye 블랙 head 30 Days 미라클 그린티 Tox 버블 클렌저 120g (클렌저)
+   - 이소이 포 맨 아쿠아 수딩 토너 150mL (토너·패드)
+   - 스킨1004 Madagascar 센텔라 Poremizing 프레시 앰플 50ml (앰플)
+   - 주미소 나이아신아마이드 20 세럼 40ml (에센스·세럼)
+   - 아누아 나이아신아마이드 10 TXA 4 세럼 30ml 리필 세트 (+리필 30ml) (에센스·세럼)
+   - 더샘 내추럴 Condition 스파클링 클렌징 워터 500mL (클렌저)
+   - 아누아 피치 70 Niacin 세럼 30ml (에센스·세럼)
+   - 오리엔 프로폴리스 나이아신아마이드 글로우 세럼 30ml (에센스·세럼)
+   - VT Reedle 샷 클렌저 80ml (클렌저)
+   - 스킨1004 Madagascar 센텔라 Poremizing Clear 토너 210ml (토너·패드)
+
+[상품 후보]
+1. 썸바이미 Bye Bye 블랙 head 30 Days 미라클 그린티 Tox 버블 클렌저 120g [Claim 기반]
+2. 이소이 포 맨 아쿠아 수딩 토너 150mL [Claim 기반]
+3. 스킨1004 Madagascar 센텔라 Poremizing 프레시 앰플 50ml [Claim 기반]
+4. 주미소 나이아신아마이드 20 세럼 40ml [Claim 기반]
+5. 아누아 나이아신아마이드 10 TXA 4 세럼 30ml 리필 세트 (+리필 30ml) [Claim 기반]
+6. 더샘 내추럴 Condition 스파클링 클렌징 워터 500mL [Claim 기반]
+7. 아누아 피치 70 Niacin 세럼 30ml [Claim 기반]
+8. 오리엔 프로폴리스 나이아신아마이드 글로우 세럼 30ml [Claim 기반]
+9. VT Reedle 샷 클렌저 80ml [Claim 기반]
+10. 스킨1004 Madagascar 센텔라 Poremizing Clear 토너 210ml [Claim 기반]
+11. 숨37 시크릿 쌀 Nuruk 데일리 Exfoliating 클렌저 40g [Claim 기반]
+12. 파파레서피 리얼 센텔라 시카 워터리 클렌징 티슈 100매 [Claim 기반]
+13. VT PDRN Reedle 샷 100 50ml [Claim 기반]
+14. 비플레인 핑크 Salt AHA BHA 클렌징 폼 [Claim 기반]
+15. 스킨1004 Madagascar 센텔라 Poremizing 딥 클렌징 폼 125ml [Claim 기반]
+16. OFBASE Pick 팩 클렌저 200ml [Claim 기반]
+17. 숨37 시크릿 모공 세라마이드 버블 스프레이 세럼 60ml [Claim 기반]
+18. carenology Be:Fine 더 AC 모공 딥 클렌저 120ml [Claim 기반]
+19. Arencia 프레시 그린 클렌저 15g [Claim 기반]
+20. [뉴] SKINFOOD Royal 꿀 모이스처 크림 100mL [Claim 기반]
+21. JMsolution ReLeaf 마일드 Acidic Wormwood 앰플 50ml [Claim 기반]
+22. OFBASE Pick 팩 클렌저 200ml [Claim 기반]
+23. BIOHEAL BOH Probioderm 3D 리프팅 Essential 토너 150mL [Claim 기반]
+24. May young 비건 Moist 오일 To 폼 클렌저 195ml [Claim 기반]
+25. 퓨리토 Mighty Bamboo 판테놀 크림 100mL [Claim 기반]
+26. MdoC Blackhead 퍼펙트 스크럽 폼 150g [Claim 기반]
+27. BIOHEAL BOH PROBIODERM 3D 리프팅 크림 미스트 100mL [Claim 기반]
+28. 메디필 레드 락토 콜라겐 클렌징 오일 2.0 [Claim 기반]
+29. idplacosmetic Exo-V 플러스 앰플 30ml [Claim 기반]
+30. ASIS-TOBE Forest Relaxing 토너 200ml [Claim 기반]
+31. 아크웰 감초 pH 밸런싱 익스트림 모이스처 크림 55ml [Claim 기반]
+32. FATION Nosca9 Trouble 토닝 앰플 15mL [Claim 기반]
+33. FATION Nosca9 클렌징 워터 500ml [Claim 기반]
+34. KLAVUU Phytoncide 마일드 클렌징 폼 150mL [Claim 기반]
+35. 퓨리토 Mighty Bamboo 판테놀 세럼 30ml [Claim 기반]
+
+[7. Agent 최종 응답]
+유사 사례에서 질문과 관련해 언급된 성분: 알로에베라잎즙가루, 안디로바씨오일, 키틴, 호스래디시뿌리추출물, 미네랄솔트, 쑥 추출물, 밤부사 불가리스추출물, 쑥잎추출물
+
+현재 연결된 근거로 충분히 확인하지 못한 후보 성분: 알로에베라잎즙가루, 안디로바씨오일, 키틴, 호스래디시뿌리추출물, 미네랄솔트, 밤부사 불가리스추출물, 쑥잎추출물
+
+표준 성분을 확정하지 못한 Case 관련 성분: 쑥 추출물
+
+역할별 제품 후보:
+[케어]
+2번. 이소이 포 맨 아쿠아 수딩 토너 150mL (Claim 기반)
+3번. 스킨1004 Madagascar 센텔라 Poremizing 프레시 앰플 50ml (Claim 기반)
+4번. 주미소 나이아신아마이드 20 세럼 40ml (Claim 기반)
+5번. 아누아 나이아신아마이드 10 TXA 4 세럼 30ml 리필 세트 (+리필 30ml) (Claim 기반)
+7번. 아누아 피치 70 Niacin 세럼 30ml (Claim 기반)
+8번. 오리엔 프로폴리스 나이아신아마이드 글로우 세럼 30ml (Claim 기반)
+10번. 스킨1004 Madagascar 센텔라 Poremizing Clear 토너 210ml (Claim 기반)
+17번. 숨37 시크릿 모공 세라마이드 버블 스프레이 세럼 60ml (Claim 기반)
+21번. JMsolution ReLeaf 마일드 Acidic Wormwood 앰플 50ml (Claim 기반)
+23번. BIOHEAL BOH Probioderm 3D 리프팅 Essential 토너 150mL (Claim 기반)
+29번. idplacosmetic Exo-V 플러스 앰플 30ml (Claim 기반)
+30번. ASIS-TOBE Forest Relaxing 토너 200ml (Claim 기반)
+32번. FATION Nosca9 Trouble 토닝 앰플 15mL (Claim 기반)
+35번. 퓨리토 Mighty Bamboo 판테놀 세럼 30ml (Claim 기반)
+[보습]
+20번. [뉴] SKINFOOD Royal 꿀 모이스처 크림 100mL (Claim 기반)
+25번. 퓨리토 Mighty Bamboo 판테놀 크림 100mL (Claim 기반)
+31번. 아크웰 감초 pH 밸런싱 익스트림 모이스처 크림 55ml (Claim 기반)
+[세안]
+1번. 썸바이미 Bye Bye 블랙 head 30 Days 미라클 그린티 Tox 버블 클렌저 120g (Claim 기반)
+6번. 더샘 내추럴 Condition 스파클링 클렌징 워터 500mL (Claim 기반)
+9번. VT Reedle 샷 클렌저 80ml (Claim 기반)
+11번. 숨37 시크릿 쌀 Nuruk 데일리 Exfoliating 클렌저 40g (Claim 기반)
+12번. 파파레서피 리얼 센텔라 시카 워터리 클렌징 티슈 100매 (Claim 기반)
+14번. 비플레인 핑크 Salt AHA BHA 클렌징 폼 (Claim 기반)
+15번. 스킨1004 Madagascar 센텔라 Poremizing 딥 클렌징 폼 125ml (Claim 기반)
+16번. OFBASE Pick 팩 클렌저 200ml (Claim 기반)
+18번. carenology Be:Fine 더 AC 모공 딥 클렌저 120ml (Claim 기반)
+19번. Arencia 프레시 그린 클렌저 15g (Claim 기반)
+22번. OFBASE Pick 팩 클렌저 200ml (Claim 기반)
+24번. May young 비건 Moist 오일 To 폼 클렌저 195ml (Claim 기반)
+26번. MdoC Blackhead 퍼펙트 스크럽 폼 150g (Claim 기반)
+28번. 메디필 레드 락토 콜라겐 클렌징 오일 2.0 (Claim 기반)
+33번. FATION Nosca9 클렌징 워터 500ml (Claim 기반)
+34번. KLAVUU Phytoncide 마일드 클렌징 폼 150mL (Claim 기반)
+[미분류]
+13번. VT PDRN Reedle 샷 100 50ml (Claim 기반)
+27번. BIOHEAL BOH PROBIODERM 3D 리프팅 크림 미스트 100mL (Claim 기반)
+
+[보류 요약]
+- no_evidence: 현재 연결된 근거로 충분히 확인하지 못한 후보 성분: 알로에베라잎즙가루, 안디로바씨오일, 키틴, 호스래디시뿌리추출물, 미네랄솔트, 밤부사 불가리스추출물, 쑥잎추출물
+- missing_information: 표준 성분을 확정하지 못한 Case 관련 성분: 쑥 추출물
+======================================================================
