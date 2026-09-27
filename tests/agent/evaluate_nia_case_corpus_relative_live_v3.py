@@ -407,34 +407,34 @@ class NiaCaseCorpusRelativeLiveMarkdownReporter:
 class NiaCaseCorpusRelativeLiveV3Cli:
     RUN_ID: ClassVar[str] = "live_20260926_1416_v1"
     REFERENCE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_references_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_references_v1.jsonl"
     )
     CORPUS_PATH: ClassVar[Path] = Path(
         "data/processed/nia_case_documents_10s_30s.jsonl"
     )
     GOLDEN_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v3.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v3.jsonl"
     )
     BASELINE_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
     BASELINE_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_rerank_probe_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_rerank_probe_v1.jsonl"
     )
     LIVE_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
     )
     LIVE_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_probe_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_probe_20260926_1416_v1.jsonl"
     )
     LIVE_UNJUDGED_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_unjudged_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_unjudged_20260926_1416_v1.jsonl"
     )
     LIVE_RESULT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_results_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_results_20260926_1416_v1.jsonl"
     )
     LIVE_SUMMARY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_summary_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_summary_20260926_1416_v1.jsonl"
     )
     LIVE_REPORT_PATH: ClassVar[Path] = Path(
         "docs/agent/RAG_YK/2026-09-26_1416_NIA_CASE_CORPUS_RELATIVE_LIVE_V3_REPORT.md"

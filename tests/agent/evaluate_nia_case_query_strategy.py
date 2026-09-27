@@ -649,13 +649,13 @@ class NiaCaseDenseQueryStrategyMarkdownReporter:
 class NiaCaseDenseQueryStrategyCli:
     RUN_ID: ClassVar[str] = "query_strategy_dense_20260926_1709_v1"
     GOLDEN_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v4.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v4.jsonl"
     )
     RESULT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_query_strategy_dense_results_20260926_1709_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_query_strategy_dense_results_20260926_1709_v1.jsonl"
     )
     SUMMARY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_query_strategy_dense_summary_20260926_1709_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_query_strategy_dense_summary_20260926_1709_v1.jsonl"
     )
     REPORT_PATH: ClassVar[Path] = Path(
         "docs/agent/RAG_YK/2026-09-26_1709_NIA_CASE_QUERY_STRATEGY_DENSE_EVAL_REPORT.md"

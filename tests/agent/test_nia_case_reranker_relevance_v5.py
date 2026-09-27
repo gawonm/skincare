@@ -20,16 +20,16 @@ RerankerArtifactModel = TypeVar("RerankerArtifactModel", bound=RagModel)
 
 class TestNiaCaseRerankerRelevanceV5:
     UNJUDGED_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_reranker_relevance_unjudged_20260926_2150_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_reranker_relevance_unjudged_20260926_2150_v1.jsonl"
     )
     SUPPLEMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_reranker_relevance_supplement_judgments_20260926_2150_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_reranker_relevance_supplement_judgments_20260926_2150_v1.jsonl"
     )
     GOLDEN_V5_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v5.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v5.jsonl"
     )
     SUMMARY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_reranker_relevance_final_summary_20260926_2150_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_reranker_relevance_final_summary_20260926_2150_v1.jsonl"
     )
 
     def test_추가_판정이_미판정_21건을_정확히_덮는다(self) -> None:

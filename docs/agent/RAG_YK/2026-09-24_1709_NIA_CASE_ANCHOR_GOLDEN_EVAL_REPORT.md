@@ -31,7 +31,7 @@ NIA Case 문서는 같은 피부 고민과 유사한 답변을 가진 합성 사
 민감성 2건, 탄력 저하 1건이다.
 
 골든셋 파일:
-`tests/agent/nia_case_retrieval_golden_24.jsonl`
+`tests/agent/nia_case_eval_data/nia_case_retrieval_golden_24.jsonl`
 
 ## 3. 재현 조건
 

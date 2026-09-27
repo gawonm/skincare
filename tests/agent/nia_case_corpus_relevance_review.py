@@ -78,13 +78,13 @@ class NiaCaseCorpusRelevanceReviewArtifact:
 
 class NiaCaseCorpusRelevanceReviewCli:
     ANCHOR_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_anchor_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_blind_v1.jsonl"
     )
     RERANK_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_rerank_unjudged_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_rerank_unjudged_blind_v1.jsonl"
     )
     OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relevance_review_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relevance_review_blind_v1.jsonl"
     )
 
     @classmethod

@@ -163,25 +163,25 @@ class NiaCaseRerankerRepeatChecker:
 class NiaCaseCorpusRelativeLiveRerankerRecheckCli:
     RUN_ID: ClassVar[str] = "live_20260926_1416_v1_repeat_1"
     GOLDEN_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v4.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v4.jsonl"
     )
     LIVE_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
     )
     BASELINE_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
     FIRST_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_probe_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_probe_20260926_1416_v1.jsonl"
     )
     REPEAT_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_probe_repeat_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_probe_repeat_20260926_1416_v1.jsonl"
     )
     REPEAT_SUMMARY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_reranker_repeat_summary_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_reranker_repeat_summary_20260926_1416_v1.jsonl"
     )
     DENSE_SUMMARY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_dense_baseline_summary_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_dense_baseline_summary_20260926_1416_v1.jsonl"
     )
 
     @classmethod

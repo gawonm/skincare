@@ -53,19 +53,19 @@ class CalibrationSampleArguments(RagModel):
 
 class CalibrationSampleArgumentParser:
     DEFAULT_CALIBRATION_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_v1.jsonl"
     )
     DEFAULT_INTERNAL_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_pool_v1.jsonl"
     )
     DEFAULT_BLIND_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_blind_v1.jsonl"
     )
     DEFAULT_MANIFEST_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_sample_manifest_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_sample_manifest_v1.jsonl"
     )
     DEFAULT_BLIND_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_sample_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_sample_blind_v1.jsonl"
     )
 
     def parse(self) -> CalibrationSampleArguments:

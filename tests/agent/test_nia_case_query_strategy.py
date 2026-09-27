@@ -79,10 +79,10 @@ class TestNiaCaseDenseQueryMetricCalculator:
 
 class TestNiaCaseDenseQueryStrategyArtifact:
     SUMMARY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_query_strategy_dense_summary_20260926_1709_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_query_strategy_dense_summary_20260926_1709_v1.jsonl"
     )
     LIVE_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
     )
 
     def test_records_complete_dense_comparison_result(self) -> None:

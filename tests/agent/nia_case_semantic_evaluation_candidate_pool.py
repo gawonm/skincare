@@ -24,16 +24,16 @@ from tests.agent.nia_case_semantic_golden_schemas import (
 
 class NiaCaseSemanticEvaluationCandidatePoolCli:
     REFERENCE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_references_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_references_v1.jsonl"
     )
     CORPUS_PATH: ClassVar[Path] = Path(
         "data/processed/nia_case_documents_10s_30s.jsonl"
     )
     INTERNAL_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
     BLIND_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_blind_v1.jsonl"
     )
 
     @classmethod

@@ -37,7 +37,7 @@ class CaseCandidateBatchAuditItem(RagModel):
 
 
 class CaseCandidateBatchAuditArgumentsParser:
-    DEFAULT_GOLDEN_PATH = Path("tests/agent/nia_case_retrieval_golden_24.jsonl")
+    DEFAULT_GOLDEN_PATH = Path("tests/agent/nia_case_eval_data/nia_case_retrieval_golden_24.jsonl")
     DEFAULT_EVALUATION_ID_PREFIX = "holdout_"
 
     def parse(self) -> CaseCandidateBatchAuditArguments:

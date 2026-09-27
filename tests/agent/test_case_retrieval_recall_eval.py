@@ -66,7 +66,7 @@ class TestCaseRetrievalMetricCalculator:
 
 
 class TestCaseRetrievalGoldenSet:
-    GOLDEN_PATH: ClassVar[Path] = Path("tests/agent/nia_case_retrieval_golden_24.jsonl")
+    GOLDEN_PATH: ClassVar[Path] = Path("tests/agent/nia_case_eval_data/nia_case_retrieval_golden_24.jsonl")
     EXPECTED_TOTAL_COUNT: ClassVar[int] = 24
     EXPECTED_DEV_COUNT: ClassVar[int] = 18
     EXPECTED_HOLDOUT_COUNT: ClassVar[int] = 6

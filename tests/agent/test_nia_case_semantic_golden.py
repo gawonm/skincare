@@ -51,7 +51,7 @@ from tests.agent.nia_case_semantic_metrics import (
 
 class TestNiaCaseSemanticCalibrationSet:
     CALIBRATION_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_v1.jsonl"
     )
     EXPECTED_ITEM_COUNT: ClassVar[int] = 10
 
@@ -92,44 +92,44 @@ class TestNiaCaseSemanticCandidatePool:
     )
     EXPECTED_CORPUS_COUNT: ClassVar[int] = 3_581
     INTERNAL_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_pool_v1.jsonl"
     )
     BLIND_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_blind_v1.jsonl"
     )
     EXPECTED_CALIBRATION_COUNT: ClassVar[int] = 10
     EXPECTED_DENSE_TOP_40_COUNT: ClassVar[int] = 400
     SAMPLE_MANIFEST_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_sample_manifest_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_sample_manifest_v1.jsonl"
     )
     SAMPLE_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_sample_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_sample_blind_v1.jsonl"
     )
     JUDGMENTS_PATHS: ClassVar[tuple[Path, ...]] = (
-        Path("tests/agent/nia_case_semantic_calibration_judgments_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_calibration_judgments_pores_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments_pores_v1.jsonl"),
         Path(
-            "tests/agent/nia_case_semantic_calibration_judgments_acne_sensitive_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments_acne_sensitive_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_calibration_judgments_acne_comedonal_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments_acne_comedonal_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_calibration_judgments_pigment_post_acne_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments_pigment_post_acne_v1.jsonl"
         ),
-        Path("tests/agent/nia_case_semantic_calibration_judgments_redness_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_calibration_judgments_wrinkles_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_calibration_judgments_sagging_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_calibration_judgments_melasma_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments_redness_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments_wrinkles_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments_sagging_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments_melasma_v1.jsonl"),
         Path(
-            "tests/agent/nia_case_semantic_calibration_judgments_combo_dehydrated_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments_combo_dehydrated_v1.jsonl"
         ),
     )
     SUPPLEMENT_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_supplement_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_supplement_blind_v1.jsonl"
     )
     SUPPLEMENT_JUDGMENTS_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_supplement_judgments_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_supplement_judgments_v1.jsonl"
     )
 
     def test_loads_full_corpus_without_reasoning_text(self) -> None:
@@ -408,106 +408,106 @@ class TestNiaCaseSemanticMetricScorer:
 
 class TestNiaCaseSemanticEvaluationQueries:
     EVALUATION_QUERY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_queries_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_queries_v1.jsonl"
     )
     EVALUATION_INTERNAL_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
     EVALUATION_BLIND_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_blind_v1.jsonl"
     )
     EVALUATION_ANCHOR_MANIFEST_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_anchor_manifest_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_manifest_v1.jsonl"
     )
     EVALUATION_ANCHOR_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_anchor_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_blind_v1.jsonl"
     )
     FINAL_GOLDEN_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_golden_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_golden_v1.jsonl"
     )
     EVALUATION_JUDGMENT_PATHS: ClassVar[tuple[Path, ...]] = (
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pores_01_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pores_01_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pores_02_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pores_02_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pores_03_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pores_03_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pores_04_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pores_04_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pores_05_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pores_05_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pores_06_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pores_06_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pores_07_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pores_07_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pores_08_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pores_08_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pigment_01_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pigment_01_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pigment_02_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pigment_02_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pigment_03_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pigment_03_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pigment_04_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pigment_04_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pigment_05_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pigment_05_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pigment_06_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pigment_06_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pigment_07_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pigment_07_v1.jsonl"
         ),
         Path(
-            "tests/agent/nia_case_semantic_evaluation_anchor_judgments_pigment_08_v1.jsonl"
+            "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_pigment_08_v1.jsonl"
         ),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_acne_01_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_acne_02_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_acne_03_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_acne_04_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_acne_05_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_acne_06_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_acne_07_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_acne_08_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_composite_01_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_composite_02_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_composite_03_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_composite_04_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_composite_05_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_composite_06_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_dry_01_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_dry_02_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_dry_03_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_redness_01_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_redness_02_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_redness_03_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_wrinkles_01_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_wrinkles_02_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_sensitive_01_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_anchor_judgments_sagging_01_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_acne_01_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_acne_02_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_acne_03_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_acne_04_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_acne_05_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_acne_06_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_acne_07_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_acne_08_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_composite_01_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_composite_02_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_composite_03_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_composite_04_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_composite_05_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_composite_06_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_dry_01_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_dry_02_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_dry_03_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_redness_01_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_redness_02_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_redness_03_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_wrinkles_01_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_wrinkles_02_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_sensitive_01_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_anchor_judgments_sagging_01_v1.jsonl"),
     )
     RERANK_JUDGMENT_PATHS: ClassVar[tuple[Path, ...]] = (
-        Path("tests/agent/nia_case_semantic_evaluation_rerank_judgments_pores_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_rerank_judgments_pigment_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_rerank_judgments_acne_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_rerank_judgments_composite_v1.jsonl"),
-        Path("tests/agent/nia_case_semantic_evaluation_rerank_judgments_rare_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_rerank_judgments_pores_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_rerank_judgments_pigment_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_rerank_judgments_acne_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_rerank_judgments_composite_v1.jsonl"),
+        Path("tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_rerank_judgments_rare_v1.jsonl"),
     )
     RERANK_UNJUDGED_BLIND_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_rerank_unjudged_blind_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_rerank_unjudged_blind_v1.jsonl"
     )
 
     def test_freezes_forty_queries_with_agreed_cohort_sizes(self) -> None:
