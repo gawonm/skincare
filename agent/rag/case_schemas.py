@@ -7,7 +7,10 @@ from pydantic import Field, FiniteFloat, model_validator
 
 from agent.rag.schemas import EmbeddingVector, LookupStatus, RagModel
 
-DEFAULT_CASE_CANDIDATE_LIMIT = 20
+DEFAULT_CASE_CANDIDATE_LIMIT = 40
+# 관련 후보가 메타데이터 단계에서 사라지면 리랭커가 복구할 수 없으므로
+# Dense Top-40 전체를 리랭커의 기본 입력으로 유지한다.
+DEFAULT_CASE_RERANK_CANDIDATE_LIMIT = DEFAULT_CASE_CANDIDATE_LIMIT
 DEFAULT_CASE_RERANK_LIMIT = 3
 
 
@@ -73,7 +76,11 @@ class CaseRerankRequest(RagModel):
 
 class CaseRerankResult(RagModel):
     model: str = Field(min_length=1)
-    hits: list[CaseSearchHit] = Field(min_length=1, max_length=DEFAULT_CASE_RERANK_LIMIT)
+    # 안전 필터 뒤 적합한 후보가 없으면 위험한 Case로 Top-3를 억지로 채우지 않는다.
+    hits: list[CaseSearchHit] = Field(
+        default_factory=list,
+        max_length=DEFAULT_CASE_RERANK_LIMIT,
+    )
 
     @model_validator(mode="after")
     def validate_rerank_scores(self) -> Self:

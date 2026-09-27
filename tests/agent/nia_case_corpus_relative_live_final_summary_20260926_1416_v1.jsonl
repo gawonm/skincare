@@ -1,0 +1,1 @@
+{"run_id":"live_20260926_1416_v1","golden_version":"v4","status":"complete","query_count":24,"corpus_case_count":3581,"dense_model":"BAAI/bge-m3","reranker_model":"BAAI/bge-reranker-v2-m3","candidate_count":4319,"top3_count":72,"unjudged_count":0}

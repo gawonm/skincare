@@ -18,6 +18,7 @@ from agent.rag.case_claim_schemas import (
 )
 from agent.rag.case_claim_validator import CaseClaimValidator
 from agent.rag.case_schemas import (
+    DEFAULT_CASE_CANDIDATE_LIMIT,
     CaseBundle,
     CaseRerankRequest,
     CaseSearchRequest,
@@ -45,10 +46,9 @@ from agent.rag.ports import (
     ClaimRetriever,
     TextEmbedder,
 )
-from agent.rag.retrieval.case_result_fusion import (
-    CaseSearchContribution,
-    CaseSearchFusionRequest,
-    CaseSearchResultFusion,
+from agent.rag.retrieval.case_candidate_selector import (
+    CaseCandidateSelectionRequest,
+    CaseMetadataCandidateSelector,
 )
 from agent.rag.retrieval.ingredient_alias_mapper import CommonIngredientAliasMapper
 from agent.rag.schemas import (
@@ -67,8 +67,6 @@ from agent.rag_response import RagResponseAssembler
 from agent.runtime import AgentRuntime
 from agent.schemas import (
     AgentState,
-    CaseRetrievalQuery,
-    CaseRetrievalQueryKind,
     ChatStatus,
     GraphNode,
     RagRoute,
@@ -102,7 +100,7 @@ class RagWorkflowNodes:
         self._case_embedder = case_embedder
         self._ingredient_repository = ingredient_repository
         self._case_claim_validator = CaseClaimValidator()
-        self._case_search_fusion = CaseSearchResultFusion()
+        self._case_candidate_selector = CaseMetadataCandidateSelector()
         self._case_claim_anchor_adapter = CaseClaimToEvidenceQueryAnchorAdapter()
         self._case_usage_guidance = CaseUsageGuidanceExtractor()
         self._ingredient_aliases = CommonIngredientAliasMapper()
@@ -119,81 +117,42 @@ class RagWorkflowNodes:
     async def search_cases(self, state: AgentState) -> AgentState:
         if not self._runtime.reserve_tool_call(state, GraphNode.SEARCH_CASES):
             return state
-        queries = self._case_retrieval_queries(state)
+        query = self._case_query(state)
         try:
-            embedding = await self._case_embedder.embed(
-                EmbeddingRequest(texts=[query.text for query in queries])
-            )
+            embedding = await self._case_embedder.embed(EmbeddingRequest(texts=[query]))
             if embedding.model != LocalEmbeddingModel.BGE_M3.value:
                 result = CaseSearchResult(
                     status=LookupStatus.UNSUPPORTED,
                     error_message=(
-                        "NIA Case 질의 임베딩 모델이 BGE-M3가 아닙니다: "
-                        f"actual={embedding.model}"
+                        f"NIA Case 질의 임베딩 모델이 BGE-M3가 아닙니다: actual={embedding.model}"
                     ),
                 )
-            elif len(embedding.vectors) != len(queries):
+            elif len(embedding.vectors) != 1:
                 result = CaseSearchResult(
                     status=LookupStatus.ERROR,
                     error_message=(
-                        "NIA Case 검색 질의 수와 임베딩 벡터 수가 다릅니다: "
-                        f"queries={len(queries)}, vectors={len(embedding.vectors)}"
+                        "NIA Case 단일 검색 질의의 임베딩 벡터 수가 올바르지 않습니다: "
+                        f"actual={len(embedding.vectors)}"
                     ),
                 )
-            elif any(
-                len(vector.values) != BGE_M3_EMBEDDING_DIMENSIONS
-                for vector in embedding.vectors
-            ):
-                invalid_dimensions = [
-                    len(vector.values)
-                    for vector in embedding.vectors
-                    if len(vector.values) != BGE_M3_EMBEDDING_DIMENSIONS
-                ]
+            elif len(embedding.vectors[0].values) != BGE_M3_EMBEDDING_DIMENSIONS:
                 result = CaseSearchResult(
                     status=LookupStatus.UNSUPPORTED,
                     error_message=(
-                        "NIA Case 질의 벡터 중 1,024차원이 아닌 값이 있습니다: "
-                        f"actual={invalid_dimensions}"
+                        "NIA Case 질의 벡터가 1,024차원이 아닙니다: "
+                        f"actual={len(embedding.vectors[0].values)}"
                     ),
                 )
             else:
-                contributions: list[CaseSearchContribution] = []
-                for query, vector in zip(queries, embedding.vectors, strict=True):
-                    try:
-                        search_result = await self._case_retriever.search(
-                            CaseSearchRequest(
-                                query=query.text,
-                                query_embedding=vector,
-                                text_version="nia_case_text/v1",
-                                embedding_model=embedding.model,
-                            )
-                        )
-                    except (OSError, RuntimeError, TypeError, ValueError) as error:
-                        search_result = CaseSearchResult(
-                            status=LookupStatus.ERROR,
-                            error_message=(
-                                "NIA Case 개별 질의 검색에 실패했습니다: "
-                                f"kind={query.kind.value}, detail={error}"
-                            ),
-                        )
-                    contributions.append(
-                        CaseSearchContribution(
-                            query=query.text,
-                            result=search_result,
-                        )
+                result = await self._case_retriever.search(
+                    CaseSearchRequest(
+                        query=query,
+                        query_embedding=embedding.vectors[0],
+                        text_version="nia_case_text/v1",
+                        embedding_model=embedding.model,
+                        candidate_limit=DEFAULT_CASE_CANDIDATE_LIMIT,
                     )
-                fusion = self._case_search_fusion.fuse(
-                    CaseSearchFusionRequest(contributions=contributions)
                 )
-                result = fusion.search_result
-                if result.status is LookupStatus.SUCCESS:
-                    for failure in fusion.failures:
-                        self._runtime.add_tool_failure(
-                            state,
-                            "NIA Case 복수 질의 검색 일부 실패: "
-                            f"query={failure.query}, status={failure.status.value}, "
-                            f"detail={failure.message}",
-                        )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             result = CaseSearchResult(
                 status=LookupStatus.ERROR,
@@ -220,23 +179,31 @@ class RagWorkflowNodes:
             return state
         if not self._runtime.reserve_tool_call(state, GraphNode.RERANK_CASES):
             return state
+        selected_bundle = bundle
         try:
             parsed = self._runtime.require_parsed(state)
-            rerank = await self._case_reranker.rerank(
-                CaseRerankRequest(
-                    query=(
-                        parsed.query_plan.case_rerank_query or self._case_query(state)
-                    ),
+            selection = self._case_candidate_selector.select(
+                CaseCandidateSelectionRequest(
+                    query=self._case_query(state),
+                    skin_concerns=parsed.skin_concerns,
                     candidates=bundle.search.hits,
                 )
             )
-            state.case_bundle = bundle.model_copy(update={"rerank": rerank})
+            selected_search = bundle.search.model_copy(update={"hits": selection.candidates})
+            selected_bundle = bundle.model_copy(update={"search": selected_search})
+            rerank = await self._case_reranker.rerank(
+                CaseRerankRequest(
+                    query=self._case_query(state),
+                    candidates=selection.candidates,
+                )
+            )
+            state.case_bundle = selected_bundle.model_copy(update={"rerank": rerank})
         except (OSError, RuntimeError, TypeError, ValueError) as error:
-            # 재정렬 실패 시에도 RRF Top-3는 출처가 보존된 유효 후보이므로 명시적 fallback으로 쓴다.
-            state.case_bundle = bundle.model_copy(update={"rerank_fallback_used": True})
+            # 재정렬 실패 시에도 메타데이터 선별 뒤의 벡터 순위는 출처가 보존된 후보이므로 쓴다.
+            state.case_bundle = selected_bundle.model_copy(update={"rerank_fallback_used": True})
             self._runtime.add_tool_failure(
                 state,
-                f"NIA Case rerank 실패로 RRF 융합 순위를 사용합니다: {error}",
+                f"NIA Case rerank 실패로 메타데이터 선별 벡터 순위를 사용합니다: {error}",
             )
         self._runtime.record_node(
             state,
@@ -620,20 +587,6 @@ class RagWorkflowNodes:
     def _case_query(self, state: AgentState) -> str:
         parsed = self._runtime.require_parsed(state)
         return parsed.query_plan.case_query or parsed.query
-
-    def _case_retrieval_queries(self, state: AgentState) -> list[CaseRetrievalQuery]:
-        parsed = self._runtime.require_parsed(state)
-        if parsed.query_plan.case_retrieval_queries:
-            return [
-                query.model_copy(deep=True)
-                for query in parsed.query_plan.case_retrieval_queries
-            ]
-        return [
-            CaseRetrievalQuery(
-                kind=CaseRetrievalQueryKind.NATURAL_QUESTION,
-                text=self._case_query(state),
-            )
-        ]
 
     def _evidence_query(self, state: AgentState) -> str:
         parsed = self._runtime.require_parsed(state)

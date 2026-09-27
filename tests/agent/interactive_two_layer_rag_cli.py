@@ -4,7 +4,11 @@
     uv run python -m tests.agent.interactive_two_layer_rag_cli \
         "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?"
 
-단일 질의 (2-Layer RAG 상세 모드):
+단일 질의 (유사도·리랭킹·Evidence RAG 점수 모드):
+    uv run python -m tests.agent.interactive_two_layer_rag_cli \
+        "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?" --scores
+
+단일 질의 (2-Layer RAG 전체 상세 모드):
     uv run python -m tests.agent.interactive_two_layer_rag_cli \
         "피지가 많고 좁쌀 여드름이 나는데 뭘 써야 해?" --verbose
 
@@ -13,6 +17,7 @@
 """
 
 import asyncio
+import re
 import sys
 from enum import StrEnum
 from typing import ClassVar
@@ -44,11 +49,6 @@ from agent.rag.generation.answer_generator import AnswerGenerator
 from agent.rag.generation.evidence_statement_generator import EvidenceStatementGeneratorFactory
 from agent.rag.ports import CaseClaimExtractor, CaseReranker, CaseRetriever, EvidenceRetriever
 from agent.rag.retrieval.case_reranker import LocalBgeCaseRerankerV2M3
-from agent.rag.retrieval.case_result_fusion import (
-    CaseSearchContribution,
-    CaseSearchFusionRequest,
-    CaseSearchResultFusion,
-)
 from agent.rag.retrieval.cross_encoder import LocalBgeCrossEncoderScorer
 from agent.rag.retrieval.hybrid_retriever import HybridEvidenceRetriever
 from agent.rag.retrieval.ingredient_alias_mapper import CommonIngredientAliasMapper
@@ -105,6 +105,7 @@ class CliDisplayMode(StrEnum):
     """CLI 출력 모드."""
 
     COMPACT = "compact"
+    SCORES = "scores"
     VERBOSE = "verbose"
 
 
@@ -423,7 +424,7 @@ class CompactTwoLayerTurnPresenter:
         if output.follow_up_question:
             print(f"\n추가 질문: {output.follow_up_question}")
 
-        print("\n상세 2-Layer RAG 로그가 필요하면 명령 끝에 --verbose를 붙이세요.")
+        print("\n유사도·리랭킹·Evidence RAG 점수는 --scores, 전체 상세 로그는 --verbose를 붙이세요.")
         print(DIVIDER_LINE)
 
     def _claim_rows(self, result: AgentTurnResult) -> list[ClaimEvidenceDisplay]:
@@ -460,12 +461,190 @@ class CompactTwoLayerTurnPresenter:
         return "근거 충돌"
 
 
+class ScoresTwoLayerTurnPresenter:
+    """원문 본문 없이 NIA Case 유사도, 리랭킹 값, Evidence RAG 점수 지표를 집중 출력한다."""
+
+    CASE_HIT_LIMIT: ClassVar[int] = 10
+    DECIMAL_PLACES: ClassVar[int] = 4
+
+    def __init__(self) -> None:
+        self._product_basis = ProductBasisPresenter()
+
+    def print_turn(
+        self,
+        snapshot: TwoLayerFlowSnapshot,
+        result: AgentTurnResult,
+        user_message: str,
+    ) -> None:
+        output = result.turn_output
+        intents = ", ".join(intent.value for intent in output.intents)
+
+        print(f"\n{DIVIDER_LINE}")
+        print(f"질문: {user_message}")
+        print(f"실행 결과: {output.status.value} | 의도: {intents}")
+        print(SUB_DIVIDER_LINE)
+
+        # 1. NIA Case 벡터 유사도 계산 값
+        self._print_case_similarity_scores(snapshot)
+
+        # 2. Case 리랭킹 값
+        self._print_case_rerank_scores(snapshot)
+
+        # 3. Evidence RAG 값 (Vector, BM25, RRF, Rerank)
+        self._print_evidence_rag_scores(snapshot)
+
+        # 4. 상품 후보
+        self._print_product_candidates(output)
+
+        # 5. 채택된 근거 (Citations)
+        if output.citations:
+            print("\n[채택된 근거]")
+            for citation in output.citations:
+                print(f"- {citation.source_title} ({citation.locator})")
+
+        # 6. Agent 최종 응답
+        print("\n[Agent 최종 응답]")
+        print(output.message)
+
+        # 7. 보류 요약
+        if output.unresolved:
+            print("\n[보류 요약]")
+            for item in output.unresolved:
+                print(f"- {item.kind.value}: {item.detail}")
+
+        if output.error_code is not None:
+            print(f"\n오류: {output.error_code.value} | 재시도 가능: {output.retryable}")
+        if output.follow_up_question:
+            print(f"\n추가 질문: {output.follow_up_question}")
+
+        print("\n청크 본문 및 전체 상세 파이프라인 로그가 필요하면 --verbose를 붙이세요.")
+        print(DIVIDER_LINE)
+
+    def _print_case_similarity_scores(self, snapshot: TwoLayerFlowSnapshot) -> None:
+        print("\n[1. NIA Case 유사도 계산 값 (Dense Vector)]")
+        if not snapshot.case_searches:
+            print("- 검색 미실행")
+            return
+        rerank_input_ids = {
+            candidate.case_id
+            for trace in snapshot.case_reranks
+            for candidate in trace.request.candidates
+        }
+        for trace in snapshot.case_searches:
+            if trace.result is None:
+                print(f"- 질의: {trace.request.query} (결과 미수신)")
+                continue
+            hits = trace.result.hits
+            print(
+                f"- 질의: '{trace.request.query}' | "
+                f"후보 요청: {trace.request.candidate_limit}건 | "
+                f"검색 결과: {len(hits)}건 (상위 {min(len(hits), self.CASE_HIT_LIMIT)}건 표시)"
+            )
+            for index, hit in enumerate(hits[: self.CASE_HIT_LIMIT], start=1):
+                meta = hit.metadata
+                rerank_mark = " [리랭커 입력]" if hit.case_id in rerank_input_ids else ""
+                print(
+                    f"  {index:2d}. case_id={hit.case_id} | "
+                    f"유사도(cos_sim)={hit.vector_similarity:.{self.DECIMAL_PLACES}f}{rerank_mark} | "
+                    f"고민={meta.target_concern} | {meta.age}세 {meta.gender} {meta.skin_type}"
+                )
+
+    def _print_case_rerank_scores(self, snapshot: TwoLayerFlowSnapshot) -> None:
+        print("\n[2. NIA Case 리랭킹 값 (BGE Cross-Encoder)]")
+        if not snapshot.case_reranks:
+            print("- 리랭크 미실행")
+            return
+        for trace in snapshot.case_reranks:
+            if trace.result is None:
+                print(f"- 질의: {trace.request.query} (결과 미수신)")
+                continue
+            print(
+                f"- 모델: {trace.result.model} | "
+                f"입력 후보: {len(trace.request.candidates)}건 → 최종 선정: {len(trace.result.hits)}건"
+            )
+            for index, hit in enumerate(trace.result.hits, start=1):
+                meta = hit.metadata
+                rerank_score_str = (
+                    f"{hit.rerank_score:.{self.DECIMAL_PLACES}f}"
+                    if hit.rerank_score is not None
+                    else "N/A"
+                )
+                print(
+                    f"  선정 {index}. case_id={hit.case_id} | "
+                    f"리랭킹 점수={rerank_score_str} | "
+                    f"1차 유사도={hit.vector_similarity:.{self.DECIMAL_PLACES}f} | "
+                    f"고민={meta.target_concern} ({', '.join(meta.skin_concerns)})"
+                )
+
+    def _print_evidence_rag_scores(self, snapshot: TwoLayerFlowSnapshot) -> None:
+        print("\n[3. Evidence RAG 값 (Vector · BM25 · RRF · Reranker)]")
+        if not snapshot.evidence_searches:
+            print("- Evidence 검색 미실행")
+            return
+        for index, trace in enumerate(snapshot.evidence_searches, start=1):
+            target_str = ", ".join(trace.request.target_ids) if trace.request.target_ids else "공통/자유질의"
+            print(f"- [검색 {index}] 대상: {target_str} | 질의: '{trace.request.query}'")
+            if trace.result is None:
+                print("   결과 미수신")
+                continue
+            chunks = trace.result.chunks
+            if not chunks:
+                print("   검색 결과 청크 없음")
+                continue
+            for chunk_idx, hit in enumerate(chunks, start=1):
+                evidence = hit.chunk.evidence
+                vec_str = (
+                    f"{hit.vector_similarity:.{self.DECIMAL_PLACES}f}"
+                    if hit.vector_similarity is not None
+                    else "N/A"
+                )
+                bm25_str = (
+                    f"{hit.bm25_relevance:.{self.DECIMAL_PLACES}f}"
+                    if hit.bm25_relevance is not None
+                    else "N/A"
+                )
+                rerank_str = (
+                    f"{hit.reranker_score:.{self.DECIMAL_PLACES}f}"
+                    if hit.reranker_score is not None
+                    else "N/A"
+                )
+                rrf_str = f"{hit.fused_score:.{self.DECIMAL_PLACES}f}"
+                print(
+                    f"   ({chunk_idx}) {evidence.source_title} [{evidence.locator}] "
+                    f"({evidence.review_status.value})\n"
+                    f"       → Vector: {vec_str} | BM25: {bm25_str} | RRF: {rrf_str} | Rerank: {rerank_str}"
+                )
+
+    def _print_product_candidates(self, output: object) -> None:
+        artifacts = getattr(output, "artifacts", [])
+        candidate_sets = [
+            artifact
+            for artifact in artifacts
+            if isinstance(artifact, ProductCandidateSet)
+        ]
+        candidates = [
+            candidate
+            for candidate_set in candidate_sets
+            for candidate in candidate_set.candidates
+        ]
+        if candidates:
+            print("\n[상품 후보]")
+            for candidate in candidates:
+                basis = self._product_basis.label(candidate.unresolved)
+                print(f"{candidate.rank}. {candidate.product.name} [{basis}]")
+
+
 class VerboseTwoLayerTurnPresenter:
     """2-Layer RAG 파이프라인의 모든 단계를 상세하게 출력한다."""
 
     QUOTE_PREVIEW_LENGTH: ClassVar[int] = 220
+    CASE_QUESTION_PREVIEW_LENGTH: ClassVar[int] = 180
     CHUNK_CONTENT_PREVIEW_LENGTH: ClassVar[int] = 200
     PRODUCT_PREVIEW_LIMIT: ClassVar[int] = 10
+    _CASE_QUESTION_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"\[질문\]\s*(.*?)(?=\n\s*\[(?:답변|추론)\]|\Z)",
+        re.DOTALL,
+    )
 
     def __init__(self) -> None:
         self._aliases = CommonIngredientAliasMapper()
@@ -533,6 +712,11 @@ class VerboseTwoLayerTurnPresenter:
         if not snapshot.case_searches:
             print("- 실행되지 않음")
             return
+        rerank_input_ids = {
+            candidate.case_id
+            for trace in snapshot.case_reranks
+            for candidate in trace.request.candidates
+        }
         for trace in snapshot.case_searches:
             print(f"- 검색 질의: {trace.request.query}")
             print(f"- 후보 요청 수: {trace.request.candidate_limit}")
@@ -541,30 +725,18 @@ class VerboseTwoLayerTurnPresenter:
                 continue
             print(f"- 상태: {trace.result.status.value}, 반환: {len(trace.result.hits)}건")
             for index, hit in enumerate(trace.result.hits, start=1):
+                metadata = hit.metadata
                 print(
                     f"  {index}. case_id={hit.case_id} "
-                    f"vector_similarity={hit.vector_similarity:.4f}"
+                    f"vector_similarity={hit.vector_similarity:.4f} "
+                    f"rerank_input={'yes' if hit.case_id in rerank_input_ids else 'no'}"
                 )
-        contributions = [
-            CaseSearchContribution(query=trace.request.query, result=trace.result)
-            for trace in snapshot.case_searches
-            if trace.result is not None
-        ]
-        if not contributions:
-            return
-        fusion = CaseSearchResultFusion().fuse(
-            CaseSearchFusionRequest(contributions=contributions)
-        )
-        print(
-            f"- RRF 융합 상태: {fusion.search_result.status.value}, "
-            f"후보: {len(fusion.candidates)}건"
-        )
-        for index, candidate in enumerate(fusion.candidates, start=1):
-            print(
-                f"  {index}. case_id={candidate.hit.case_id} "
-                f"rrf_score={candidate.reciprocal_rank_score:.6f} "
-                f"matched_queries={len(candidate.matched_queries)}"
-            )
+                print(
+                    f"     target={metadata.target_concern} | concerns={metadata.skin_concerns} | "
+                    f"profile={metadata.age}세 {metadata.gender} {metadata.skin_type}"
+                )
+                print(f"     question={self._case_question(hit.page_content)}")
+        print("- 단일 벡터 검색 결과를 고민 메타데이터로 선별한 뒤 재정렬합니다.")
 
     def _print_case_rerank(self, snapshot: TwoLayerFlowSnapshot) -> None:
         print("\n[2. BGE 리랭커 Top-3 Case]")
@@ -574,6 +746,15 @@ class VerboseTwoLayerTurnPresenter:
         for trace in snapshot.case_reranks:
             print(f"- 리랭크 질의: {trace.request.query}")
             print(f"- 입력 후보: {len(trace.request.candidates)}건, 선택 상한: {trace.request.limit}건")
+            for index, candidate in enumerate(trace.request.candidates, start=1):
+                metadata = candidate.metadata
+                print(
+                    f"  입력 {index}. case_id={candidate.case_id} "
+                    f"vector_similarity={candidate.vector_similarity:.4f} | "
+                    f"target={metadata.target_concern} | concerns={metadata.skin_concerns} | "
+                    f"profile={metadata.age}세 {metadata.gender} {metadata.skin_type}"
+                )
+                print(f"          question={self._case_question(candidate.page_content)}")
             if trace.result is None:
                 print("- 결과 미수신")
                 continue
@@ -583,6 +764,13 @@ class VerboseTwoLayerTurnPresenter:
                     f"  {index}. case_id={hit.case_id} "
                     f"rerank_score={hit.rerank_score:.4f}"
                 )
+
+    def _case_question(self, page_content: str) -> str:
+        match = self._CASE_QUESTION_PATTERN.search(page_content)
+        question = match.group(1) if match is not None else page_content
+        normalized = " ".join(question.split())
+        suffix = "..." if len(normalized) > self.CASE_QUESTION_PREVIEW_LENGTH else ""
+        return normalized[: self.CASE_QUESTION_PREVIEW_LENGTH] + suffix
 
     def _print_claim_extraction(self, snapshot: TwoLayerFlowSnapshot) -> None:
         print("\n[3. Top-3 원문 LLM 관련 성분 선별]")
@@ -683,6 +871,7 @@ class VerboseTwoLayerTurnPresenter:
                     f"| 검수: {evidence.review_status.value} "
                     f"| RRF: {hit.fused_score:.4f}"
                     + (f", Vec: {hit.vector_similarity:.4f}" if hit.vector_similarity is not None else "")
+                    + (f", BM25: {hit.bm25_relevance:.4f}" if hit.bm25_relevance is not None else "")
                     + (f", Rerank: {hit.reranker_score:.4f}" if hit.reranker_score is not None else "")
                 )
                 print(f"       본문: {snippet}")
@@ -766,6 +955,7 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
     TIMEOUT_SECONDS: ClassVar[float] = 180.0
     RECURSION_LIMIT: ClassVar[int] = 80
     VERBOSE_FLAG: ClassVar[str] = "--verbose"
+    SCORES_FLAG: ClassVar[str] = "--scores"
 
     def __init__(
         self,
@@ -778,6 +968,7 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
         self._display_mode = display_mode
         self._flow_trace = TwoLayerFlowTraceCollector()
         self._compact_presenter = CompactTwoLayerTurnPresenter()
+        self._scores_presenter = ScoresTwoLayerTurnPresenter()
         self._verbose_presenter = VerboseTwoLayerTurnPresenter()
         self._actor_id = "two-layer-cli-user"
         self._chat_room_id = "two-layer-cli-room"
@@ -896,6 +1087,13 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
                 user_message,
             )
             return
+        if self._display_mode is CliDisplayMode.SCORES:
+            self._scores_presenter.print_turn(
+                self._flow_trace.snapshot(),
+                result,
+                user_message,
+            )
+            return
         self._compact_presenter.print_turn(result, user_message)
 
     def print_runtime(self) -> None:
@@ -927,12 +1125,18 @@ class InteractiveTwoLayerRagCli(InteractiveAgentCli):
     @classmethod
     async def main(cls) -> None:
         arguments = sys.argv[1:]
-        display_mode = (
-            CliDisplayMode.VERBOSE
-            if cls.VERBOSE_FLAG in arguments
-            else CliDisplayMode.COMPACT
-        )
-        message_parts = [argument for argument in arguments if argument != cls.VERBOSE_FLAG]
+        if cls.VERBOSE_FLAG in arguments:
+            display_mode = CliDisplayMode.VERBOSE
+        elif cls.SCORES_FLAG in arguments:
+            display_mode = CliDisplayMode.SCORES
+        else:
+            display_mode = CliDisplayMode.COMPACT
+
+        message_parts = [
+            argument
+            for argument in arguments
+            if argument not in (cls.VERBOSE_FLAG, cls.SCORES_FLAG)
+        ]
         database = ConfiguredDatabaseFactory().create()
         cli: InteractiveTwoLayerRagCli | None = None
         try:

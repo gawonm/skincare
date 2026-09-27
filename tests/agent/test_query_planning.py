@@ -1,6 +1,5 @@
 from agent.query_planning import IntentQueryPlanner
 from agent.schemas import (
-    CaseRetrievalQueryKind,
     Intent,
     IntentQueryPlan,
     ParsedRequest,
@@ -40,10 +39,13 @@ class TestIntentQueryPlanner:
         )
 
         assert result.case_query == (
-            "30대 남성 환절기 여드름 지성 피부에 좋은 성분과 주의사항"
+            "30대 남성, 요즘 환절기여서 힘들다. 여드름이 자꾸 올라오는 지성 피부인데 "
+            "어떤 성분이 좋고 주의할 점은 뭐야?"
         )
         assert "상품" not in result.case_query
         assert "루틴" not in result.case_query
+        assert result.case_retrieval_queries == []
+        assert result.case_rerank_query is None
         assert result.product_query == "검증된 추천 성분을 포함하는 상품"
         assert result.routine_query == "추천 상품으로 3일간 스킨케어 루틴 구성"
 
@@ -68,15 +70,11 @@ class TestIntentQueryPlanner:
         assert result.case_query == parsed.query
 
     def test_LLM의_긴_고민_문구를_Case_질의에_중복해서_붙이지_않는다(self) -> None:
-        original = (
-            "30대 남성, 환절기라 힘들다. 피지가 많고 여드름도 많은데 뭘 써야 하지?"
-        )
+        original = "30대 남성, 환절기라 힘들다. 피지가 많고 여드름도 많은데 뭘 써야 하지?"
         parsed = ParsedRequest(
             intents=[Intent.PRODUCT_DISCOVERY, Intent.ROUTINE_PLANNING],
             query=original,
-            query_plan=IntentQueryPlan(
-                case_query="피지가 많고 여드름이 많은데, 뭘 써야하지?"
-            ),
+            query_plan=IntentQueryPlan(case_query="피지가 많고 여드름이 많은데, 뭘 써야하지?"),
             skin_concerns=["피지가 많고 여드름이 많은 피부 고민", "피지", "여드름"],
             rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
         )
@@ -85,7 +83,7 @@ class TestIntentQueryPlanner:
             QueryPlanningRequest(original_message=original, parsed_request=parsed)
         )
 
-        assert result.case_query == "30대 남성 환절기 피지 여드름 피부 관련 성분 및 주의사항"
+        assert result.case_query == ("30대 남성, 환절기라 힘들다. 피지가 많고 여드름도 많은데")
         assert "뭘 써" not in result.case_query
 
     def test_Case_질의에_남은_상품_선택_문구를_결정적으로_제거한다(self) -> None:
@@ -98,8 +96,7 @@ class TestIntentQueryPlanner:
             query=original,
             query_plan=IntentQueryPlan(
                 case_query=(
-                    "30살 여성 겨울철 피부가 건조한 느낌 민감성 피부 "
-                    "스킨케어 제품 뭘 써야하지?"
+                    "30살 여성 겨울철 피부가 건조한 느낌 민감성 피부 스킨케어 제품 뭘 써야하지?"
                 ),
                 routine_query="추천 상품으로 5일 스킨케어 루틴",
             ),
@@ -111,49 +108,22 @@ class TestIntentQueryPlanner:
             QueryPlanningRequest(original_message=original, parsed_request=parsed)
         )
 
-        assert result.case_query == "30살 여성 겨울 민감성 건조 피부 관련 성분 및 주의사항"
+        assert result.case_query == (
+            "30살 여성, 겨울철이어서 피부가 건조한 느낌이야. 민감성 피부이기도 해."
+        )
         assert "제품" not in result.case_query
         assert "뭘 써" not in result.case_query
         assert "추천" not in result.case_query
         assert "5일" not in result.case_query
         assert "루틴" not in result.case_query
-        assert [query.kind for query in result.case_retrieval_queries] == [
-            CaseRetrievalQueryKind.PROFILE,
-            CaseRetrievalQueryKind.CONCERN,
-            CaseRetrievalQueryKind.NATURAL_QUESTION,
-        ]
-        retrieval_text = " ".join(query.text for query in result.case_retrieval_queries)
-        assert "30살" in retrieval_text
-        assert "30대" in retrieval_text
-        assert "여성" in retrieval_text
-        assert "겨울" in retrieval_text
-        assert "건조" in retrieval_text
-        assert "민감" in retrieval_text
-        assert "보습" in retrieval_text
-        assert "수분 부족" in retrieval_text
-        assert "진정" in retrieval_text
-        assert "자극 주의" in retrieval_text
-        assert "홍조" not in retrieval_text
-        assert "가려움" not in retrieval_text
-        assert "아토피" not in retrieval_text
-        assert "제품" not in retrieval_text
-        assert "추천" not in retrieval_text
-        assert "5일" not in retrieval_text
-        assert "루틴" not in retrieval_text
-        assert result.case_rerank_query is not None
-        assert "건조·민감" in result.case_rerank_query
-        assert "보습·수분 부족·진정·자극 주의" in result.case_rerank_query
-        assert "구체적으로 설명한 사례를 우선한다" in result.case_rerank_query
-        assert "제품" not in result.case_rerank_query
-        assert "루틴" not in result.case_rerank_query
+        assert result.case_retrieval_queries == []
+        assert result.case_rerank_query is None
 
     def test_명시_성분_Evidence_직행에는_Case_질의를_만들지_않는다(self) -> None:
         parsed = ParsedRequest(
             intents=[Intent.EVIDENCE_QA],
             query="나이아신아마이드 효능과 주의사항",
-            query_plan=IntentQueryPlan(
-                evidence_query="나이아신아마이드 효능과 주의사항"
-            ),
+            query_plan=IntentQueryPlan(evidence_query="나이아신아마이드 효능과 주의사항"),
             ingredient_mentions=["나이아신아마이드"],
             rag_route=RagRoute.EVIDENCE_ONLY,
         )
@@ -194,9 +164,7 @@ class TestIntentQueryPlanner:
         assert "루틴" not in result.evidence_query
 
     def test_Case_경로의_LLM_Evidence_질의보다_원문_고민어를_우선한다(self) -> None:
-        original = (
-            "30대 남성, 피지가 많고 여드름도 많은데 추천 상품으로 3일간 루틴 짜줘"
-        )
+        original = "30대 남성, 피지가 많고 여드름도 많은데 추천 상품으로 3일간 루틴 짜줘"
         parsed = ParsedRequest(
             intents=[Intent.PRODUCT_DISCOVERY, Intent.ROUTINE_PLANNING],
             query=original,
