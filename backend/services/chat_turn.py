@@ -10,25 +10,30 @@ from uuid import UUID
 
 from agent.schemas import ChatTurnOutput
 from agent.service import ChatService
-from backend.schemas.chat import ChatSendMessageRequest, ChatTurnResponse
+from backend.schemas.chat import ChatSection, ChatSendMessageRequest, ChatTurnResponse
+from backend.services.chat_response_builder import ChatResponseBuilder
 from backend.services.chat_room import ChatRoomService
 
 
 class ChatTurnService:
     """로그인 사용자의 메시지 한 건을 Agent에 넘기고 응답을 돌려준다."""
 
-    def __init__(self, rooms: ChatRoomService, agent: ChatService) -> None:
+    def __init__(
+        self, rooms: ChatRoomService, agent: ChatService, responses: ChatResponseBuilder
+    ) -> None:
         self._rooms = rooms
         self._agent = agent
+        self._responses = responses
 
     async def send_message(
         self, user_id: UUID, request: ChatSendMessageRequest
     ) -> ChatTurnResponse:
         agent_request = await self._rooms.prepare_request(user_id, request)
         output = await self._agent.handle_turn(agent_request)
-        return self._to_response(output)
+        sections = await self._responses.build(output)
+        return self._to_response(output, sections)
 
-    def _to_response(self, output: ChatTurnOutput) -> ChatTurnResponse:
+    def _to_response(self, output: ChatTurnOutput, sections: list[ChatSection]) -> ChatTurnResponse:
         return ChatTurnResponse(
             chat_room_id=output.chat_room_id,
             request_id=output.request_id,
@@ -43,4 +48,5 @@ class ChatTurnService:
             error_code=output.error_code,
             retryable=output.retryable,
             save_handoff=output.save_handoff,
+            sections=sections,
         )

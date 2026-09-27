@@ -15,6 +15,7 @@ from agent.service import ChatService
 from backend.repositories.session import SessionRepository
 from backend.repositories.user import UserRepository
 from backend.services.auth import AuthService
+from backend.services.chat_response_builder import ChatResponseBuilder
 from backend.services.chat_room import ChatRoomService
 from backend.services.chat_turn import ChatTurnService
 from backend.services.product_query_service import ProductQueryService
@@ -102,9 +103,13 @@ AgentChatServiceDep = Annotated[ChatService, Depends(get_agent_chat_service)]
 
 
 def get_chat_turn_service(request: Request, agent: AgentChatServiceDep) -> ChatTurnService:
-    """방 준비 서비스와 Agent를 묶어 채팅 한 턴을 처리하는 서비스를 만든다."""
+    """방 준비 서비스와 Agent, 응답 섹션 빌더를 묶어 채팅 한 턴을 처리하는 서비스를 만든다."""
     database = request.app.state.database
-    return ChatTurnService(rooms=ChatRoomService(database.session_factory), agent=agent)
+    return ChatTurnService(
+        rooms=ChatRoomService(database.session_factory),
+        agent=agent,
+        responses=ChatResponseBuilder(database.session_factory),
+    )
 
 
 ChatTurnServiceDep = Annotated[ChatTurnService, Depends(get_chat_turn_service)]
