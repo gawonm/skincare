@@ -73,6 +73,18 @@ export enum ChatIntent {
   RoutineSave = "routine_save",
 }
 
+/**
+ * `ChatTurnResponse.sections[].type` 미러(`backend/schemas/chat.py` 의 `ChatSectionType`).
+ * `docs/contracts/front-to-backend.md` "응답 확장: 섹션" 절 참고.
+ */
+export enum ChatSectionType {
+  Text = "text",
+  ProductList = "product_list",
+  Routine = "routine",
+  Evidence = "evidence",
+  Notice = "notice",
+}
+
 /** `agent/schemas.py` 의 `UnresolvedKind` 미러. */
 export enum UnresolvedKind {
   MissingInformation = "missing_information",
