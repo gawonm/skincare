@@ -74,7 +74,7 @@
 
 ## 4. 기존 Anchor 평가와 새 평가의 역할
 
-기존 `tests/agent/nia_case_retrieval_golden_24.jsonl`은 원본 Case를 먼저 고른 뒤 사용자형 질의를
+기존 `tests/agent/nia_case_eval_data/nia_case_retrieval_golden_24.jsonl`은 원본 Case를 먼저 고른 뒤 사용자형 질의를
 작성한 known-item 회귀 테스트다. 특정 원본 Case ID를 다시 찾을 수 있는지 확인하는 데는
 유효하지만, 의미상 동등한 Case를 오답 처리하므로 사용자 적합성 평가로 사용하지 않는다.
 
@@ -404,15 +404,15 @@ AI 기반 1차 판정은 일관된 대규모 검토에 사용하되 의료적으
 | 경로 | 역할 |
 | --- | --- |
 | `tests/agent/nia_case_semantic_golden_schemas.py` | 추천 기준표와 향후 graded qrels의 Enum·Pydantic 계약 |
-| `tests/agent/nia_case_semantic_calibration_v1.jsonl` | 판정표 검증용 10개 질의와 사전 추천 기준 |
+| `tests/agent/nia_case_eval_data/nia_case_semantic_calibration_v1.jsonl` | 판정표 검증용 10개 질의와 사전 추천 기준 |
 | `tests/agent/nia_case_semantic_candidate_pool.py` | dense·어휘·메타데이터·중복 후보 풀 생성기 |
-| `tests/agent/nia_case_semantic_calibration_pool_v1.jsonl` | Case ID와 후보 출처를 보존한 내부 매핑 |
-| `tests/agent/nia_case_semantic_calibration_blind_v1.jsonl` | 순위·출처·Case ID를 숨긴 판정 입력 |
+| `tests/agent/nia_case_eval_data/nia_case_semantic_calibration_pool_v1.jsonl` | Case ID와 후보 출처를 보존한 내부 매핑 |
+| `tests/agent/nia_case_eval_data/nia_case_semantic_calibration_blind_v1.jsonl` | 순위·출처·Case ID를 숨긴 판정 입력 |
 | `tests/agent/nia_case_semantic_calibration_sampler.py` | 질의당 15건의 판정 경계 층화 표본 생성기 |
-| `tests/agent/nia_case_semantic_calibration_sample_manifest_v1.jsonl` | 표본층과 review key 내부 매핑 |
-| `tests/agent/nia_case_semantic_calibration_sample_blind_v1.jsonl` | 총 150건의 블라인드 calibration 표본 |
-| `tests/agent/nia_case_semantic_calibration_judgments*_v1.jsonl` | 질의별로 분리한 calibration 표본의 단계별 판정 결과 |
-| `tests/agent/nia_case_semantic_golden_v1.jsonl` | 질의, 추천 기준, graded qrels |
+| `tests/agent/nia_case_eval_data/nia_case_semantic_calibration_sample_manifest_v1.jsonl` | 표본층과 review key 내부 매핑 |
+| `tests/agent/nia_case_eval_data/nia_case_semantic_calibration_sample_blind_v1.jsonl` | 총 150건의 블라인드 calibration 표본 |
+| `tests/agent/nia_case_eval_data/nia_case_semantic_calibration_judgments*_v1.jsonl` | 질의별로 분리한 calibration 표본의 단계별 판정 결과 |
+| `tests/agent/nia_case_eval_data/nia_case_semantic_golden_v1.jsonl` | 질의, 추천 기준, graded qrels |
 | `tests/agent/evaluate_nia_case_semantic_golden.py` | 현재 고정 파이프라인의 단계별 평가기 |
 | `tests/agent/test_nia_case_semantic_golden.py` | 구조·중복·수식·동결 조건 검증 |
 | `docs/agent/RAG_YK/<시각>_NIA_CASE_SEMANTIC_GOLDEN_EVAL_REPORT.md` | 최종 성능 및 실패 분석 |
@@ -806,10 +806,10 @@ anchor만 기록하며, 모든 관련 Case의 완전 목록으로 해석하지 �
 #### 진행 체크포인트 갱신
 
 - [x] 681건 pooled 재판정 설계를 calibration 이력으로 분리
-- [x] 24개 활성 질의와 144개 초기 블라인드 후보 생성 (`tests/agent/nia_case_corpus_relative_queries_v1.jsonl`, `tests/agent/nia_case_corpus_relative_anchor_manifest_v1.jsonl`, `tests/agent/nia_case_corpus_relative_anchor_blind_v1.jsonl`)
-- [x] 144개 corpus-relative 판정 완료 (24개 질의 × 6개 후보 = 144건, `tests/agent/nia_case_corpus_relative_judgments_*_v1.jsonl`)
-- [x] reranker Top-3 신규 노출 후보 보완 판정 완료 (24개 질의 중 신규 노출 56건, `tests/agent/nia_case_corpus_relative_rerank_unjudged_blind_v1.jsonl`, `tests/agent/nia_case_corpus_relative_rerank_judgments_v1.jsonl`)
-- [x] 24질의 corpus-relative golden v2 및 성능 보고서 동결 (`tests/agent/nia_case_corpus_relative_golden_v2.jsonl`, `tests/agent/nia_case_corpus_relative_evaluation_results_v2.jsonl`, `docs/agent/RAG_YK/2026-09-26_0335_NIA_CASE_CORPUS_RELATIVE_GOLDEN_EVAL_REPORT.md`)
+- [x] 24개 활성 질의와 144개 초기 블라인드 후보 생성 (`tests/agent/nia_case_eval_data/nia_case_corpus_relative_queries_v1.jsonl`, `tests/agent/nia_case_eval_data/nia_case_corpus_relative_anchor_manifest_v1.jsonl`, `tests/agent/nia_case_eval_data/nia_case_corpus_relative_anchor_blind_v1.jsonl`)
+- [x] 144개 corpus-relative 판정 완료 (24개 질의 × 6개 후보 = 144건, `tests/agent/nia_case_eval_data/nia_case_corpus_relative_judgments_*_v1.jsonl`)
+- [x] reranker Top-3 신규 노출 후보 보완 판정 완료 (24개 질의 중 신규 노출 56건, `tests/agent/nia_case_eval_data/nia_case_corpus_relative_rerank_unjudged_blind_v1.jsonl`, `tests/agent/nia_case_eval_data/nia_case_corpus_relative_rerank_judgments_v1.jsonl`)
+- [x] 24질의 corpus-relative golden v2 및 성능 보고서 동결 (`tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v2.jsonl`, `tests/agent/nia_case_eval_data/nia_case_corpus_relative_evaluation_results_v2.jsonl`, `docs/agent/RAG_YK/2026-09-26_0335_NIA_CASE_CORPUS_RELATIVE_GOLDEN_EVAL_REPORT.md`)
 
 #### 2026-09-26 03:35 골든셋 v2 동결 및 단계별 평가 요약
 
@@ -909,8 +909,8 @@ v3의 전체 지표는 다음과 같다.
 
 이후 비교의 활성 기준선은 다음과 같다.
 
-- 골든셋: `tests/agent/nia_case_corpus_relative_golden_v4.jsonl`
-- Live 결과: `tests/agent/nia_case_corpus_relative_live_results_20260926_1416_v1.jsonl`
+- 골든셋: `tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v4.jsonl`
+- Live 결과: `tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_results_20260926_1416_v1.jsonl`
 - 최종 보고서: `docs/agent/RAG_YK/2026-09-26_1416_NIA_CASE_CORPUS_RELATIVE_LIVE_V4_REPORT.md`
 
 ### 2026-09-26 단일 질의 구성 Dense Top-40 대조 실험
@@ -937,8 +937,8 @@ v3의 전체 지표는 다음과 같다.
 
 핵심 비교인 프로필 요약 대 문맥 보존의 질의별 우세는 프로필 요약 3건, 문맥 보존 17건, 동률 4건이었다. 따라서 `30살 여성 겨울 민감성 건조 피부 관련 성분 및 주의사항`처럼 프로필 키워드만 남기는 방식보다 사용자 원문의 증상과 요청 방향을 보존하는 단일 질의를 기본값으로 유지한다. 희소 고민에서는 프로필 요약형의 회수량이 많았지만 문맥 보존형의 첫 관련 문서 순위가 더 높았으므로, 별도 임베딩 질의를 추가하기 전에 metadata 미적용·현재 hard selection·soft boost를 비교한다.
 
-- 결과: `tests/agent/nia_case_query_strategy_dense_results_20260926_1709_v1.jsonl`
-- 요약: `tests/agent/nia_case_query_strategy_dense_summary_20260926_1709_v1.jsonl`
+- 결과: `tests/agent/nia_case_eval_data/nia_case_query_strategy_dense_results_20260926_1709_v1.jsonl`
+- 요약: `tests/agent/nia_case_eval_data/nia_case_query_strategy_dense_summary_20260926_1709_v1.jsonl`
 - 보고서: `docs/agent/RAG_YK/2026-09-26_1709_NIA_CASE_QUERY_STRATEGY_DENSE_EVAL_REPORT.md`
 
 ### 2026-09-26 OpenAI 운영 Intent 포함 1회 End-to-End 평가
@@ -973,9 +973,9 @@ LLM이 `query_plan.case_query` 초안까지 만들었지만 최종 route를 `evi
 보다 `ingredient_mentions`가 비어 있고 Case 질의 초안 또는 피부 고민이 있으면 Case 탐색을
 보존하는 결정적 보정 규칙을 먼저 실험한다.
 
-- OpenAI 원시 결과: `tests/agent/nia_case_openai_routing_once_20260926_1740_v1.jsonl`
-- OpenAI 라우팅 요약: `tests/agent/nia_case_openai_routing_once_summary_20260926_1740_v1.jsonl`
-- End-to-End 지표: `tests/agent/nia_case_openai_e2e_summary_20260926_1740_v1.jsonl`
+- OpenAI 원시 결과: `tests/agent/nia_case_eval_data/nia_case_openai_routing_once_20260926_1740_v1.jsonl`
+- OpenAI 라우팅 요약: `tests/agent/nia_case_eval_data/nia_case_openai_routing_once_summary_20260926_1740_v1.jsonl`
+- End-to-End 지표: `tests/agent/nia_case_eval_data/nia_case_openai_e2e_summary_20260926_1740_v1.jsonl`
 - 상세 보고서: `docs/agent/RAG_YK/2026-09-26_1740_NIA_CASE_OPENAI_E2E_REPORT.md`
 
 #### 2026-09-26 17:55 결정적 Route 정책 적용 및 정정

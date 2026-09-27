@@ -130,25 +130,25 @@ class NiaCaseCareCompatibilityProbeCli:
     RUN_ID: ClassVar[str] = "care_compatibility_20260927_v1"
     QUERY_PATH: ClassVar[Path] = NiaCaseCorpusRelativeEvaluationCli.QUERY_PATH
     GOLDEN_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v5.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v5.jsonl"
     )
     LIVE_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
     )
     BASELINE_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_reranker_relevance_probe_20260926_2150_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_reranker_relevance_probe_20260926_2150_v1.jsonl"
     )
     PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_care_compatibility_probe_20260927_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_care_compatibility_probe_20260927_v1.jsonl"
     )
     UNJUDGED_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_care_compatibility_unjudged_20260927_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_care_compatibility_unjudged_20260927_v1.jsonl"
     )
     SUMMARY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_care_compatibility_summary_20260927_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_care_compatibility_summary_20260927_v1.jsonl"
     )
     SUPPLEMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_care_compatibility_supplement_judgments_20260927_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_care_compatibility_supplement_judgments_20260927_v1.jsonl"
     )
     REPORT_PATH: ClassVar[Path] = Path(
         "docs/agent/RAG_YK/2026-09-27_NIA_CASE_CARE_COMPATIBILITY_PROBE.md"

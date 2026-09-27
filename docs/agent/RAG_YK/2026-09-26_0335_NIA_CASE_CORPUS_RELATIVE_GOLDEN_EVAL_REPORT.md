@@ -3,8 +3,8 @@
 ## 1. 평가 개요
 
 - **평가 기준**: `nia_corpus_relative_pooled_v1` (24개 활성 질의, 초기 144건 anchor + reranker Top-3 신규 노출 56건 = 총 200건 블라인드 판정)
-- **골든셋 산출물**: `tests/agent/nia_case_corpus_relative_golden_v2.jsonl`
-- **평가 결과 산출물**: `tests/agent/nia_case_corpus_relative_evaluation_results_v2.jsonl`
+- **골든셋 산출물**: `tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v2.jsonl`
+- **평가 결과 산출물**: `tests/agent/nia_case_eval_data/nia_case_corpus_relative_evaluation_results_v2.jsonl`
 - **단계별 지표**:
   - Dense Top-40: `Anchor Success@40`, `Anchor Recall@40`
   - Metadata Top-20: `Anchor Success@20`, `Anchor Retention@20`

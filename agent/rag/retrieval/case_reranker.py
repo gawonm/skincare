@@ -12,7 +12,7 @@ from agent.rag.retrieval.cross_encoder import (
     LocalBgeCrossEncoderScorer,
     RerankerTextPair,
 )
-from agent.rag.schemas import LocalRerankerConfig
+from agent.rag.schemas import CareContext, LocalRerankerConfig
 
 
 class LocalBgeCaseRerankerV2M3(CaseReranker):
@@ -73,7 +73,7 @@ class LocalBgeCaseRerankerV2M3(CaseReranker):
             )
         )
         safety_adjusted = self._remove_care_incompatible_candidates(
-            request.query,
+            request.care_context,
             ranked,
         )
         diversified = self._prioritize_unique_content(safety_adjusted)
@@ -107,13 +107,13 @@ class LocalBgeCaseRerankerV2M3(CaseReranker):
 
     def _remove_care_incompatible_candidates(
         self,
-        query: str,
+        care_context: CareContext,
         ranked: list[CaseSearchHit],
     ) -> list[CaseSearchHit]:
         compatible: list[CaseSearchHit] = []
         for candidate in ranked:
             assessment = self._care_compatibility.assess(
-                query=query,
+                care_context=care_context,
                 page_content=candidate.page_content,
             )
             if assessment.is_incompatible():

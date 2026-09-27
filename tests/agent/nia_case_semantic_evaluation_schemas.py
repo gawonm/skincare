@@ -160,13 +160,13 @@ class NiaCaseSemanticEvaluationReferenceWriter:
 
 class NiaCaseSemanticEvaluationReferenceCli:
     QUERY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_queries_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_queries_v1.jsonl"
     )
     CALIBRATION_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_calibration_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_calibration_v1.jsonl"
     )
     OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_references_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_references_v1.jsonl"
     )
 
     @classmethod

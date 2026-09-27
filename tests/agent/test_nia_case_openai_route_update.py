@@ -17,10 +17,10 @@ from tests.agent.evaluate_nia_case_openai_routing_once import (
 
 class TestNiaCaseOpenAiRouteUpdate:
     ROUTING_PATH = Path(
-        "tests/agent/nia_case_openai_routing_once_20260926_1740_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_openai_routing_once_20260926_1740_v1.jsonl"
     )
     RETRIEVAL_PATH = Path(
-        "tests/agent/nia_case_corpus_relative_live_results_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_results_20260926_1416_v1.jsonl"
     )
 
     def test_저장된_24건에서_두_경로를_복구하고_회귀를_만들지_않는다(self) -> None:

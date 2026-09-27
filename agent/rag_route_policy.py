@@ -4,10 +4,19 @@ from enum import StrEnum
 
 from pydantic import Field
 
-from agent.schemas import AgentModel, Intent, ParsedRequest, RagRoute
+from agent.schemas import (
+    AgentModel,
+    CaseQueryInputForm,
+    CaseQueryTaskStatus,
+    Intent,
+    ParsedRequest,
+    QueryTurnKind,
+    RagRoute,
+)
 
 
 class RagRouteReason(StrEnum):
+    KEYWORD_CASE_CLARIFICATION = "keyword_case_clarification"
     CONCERN_DISCOVERY = "concern_discovery"
     NORMALIZED_PRODUCT_DISCOVERY = "normalized_product_discovery"
     UNCONSTRAINED_DISCOVERY = "unconstrained_discovery"
@@ -45,17 +54,47 @@ class RagRouteDecision(AgentModel):
     reason: RagRouteReason
     normalized_intents: list[Intent] = Field(min_length=1)
     normalized_skin_concerns: list[str] = Field(default_factory=list)
+    ask_after_case_rerank: bool = False
+
+
+class RagRouteRequest(AgentModel):
+    parsed_request: ParsedRequest
+    turn_kind: QueryTurnKind = QueryTurnKind.FOLLOW_UP
+    original_message: str | None = Field(default=None, min_length=1)
 
 
 class RagRoutePolicy:
     """LLM 누락이 사용자 사례만으로 상품을 추천하는 우회 경로가 되지 않게 한다."""
 
-    def decide(self, request: ParsedRequest) -> RagRouteDecision:
+    def decide(self, routing: RagRouteRequest) -> RagRouteDecision:
+        request = routing.parsed_request
         concerns = list(
             dict.fromkeys(request.skin_concerns + self._skin_concerns_in(request.query))
         )
         intents = list(dict.fromkeys(request.intents))
         has_ingredients = bool(request.ingredient_mentions)
+        has_case_query_draft = bool(
+            request.query_plan.case_query and request.query_plan.case_query.strip()
+        )
+        if (
+            routing.turn_kind is QueryTurnKind.INITIAL
+            and request.case_query_input_form is CaseQueryInputForm.FRAGMENT
+            and request.case_query_task_status is CaseQueryTaskStatus.UNSPECIFIED
+            and not has_ingredients
+            and not self._has_product_discovery_cue(
+                routing.original_message or request.query
+            )
+            and concerns
+            and has_case_query_draft
+        ):
+            # 목적이 없는 고민 키워드에서 상품 의도를 만들지 않고 Case만 본 뒤 묻는다.
+            return RagRouteDecision(
+                route=RagRoute.CLAIM_THEN_EVIDENCE,
+                reason=RagRouteReason.KEYWORD_CASE_CLARIFICATION,
+                normalized_intents=[Intent.CLARIFICATION],
+                normalized_skin_concerns=concerns,
+                ask_after_case_rerank=True,
+            )
         has_product_filters = bool(
             any((request.category, request.texture, request.skin_feel))
             or request.unsupported_product_conditions
@@ -74,10 +113,6 @@ class RagRoutePolicy:
         product_requested = Intent.PRODUCT_DISCOVERY in intents
         evidence_requested = Intent.EVIDENCE_QA in intents
         routine_requested = Intent.ROUTINE_PLANNING in intents
-        has_case_query_draft = bool(
-            request.query_plan.case_query
-            and request.query_plan.case_query.strip()
-        )
 
         if product_requested and not has_ingredients:
             if concerns or request.rag_route is RagRoute.CLAIM_THEN_EVIDENCE:

@@ -1,14 +1,94 @@
 from agent.query_planning import IntentQueryPlanner
 from agent.schemas import (
+    CaseQueryInputForm,
     Intent,
     IntentQueryPlan,
     ParsedRequest,
     QueryPlanningRequest,
+    QueryTurnKind,
     RagRoute,
 )
 
 
 class TestIntentQueryPlanner:
+    def test_첫_키워드형_입력은_기존_LLM_Case_초안을_사용한다(self) -> None:
+        original = "코 블랙헤드 자극 덜"
+        rewritten = "코 블랙헤드를 자극을 줄이면서 관리하고 싶습니다."
+        parsed = ParsedRequest(
+            intents=[Intent.PRODUCT_DISCOVERY],
+            query=rewritten,
+            query_plan=IntentQueryPlan(case_query=rewritten),
+            case_query_input_form=CaseQueryInputForm.FRAGMENT,
+            rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+        )
+
+        result = IntentQueryPlanner().build(
+            QueryPlanningRequest(
+                original_message=original,
+                parsed_request=parsed,
+                turn_kind=QueryTurnKind.INITIAL,
+            )
+        )
+
+        assert result.case_query == rewritten
+
+    def test_완성형_첫_입력과_후속_턴은_재작성_초안으로_바꾸지_않는다(self) -> None:
+        original = "코 블랙헤드 자극 덜"
+        rewritten = "코 블랙헤드를 자극을 줄이면서 관리하고 싶습니다."
+        parsed = ParsedRequest(
+            intents=[Intent.PRODUCT_DISCOVERY],
+            query=rewritten,
+            query_plan=IntentQueryPlan(case_query=rewritten),
+            case_query_input_form=CaseQueryInputForm.COMPLETE,
+            rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+        )
+
+        first = IntentQueryPlanner().build(
+            QueryPlanningRequest(
+                original_message=original,
+                parsed_request=parsed,
+                turn_kind=QueryTurnKind.INITIAL,
+            )
+        )
+        follow_up = IntentQueryPlanner().build(
+            QueryPlanningRequest(
+                original_message=original,
+                parsed_request=parsed.model_copy(
+                    update={"case_query_input_form": CaseQueryInputForm.FRAGMENT}
+                ),
+                turn_kind=QueryTurnKind.FOLLOW_UP,
+            )
+        )
+
+        assert first.case_query == original
+        assert follow_up.case_query == original
+
+    def test_키워드형_재작성에_없는_피부타입이나_성분을_추가하면_원문으로_돌린다(
+        self,
+    ) -> None:
+        original = "코 블랙헤드 자극 덜"
+        for rewritten in (
+            "지성 피부의 코 블랙헤드를 자극을 줄이면서 관리합니다.",
+            "코 블랙헤드에 살리실산을 사용해 자극을 줄입니다.",
+        ):
+            parsed = ParsedRequest(
+                intents=[Intent.PRODUCT_DISCOVERY],
+                query=rewritten,
+                query_plan=IntentQueryPlan(case_query=rewritten),
+                case_query_input_form=CaseQueryInputForm.FRAGMENT,
+                rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+            )
+
+            result = IntentQueryPlanner().build(
+                QueryPlanningRequest(
+                    original_message=original,
+                    parsed_request=parsed,
+                    turn_kind=QueryTurnKind.INITIAL,
+                )
+            )
+
+            assert result.case_query == original
+
     def test_복합_요청에서_Case_문맥을_보존하고_루틴_지시를_분리한다(self) -> None:
         original = (
             "30대 남성, 요즘 환절기여서 힘들다. 여드름이 자꾸 올라오는 지성 피부인데 "

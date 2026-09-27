@@ -1,8 +1,82 @@
-from agent.rag_route_policy import RagRoutePolicy, RagRouteReason
-from agent.schemas import Intent, IntentQueryPlan, ParsedRequest, RagRoute
+from agent.rag_route_policy import RagRoutePolicy, RagRouteReason, RagRouteRequest
+from agent.schemas import (
+    CaseQueryInputForm,
+    CaseQueryTaskStatus,
+    Intent,
+    IntentQueryPlan,
+    ParsedRequest,
+    QueryTurnKind,
+    RagRoute,
+)
 
 
 class TestRagRoutePolicy:
+    def test_첫_고민_키워드만_들어오면_Case_탐색_뒤_질문한다(self) -> None:
+        request = ParsedRequest(
+            intents=[Intent.CLARIFICATION],
+            query="여드름",
+            query_plan=IntentQueryPlan(case_query="여드름"),
+            case_query_input_form=CaseQueryInputForm.FRAGMENT,
+            case_query_task_status=CaseQueryTaskStatus.UNSPECIFIED,
+            skin_concerns=["여드름"],
+        )
+
+        first = RagRoutePolicy().decide(
+            RagRouteRequest(parsed_request=request, turn_kind=QueryTurnKind.INITIAL)
+        )
+        follow_up = RagRoutePolicy().decide(
+            RagRouteRequest(parsed_request=request, turn_kind=QueryTurnKind.FOLLOW_UP)
+        )
+
+        assert first.route is RagRoute.CLAIM_THEN_EVIDENCE
+        assert first.reason is RagRouteReason.KEYWORD_CASE_CLARIFICATION
+        assert first.normalized_intents == [Intent.CLARIFICATION]
+        assert first.ask_after_case_rerank
+        assert follow_up.route is None
+        assert not follow_up.ask_after_case_rerank
+
+    def test_목적이_드러난_키워드형_입력은_기존_상품_경로를_유지한다(self) -> None:
+        request = ParsedRequest(
+            intents=[Intent.PRODUCT_DISCOVERY],
+            query="코 블랙헤드를 자극을 줄이면서 관리하고 싶습니다.",
+            query_plan=IntentQueryPlan(case_query="코 블랙헤드를 자극을 줄이면서 관리하고 싶습니다."),
+            case_query_input_form=CaseQueryInputForm.FRAGMENT,
+            case_query_task_status=CaseQueryTaskStatus.REQUESTED,
+            rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
+        )
+
+        decision = RagRoutePolicy().decide(
+            RagRouteRequest(parsed_request=request, turn_kind=QueryTurnKind.INITIAL)
+        )
+
+        assert decision.route is RagRoute.CLAIM_THEN_EVIDENCE
+        assert decision.normalized_intents == [Intent.PRODUCT_DISCOVERY]
+        assert not decision.ask_after_case_rerank
+
+    def test_LLM이_목적을_누락해도_원문_상품_요청은_질문_경로로_바꾸지_않는다(
+        self,
+    ) -> None:
+        request = ParsedRequest(
+            intents=[Intent.PRODUCT_DISCOVERY],
+            query="여드름 제품 추천",
+            query_plan=IntentQueryPlan(case_query="여드름"),
+            case_query_input_form=CaseQueryInputForm.FRAGMENT,
+            case_query_task_status=CaseQueryTaskStatus.UNSPECIFIED,
+            skin_concerns=["여드름"],
+        )
+
+        decision = RagRoutePolicy().decide(
+            RagRouteRequest(
+                parsed_request=request,
+                turn_kind=QueryTurnKind.INITIAL,
+                original_message="여드름 제품 추천",
+            )
+        )
+
+        assert decision.route is RagRoute.CLAIM_THEN_EVIDENCE
+        assert decision.normalized_intents == [Intent.PRODUCT_DISCOVERY]
+        assert not decision.ask_after_case_rerank
+
     def test_성분이_없는_피부고민_Evidence_질의는_Case_탐색을_보존한다(self) -> None:
         request = ParsedRequest(
             intents=[Intent.EVIDENCE_QA],
@@ -18,7 +92,7 @@ class TestRagRoutePolicy:
             rag_route=RagRoute.EVIDENCE_ONLY,
         )
 
-        decision = RagRoutePolicy().decide(request)
+        decision = RagRoutePolicy().decide(RagRouteRequest(parsed_request=request))
 
         assert decision.route is RagRoute.CLAIM_THEN_EVIDENCE
         assert decision.reason is RagRouteReason.UNSPECIFIED_INGREDIENT_CONCERN
@@ -42,7 +116,7 @@ class TestRagRoutePolicy:
             rag_route=RagRoute.EVIDENCE_ONLY,
         )
 
-        decision = RagRoutePolicy().decide(request)
+        decision = RagRoutePolicy().decide(RagRouteRequest(parsed_request=request))
 
         assert decision.route is RagRoute.CLAIM_THEN_EVIDENCE
         assert decision.reason is RagRouteReason.UNSPECIFIED_INGREDIENT_CONCERN
@@ -60,7 +134,7 @@ class TestRagRoutePolicy:
             rag_route=RagRoute.EVIDENCE_ONLY,
         )
 
-        decision = RagRoutePolicy().decide(request)
+        decision = RagRoutePolicy().decide(RagRouteRequest(parsed_request=request))
 
         assert decision.route is RagRoute.EVIDENCE_ONLY
         assert decision.reason is RagRouteReason.EXPLICIT_EVIDENCE_REQUEST
@@ -80,7 +154,7 @@ class TestRagRoutePolicy:
             rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
         )
 
-        decision = RagRoutePolicy().decide(request)
+        decision = RagRoutePolicy().decide(RagRouteRequest(parsed_request=request))
 
         assert decision.route is RagRoute.CLAIM_THEN_EVIDENCE
         assert decision.reason is RagRouteReason.UNSPECIFIED_INGREDIENT_CONCERN
@@ -98,7 +172,7 @@ class TestRagRoutePolicy:
             rag_route=RagRoute.CLAIM_THEN_EVIDENCE,
         )
 
-        decision = RagRoutePolicy().decide(request)
+        decision = RagRoutePolicy().decide(RagRouteRequest(parsed_request=request))
 
         assert decision.route is None
         assert decision.reason is RagRouteReason.EXPLICIT_INGREDIENT_PRODUCT
@@ -116,7 +190,7 @@ class TestRagRoutePolicy:
             rag_route=RagRoute.EVIDENCE_ONLY,
         )
 
-        decision = RagRoutePolicy().decide(request)
+        decision = RagRoutePolicy().decide(RagRouteRequest(parsed_request=request))
 
         assert decision.route is RagRoute.EVIDENCE_ONLY
         assert decision.reason is RagRouteReason.EXPLICIT_EVIDENCE_REQUEST

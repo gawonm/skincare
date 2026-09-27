@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from pydantic import Field
 
-from agent.rag.schemas import RagModel
+from agent.rag.schemas import CareContext, RagModel
 
 
 class CaseCareMismatchReason(StrEnum):
@@ -35,22 +35,14 @@ class CaseCareCompatibilityPolicy:
         r"(?<=[.!?])\s+|[\r\n]+"
     )
     _CLAUSE_SPLIT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"[,;]+")
-    _ACTIVE_IRRITATION_CUES: ClassVar[tuple[str, ...]] = (
-        "화끈",
-        "따갑",
-        "쓰라",
-        "붉어",
-        "붉은",
-        "자극받",
-        "장벽 손상",
+    _WEEKLY_FREQUENCY_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"주\s*\d+\s*(?:[-~∼]\s*\d+\s*)?회"
     )
-    _RECOVERY_PRIORITY_CUES: ClassVar[tuple[str, ...]] = (
-        "안정시키",
-        "진정",
-        "장벽 회복",
-        "회복 중 무엇을 우선",
-        "성분을 늘리기 전에",
-        "먼저 안정",
+    _EXFOLIATION_ACTION_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"각질(?:을|를)?[^.!?,;\r\n]{0,12}제거"
+    )
+    _REPEATED_EXFOLIATION_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:주기적|규칙적|정기적)(?:인|으로)?\s*(?:저자극\s*)?각질\s*관리"
     )
     _HIGH_IRRITATION_CARE_CUES: ClassVar[tuple[str, ...]] = (
         "살리실산",
@@ -84,6 +76,11 @@ class CaseCareCompatibilityPolicy:
         "관리",
         "집중",
         "중요",
+        "시행",
+        "실시",
+        "통해",
+        "제거하",
+        "제거해",
     )
     _AVOIDANCE_CUES: ClassVar[tuple[str, ...]] = (
         "피하",
@@ -95,13 +92,22 @@ class CaseCareCompatibilityPolicy:
         "하지 말",
         "최소화",
     )
+    _DEFERRED_CUES: ClassVar[tuple[str, ...]] = (
+        "회복 후",
+        "회복된 후",
+        "회복한 뒤",
+        "진정된 후",
+        "진정된 뒤",
+        "가라앉은 후",
+        "가라앉은 뒤",
+    )
 
     def assess(
         self,
-        query: str,
+        care_context: CareContext,
         page_content: str,
     ) -> CaseCareCompatibilityAssessment:
-        if not self._requires_recovery_first(query):
+        if not care_context.requires_recovery_first():
             return CaseCareCompatibilityAssessment()
         if not self._recommends_high_irritation_care(page_content):
             return CaseCareCompatibilityAssessment()
@@ -109,13 +115,6 @@ class CaseCareCompatibilityPolicy:
             mismatch_reasons=[
                 CaseCareMismatchReason.ACTIVE_IRRITATION_EXFOLIATION_ADVICE
             ]
-        )
-
-    def _requires_recovery_first(self, query: str) -> bool:
-        normalized = query.casefold()
-        return self._contains_any(normalized, self._ACTIVE_IRRITATION_CUES) and self._contains_any(
-            normalized,
-            self._RECOVERY_PRIORITY_CUES,
         )
 
     def _recommends_high_irritation_care(self, page_content: str) -> bool:
@@ -127,15 +126,23 @@ class CaseCareCompatibilityPolicy:
                 clause
                 for clause in self._CLAUSE_SPLIT_PATTERN.split(sentence)
                 if self._contains_any(clause, self._HIGH_IRRITATION_CARE_CUES)
+                or self._EXFOLIATION_ACTION_PATTERN.search(clause)
+                or self._REPEATED_EXFOLIATION_PATTERN.search(clause)
             ]
             if not risky_clauses:
                 continue
+            # 권고 동사가 뒤 절에 이어질 수 있으므로 문장 전체를 본다.
+            # 위험 행위 자체를 피하거나 회복 뒤로 미룬 절은 현재 권고로 세지 않는다.
             if all(
                 self._contains_any(clause, self._AVOIDANCE_CUES)
+                or self._contains_any(clause, self._DEFERRED_CUES)
                 for clause in risky_clauses
             ):
                 continue
-            if self._contains_any(sentence, self._RECOMMENDATION_CUES):
+            if (
+                self._contains_any(sentence, self._RECOMMENDATION_CUES)
+                or self._WEEKLY_FREQUENCY_PATTERN.search(sentence)
+            ):
                 return True
         return False
 

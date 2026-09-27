@@ -13,6 +13,7 @@ from agent.rag_workflow import RagWorkflowNodes
 from agent.schemas import (
     AgentInvocation,
     AgentState,
+    CaseRerankRoute,
     GraphInvocationRequest,
     GraphInvocationResult,
     GraphNode,
@@ -52,6 +53,11 @@ class RagWorkflowRouter:
         if state.rag_route is None:
             raise RuntimeError("RAG 경로가 선택되지 않았습니다.")
         return state.rag_route
+
+    def after_case_rerank(self, state: AgentState) -> CaseRerankRoute:
+        if state.ask_after_case_rerank:
+            return CaseRerankRoute.ASK_USER
+        return CaseRerankRoute.EXTRACT_CLAIMS
 
 
 class AgentGraph:
@@ -175,7 +181,14 @@ class AgentGraphFactory:
             },
         )
         builder.add_edge(GraphNode.SEARCH_CASES.value, GraphNode.RERANK_CASES.value)
-        builder.add_edge(GraphNode.RERANK_CASES.value, GraphNode.EXTRACT_CASE_CLAIMS.value)
+        builder.add_conditional_edges(
+            GraphNode.RERANK_CASES.value,
+            self._rag_router.after_case_rerank,
+            {
+                CaseRerankRoute.ASK_USER: GraphNode.ASK_USER.value,
+                CaseRerankRoute.EXTRACT_CLAIMS: GraphNode.EXTRACT_CASE_CLAIMS.value,
+            },
+        )
         builder.add_edge(
             GraphNode.EXTRACT_CASE_CLAIMS.value,
             GraphNode.VALIDATE_CASE_CLAIMS.value,

@@ -539,8 +539,8 @@ class NiaCaseCorpusRelativeMarkdownReporter:
             "## 1. 평가 개요",
             "",
             "- **평가 기준**: `nia_corpus_relative_pooled_v1` (24개 활성 질의, 초기 144건 anchor + reranker Top-3 신규 노출 56건 = 총 200건 블라인드 판정)",
-            "- **골든셋 산출물**: `tests/agent/nia_case_corpus_relative_golden_v2.jsonl`",
-            "- **평가 결과 산출물**: `tests/agent/nia_case_corpus_relative_evaluation_results_v2.jsonl`",
+            "- **골든셋 산출물**: `tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v2.jsonl`",
+            "- **평가 결과 산출물**: `tests/agent/nia_case_eval_data/nia_case_corpus_relative_evaluation_results_v2.jsonl`",
             "- **단계별 지표**:",
             "  - Dense Top-40: `Anchor Success@40`, `Anchor Recall@40`",
             "  - Metadata Top-20: `Anchor Success@20`, `Anchor Retention@20`",
@@ -604,26 +604,26 @@ class NiaCaseCorpusRelativeMarkdownReporter:
 
 class NiaCaseCorpusRelativeEvaluationCli:
     QUERY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_queries_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_queries_v1.jsonl"
     )
     MANIFEST_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_anchor_manifest_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_anchor_manifest_v1.jsonl"
     )
     INTERNAL_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_evaluation_pool_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_evaluation_pool_v1.jsonl"
     )
     RERANK_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_semantic_rerank_probe_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_semantic_rerank_probe_v1.jsonl"
     )
     ANCHOR_JUDGMENT_DIR: ClassVar[Path] = Path("tests/agent")
     RERANK_JUDGMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_rerank_judgments_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_rerank_judgments_v1.jsonl"
     )
     GOLDEN_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v2.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v2.jsonl"
     )
     EVALUATION_OUTPUT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_evaluation_results_v2.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_evaluation_results_v2.jsonl"
     )
     REPORT_OUTPUT_PATH: ClassVar[Path] = Path(
         "docs/agent/RAG_YK/2026-09-26_0335_NIA_CASE_CORPUS_RELATIVE_GOLDEN_EVAL_REPORT.md"

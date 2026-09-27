@@ -206,31 +206,31 @@ class NiaCaseRerankerRelevanceV5FinalizerCli:
         "evaluation_rare_wrinkles_02"
     )
     GOLDEN_V4_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v4.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v4.jsonl"
     )
     LIVE_POOL_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_pool_20260926_1416_v1.jsonl"
     )
     BEFORE_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_live_probe_20260926_1416_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_live_probe_20260926_1416_v1.jsonl"
     )
     AFTER_PROBE_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_reranker_relevance_probe_20260926_2150_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_reranker_relevance_probe_20260926_2150_v1.jsonl"
     )
     UNJUDGED_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_reranker_relevance_unjudged_20260926_2150_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_reranker_relevance_unjudged_20260926_2150_v1.jsonl"
     )
     SUPPLEMENT_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_reranker_relevance_supplement_judgments_20260926_2150_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_reranker_relevance_supplement_judgments_20260926_2150_v1.jsonl"
     )
     GOLDEN_V5_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_golden_v5.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_golden_v5.jsonl"
     )
     EVALUATION_V5_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_corpus_relative_evaluation_results_v5.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_corpus_relative_evaluation_results_v5.jsonl"
     )
     SUMMARY_PATH: ClassVar[Path] = Path(
-        "tests/agent/nia_case_reranker_relevance_final_summary_20260926_2150_v1.jsonl"
+        "tests/agent/nia_case_eval_data/nia_case_reranker_relevance_final_summary_20260926_2150_v1.jsonl"
     )
     REPORT_PATH: ClassVar[Path] = Path(
         "docs/agent/RAG_YK/2026-09-26_2150_NIA_CASE_RERANKER_RELEVANCE_V5_REPORT.md"
