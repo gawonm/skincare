@@ -1,0 +1,359 @@
+.venv/Scripts/python.exe : Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to en
+able higher rate limits and faster downloads.
+At line:2 char:1
++ .venv/Scripts/python.exe -m tests.agent.interactive_two_layer_rag_cli ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Warning: You ar...ster downloads.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+
+======================================================================
+ 2-Layer 스킨케어 Agent LangGraph CLI
+DB: skincare_reference_20260923_v5_2
+Intent·답변 모델: openai / gpt-4o-mini
+Claim·Evidence 임베딩: BAAI/bge-m3 / 1024차원
+Evidence 리랭커: BAAI/bge-reranker-v2-m3
+Claim·Evidence·성분·상품: skincare_reference_20260923_v5_2 실제 DB
+상품 taxonomy: product-taxonomy/db-v1:297fb5629083
+히스토리·체크포인터·루틴: 개발용 메모리 구현
+실제 OpenAI API 호출 비용이 발생합니다.
+출력 모드: verbose
+======================================================================
+
+Loading weights:   0%|          | 0/391 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 391/391 [00:00<00:00, 22221.55it/s]
+
+Loading weights:   0%|          | 0/393 [00:00<?, ?it/s]
+Loading weights:   4%|▍         | 16/393 [00:00<00:02, 150.43it/s]
+Loading weights:   9%|▉         | 36/393 [00:00<00:02, 138.30it/s]
+Loading weights:  13%|█▎        | 50/393 [00:00<00:02, 132.98it/s]
+Loading weights:  16%|█▋        | 64/393 [00:00<00:03, 109.46it/s]
+Loading weights:  23%|██▎       | 92/393 [00:00<00:01, 157.75it/s]
+Loading weights:  28%|██▊       | 111/393 [00:00<00:01, 165.47it/s]
+Loading weights:  33%|███▎      | 129/393 [00:00<00:01, 147.57it/s]
+Loading weights:  38%|███▊      | 150/393 [00:00<00:01, 161.85it/s]
+Loading weights:  43%|████▎     | 168/393 [00:01<00:01, 140.46it/s]
+Loading weights: 100%|██████████| 393/393 [00:01<00:00, 333.74it/s]
+
+======================================================================
+질문: 28살 남성입니다. 여름에는 이마와 코가 번들거리고 턱에는 면도 뒤 뾰루지가 나는데, 볼은 세안하면 당깁니다. 부위별로 자극을 줄이면서 아침저녁 관리와 제품 종류를 어떻게 나누면 좋을까요?
+실행 결과: partial | 의도: routine_planning
+======================================================================
+
+[1. NIA Case Document 임베딩 검색]
+- 검색 질의: 28살 남성입니다. 여름에는 이마와 코가 번들거리고 턱에는 면도 뒤 뾰루지가 나는데, 볼은 세안하면 당깁니다. 부위별로 자극을 줄이면서 아침저녁 관리와 제품 종류를 어떻게 나누면 좋을까요?
+- 후보 요청 수: 40
+- 상태: success, 반환: 40건
+  1. case_id=COT_ACN_M_O30_03412 vector_similarity=0.7300 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=38세 남성 중성
+     question=안녕하세요, 저는 38세 남성으로 평소에는 중성 피부 타입이라 큰 트러블 없이 지내왔습니다. 그런데 최근 몇 달간 유독 턱 주변으로만 단단하고 아픈 뾰루지가 반복적으로 생겨서 스트레스가 많습니다. 특히 환절기에 바람을 많이 쐬거나, 업무 때문에 수면이 부족해지면 턱의 상태가 눈에 띄게 나빠지는 것 같습니다. 제가 사용하는...
+  2. case_id=COT_ACN_M_O30_07762 vector_similarity=0.7180 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=38세 남성 중성
+     question=38세 남성으로 평소 중성 피부를 유지하고 있음에도 불구하고, 최근 들어 이마와 볼 부위에 잦은 여드름과 뾰루지 발생으로 큰 스트레스를 받고 있습니다. 이러한 성인 여드름 및 뾰루지 문제를 효과적으로 관리하고 개선하기 위해 어떤 스킨케어 성분들을 포함한 제품을 선택해야 할지 궁금합니다. 또한, 현재의 피부 상태를 고려하여...
+  3. case_id=COT_ACN_M_U30_06096 vector_similarity=0.7157 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=28세 남성 복합성
+     question=28세 남성으로 복합성 피부인데, 특히 볼과 코 주변에 여드름과 뾰루지가 자주 올라와서 고민입니다. 이런 특정 부위에 발생하는 여드름을 효과적으로 관리하고 재발을 방지하기 위한 스킨케어 루틴은 어떻게 구성해야 할까요? 또한, 추천해주신 성분들(MINERAL SALTS, ALOE BARBADENSIS LEAF JUICE P...
+  4. case_id=COT_ACN_M_O30_01313 vector_similarity=0.7157 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=32세 남성 중성
+     question=안녕하세요, 32세 중성 피부를 가진 직장인 남성입니다. 다른 부위는 괜찮은데 유독 이마에만 좁쌀 같은 뾰루지가 주기적으로 올라와서 스트레스가 많습니다. 특히 여름이나 겨울처럼 계절이 바뀔 때, 그리고 회사에서 야근이 잦아지거나 대인관계로 스트레스를 받으면 이마 피부가 급격히 안 좋아지는 것을 느낍니다. 혹시 제가 사용하...
+  5. case_id=COT_ACN_M_U30_07463 vector_similarity=0.7124 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=27세 남성 복합성
+     question=안녕하세요, 저는 27살 복합성 피부를 가진 남성입니다. 최근 수면 부족과 업무 스트레스가 심해지면서 피부 상태가 급격히 안 좋아졌습니다. 특히 환절기라 바람이 많이 불어서 그런지, 다른 부위는 괜찮은데 유독 양쪽 볼에만 붉고 아픈 여드름이 계속해서 올라옵니다. 평소 사용하는 화장품 가짓수가 많은 편인데, 이것이 오히려 ...
+  6. case_id=COT_ACN_M_U30_03390 vector_similarity=0.7117 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=24세 남성 중성
+     question=안녕하세요, 저는 24살 중성 피부를 가진 남성입니다. 평소에는 피부가 괜찮은 편인데, 유독 이마에만 뾰루지가 주기적으로 올라와서 스트레스입니다. 회사에서 잔업이 많거나 대인관계로 스트레스를 받으면 더 심해지고, 덥거나 추운 계절 변화에도 민감하게 반응하는 것 같습니다. 혹시 제가 사용하는 화장품의 양이나 횟수 문제인지,...
+  7. case_id=COT_ACN_M_O30_05131 vector_similarity=0.7099 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=31세 남성 복합성
+     question=안녕하세요, 저는 31세 남성으로 복합성 피부를 가지고 있습니다. 최근 환절기가 되면서 바람도 많이 불고, 수면 부족과 복잡한 일상 때문에 스트레스가 심해졌습니다. 다른 부위는 괜찮은데 유독 양쪽 볼에만 붉고 아픈 여드름이 반복적으로 올라와서 고민입니다. 화장품을 너무 많이 바르는 건지, 아니면 다른 원인이 있는 건지 궁...
+  8. case_id=COT_POR_M_O30_02584 vector_similarity=0.7088 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=30세 남성 중성
+     question=안녕하세요, 저는 30대 중성 피부를 가진 남성입니다. 평소에는 피부에 큰 문제가 없었는데, 최근 여름이 되면서 날씨가 더워지니 유독 볼 쪽 모공이 눈에 띄게 커진 것 같습니다. 새로 바꾼 스킨케어 제품 때문인가 싶기도 하고, 단순히 계절 변화 때문인지 원인을 잘 모르겠습니다. 제 볼 모공을 효과적으로 관리할 수 있는 방...
+  9. case_id=COT_ACN_M_U30_08891 vector_similarity=0.7081 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=26세 남성 복합성
+     question=안녕하세요, 저는 26세 복합성 피부를 가진 남성입니다. 최근 환절기가 되면서 바람도 많이 불고, 수면 부족과 복잡한 일상 때문에 스트레스가 심해졌습니다. 설상가상으로 얼마 전 스킨케어 제품을 바꿨는데, 그 이후로 유독 이마 부위에 좁쌀여드름과 뾰루지가 집중적으로 올라오고 있습니다. T존은 번들거리는데 볼은 건조해서 어떻...
+  10. case_id=COT_ACN_M_U30_02686 vector_similarity=0.7055 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=28세 남성 복합성
+     question=안녕하세요. 28세 남성으로 복합성 피부를 가지고 있으며, 특히 이마에 잦은 여드름과 뾰루지 때문에 고민이 많습니다. 아침에 일어나면 이마 부분이 유독 번들거리고, 작은 뾰루지들이 수시로 올라와 스트레스가 큽니다. 어떤 스킨케어 루틴을 가져야 이마의 여드름을 효과적으로 관리하고, 피부를 건강하게 유지할 수 있을까요? 특히...
+  11. case_id=COT_POR_M_U30_00012 vector_similarity=0.7054 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=26세 남성 복합성
+     question=안녕하세요, 저는 26살 복합성 피부를 가진 남성입니다. T존은 유분기가 많은데 U존은 건조한 편입니다. 최근 날씨가 더워지고 업무 스트레스가 심해지면서 유독 양쪽 볼 모공이 눈에 띄게 넓어지고 까맣게 보이는 것 같아 고민입니다. 특히 코 옆 볼 부분이 축 늘어진 느낌이라 나이 들어 보일까 걱정됩니다. 최근에 화장품을 바...
+  12. case_id=COT_ACN_M_O30_07243 vector_similarity=0.7049 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=39세 남성 복합성
+     question=안녕하세요, 저는 39세 남성이며 복합성 피부 타입입니다. 최근 들어 다른 부위보다 유독 이마 쪽에 뾰루지가 집중적으로 발생하여 스트레스를 받고 있습니다. 환절기라 바람도 많이 불고 건조한데, 업무 때문에 수면도 부족하고 일상이 복잡해 피로가 누적된 상태입니다. 사용하는 화장품 가짓수도 좀 많은 편인데, 이런 복합적인 요...
+  13. case_id=COT_ACN_M_U30_06310 vector_similarity=0.7038 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=26세 남성 복합성
+     question=26세 복합성 피부를 가진 남성입니다. 최근 볼과 턱선 부위에 여드름과 뾰루지가 자주 올라와 고민이 많습니다. 특히 턱선 여드름은 면도 후 더 심해지는 경향도 있습니다. 이러한 피부 트러블을 효과적으로 관리하고 개선하기 위해 어떤 스킨케어 루틴을 따르는 것이 좋을까요? 염증을 진정시키고 재발을 방지하며, 유수분 밸런스를 ...
+  14. case_id=COT_ACN_M_U30_01152 vector_similarity=0.7035 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=26세 남성 지성
+     question=안녕하세요, 저는 26살 지성 피부를 가진 남성입니다. 최근 들어 다른 부위보다 유독 이마에만 뾰루지가 집중적으로 올라와서 고민이 많습니다. 평소 수면이 부족하고 일상이 복잡해 스트레스가 심한 편인데, 최근 환절기라 바람까지 많이 부니 피부가 더 예민해진 것 같습니다. 제가 사용하는 화장품이 문제일 수도 있을까요? 이마 ...
+  15. case_id=COT_ACN_M_O30_08667 vector_similarity=0.7026 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=37세 남성 중성
+     question=안녕하세요, 37세 중성 피부 타입의 남성입니다. 평소에는 피부가 괜찮은 편인데, 유독 양쪽 볼 주변으로만 주기적으로 여드름이나 뾰루지가 올라와서 고민입니다. 특히 최근처럼 계절이 바뀌면서 온습도 변화가 심하거나, 수면 부족과 복잡한 일상 때문에 스트레스가 심해질 때 볼에 트러블이 집중되는 경향이 있습니다. 이처럼 특정 ...
+  16. case_id=COT_ACN_F_U30_08094 vector_similarity=0.7022 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=22세 여성 중성
+     question=안녕하세요, 저는 22세 여성으로 평소에는 중성 피부 타입인데 최근 들어 유독 양쪽 볼 부위에 뾰루지가 집중적으로 올라와서 스트레스입니다. 특히 생리 주기가 가까워지거나, 환절기라 바람이 많이 불 때, 그리고 과제나 시험 때문에 수면이 부족한 날이면 볼의 뾰루지가 더 붉어지고 아프게 느껴집니다. 얼마 전 바꾼 화장품이 원...
+  17. case_id=COT_ACN_M_O30_05585 vector_similarity=0.7017 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=39세 남성 복합성
+     question=39세 복합성 피부를 가진 남성입니다. 최근 들어 입 주변, 턱, 그리고 볼 부위에 잦은 여드름과 뾰루지가 올라와 고민이 많습니다. 면도 후 트러블이 더 심해지는 경향이 있고, 피부가 전체적으로 예민해진 느낌입니다. 이러한 특정 부위의 여드름을 효과적으로 진정시키고 재발을 방지하며, 면도로 인한 자극을 최소화할 수 있는 ...
+  18. case_id=COT_ACN_M_O30_04590 vector_similarity=0.7017 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=37세 남성 복합성
+     question=안녕하세요, 37세 복합성 피부를 가진 남성입니다. 다른 부위는 괜찮은데 유독 계절이 바뀌는 환절기, 특히 날씨가 급격히 더워지거나 추워질 때마다 턱 주변으로 크고 단단한 여드름이 계속해서 올라옵니다. 면도를 할 때마다 상처가 나기도 하고, 붉은 자국이 오래가서 여간 신경 쓰이는 게 아닙니다. 왜 턱에만 집중적으로 이런 ...
+  19. case_id=COT_ACN_M_O30_03369 vector_similarity=0.7016 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=30세 남성 중성
+     question=안녕하세요, 저는 30대 중성 피부를 가진 남성입니다. 평소에는 피부 트러블이 거의 없는 편인데, 최근에 스킨케어 제품 라인을 바꾼 이후로 유독 턱 주변에만 붉고 아픈 뾰루지가 집중적으로 올라오고 있습니다. 이전에는 턱에 이렇게 여드름이 난 적이 없어서 당황스럽네요. 새로 바꾼 화장품이 제 피부와 맞지 않아서 생기는 문제...
+  20. case_id=COT_ACN_M_U30_01432 vector_similarity=0.7007 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=26세 남성 복합성
+     question=안녕하세요, 저는 26세 복합성 피부를 가진 남성입니다. 평소 T존은 유분이 많고 U존은 건조한 편인데, 최근 환절기가 되면서 바람이 많이 부니 갑자기 볼 주변에 아프고 붉은 뾰루지가 많이 올라왔습니다. 건조한 바람 때문에 피부 장벽이 무너진 것인지, 아니면 다른 원인이 있는지 궁금합니다. 이렇게 민감해진 볼 피부를 진정...
+  21. case_id=COT_POR_M_O30_01720 vector_similarity=0.6989 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=39세 남성 중성
+     question=안녕하세요, 39세 남성입니다. 저는 중성 피부인데, 최근 들어 환절기 바람 때문인지 유독 볼 쪽 모공이 늘어지고 커 보이는 것 같아 고민입니다. 평소 수면도 부족하고 일상이 복잡해 스트레스도 많은 편인데, 이러한 생활 습관도 영향을 미치는 걸까요? 화장품을 많이 바르지는 않지만, 지금 사용하는 제품들이 제 볼 모공 관리...
+  22. case_id=COT_ACN_M_O30_06994 vector_similarity=0.6966 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=30세 남성 복합성
+     question=안녕하세요. 저는 30대 남성이고 복합성 피부입니다. 평소 T존은 유분기가 많고 U존은 건조한 편인데, 최근 환절기에 바람을 많이 맞아서 그런지 유독 볼 주변으로 붉고 아픈 여드름이 계속 올라옵니다. 수면 부족과 스트레스도 심한 데다 얼마 전 화장품을 바꾼 것도 영향이 있는 것 같아 고민입니다. 제 볼에 집중적으로 나는 ...
+  23. case_id=COT_ACN_M_O30_07507 vector_similarity=0.6965 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=35세 남성 중성
+     question=안녕하세요, 저는 35세 남성으로 평소에는 중성 피부 타입인데 유독 턱 주변에만 단단하고 아픈 여드름이 반복적으로 올라옵니다. 특히 여름철 무더위나 겨울철 차고 건조한 바람이 부는 등 계절적 요인이 심해질 때 턱 주변의 뾰루지가 더 악화되는 것 같습니다. 턱 여드름이 다른 부위보다 유독 심하게 나는 이유와 계절 변화가 구...
+  24. case_id=COT_RED_M_O30_03477 vector_similarity=0.6963 rerank_input=yes
+     target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=32세 남성 복합성
+     question=32세 남성으로, 복합성 피부를 가지고 있으며 특히 볼과 코 주변에 잦은 붉어짐(홍조) 때문에 고민이 많습니다. 피부가 쉽게 붉어지고, 때로는 따끔거리는 느낌도 있습니다. 이러한 민감한 홍조 피부를 진정시키고 개선하기 위해 어떤 성분의 스킨케어 제품을 사용해야 하며, 일상적인 피부 관리 루틴은 어떻게 구성해야 하는지 구체...
+  25. case_id=COT_ACN_M_O30_00467 vector_similarity=0.6959 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=30세 남성 중성
+     question=안녕하세요, 저는 30대 남성으로 중성 피부를 가지고 있으며, 최근 들어 볼 부위에 뾰루지와 여드름이 자주 발생하여 큰 고민입니다. 특히 아침 면도 후에는 피부가 더욱 민감해지고 트러블이 붉게 올라오는 경향이 있습니다. 한번 생긴 여드름은 쉽게 가라앉지 않고 자국으로 남기도 하여 스트레스가 이만저만이 아닙니다. 볼 여드름...
+  26. case_id=COT_POR_M_O30_08995 vector_similarity=0.6951 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=30세 남성 중성
+     question=안녕하세요, 저는 30대 중성 피부를 가진 남성입니다. 평소 피부에는 큰 불만이 없는데, 유독 여름철 무더위나 겨울철의 차고 건조한 날씨처럼 계절이 크게 바뀔 때마다 양쪽 볼 부분의 모공이 유난히 넓어지고 도드라져 보여서 신경이 쓰입니다. 이렇게 특정 계절에 따라 심해지는 볼 모공을 효과적으로 관리하고, 평소에도 꾸준히 ...
+  27. case_id=COT_ACN_M_O30_01972 vector_similarity=0.6948 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=32세 남성 복합성
+     question=32세 남성 복합성 피부로, 특히 입가, 턱, 볼 부위에 반복적으로 여드름과 뾰루지가 발생하여 고민이 많습니다. 면도 후나 스트레스 상황에서 더욱 심해지는 경향이 있는데, 이러한 성인 남성 여드름의 근본적인 원인은 무엇이며, 어떤 성분을 함유한 스킨케어 제품을 선택해야 효과적으로 관리하고 재발을 방지할 수 있을까요? 또한...
+  28. case_id=COT_POR_M_U30_01060 vector_similarity=0.6948 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=29세 남성 지성
+     question=안녕하세요, 29살 지성 피부를 가진 직장인 남성입니다. 최근 환절기가 되면서 바람도 많이 불고 건조해졌는데, 이상하게 피부는 더 번들거립니다. 회사에서는 잦은 잔업과 대인관계 스트레스가 심한데, 이 때문인지 최근에 화장품을 바꾼 탓인지 양쪽 볼 모공이 눈에 띄게 넓어지고 까맣게 보여서 큰 고민입니다. 볼 부분의 모공은 ...
+  29. case_id=COT_ACN_M_O30_00434 vector_similarity=0.6947 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=38세 남성 지성
+     question=38세 지성 피부 남성입니다. 특히 볼과 코 주변에 반복적으로 여드름과 뾰루지가 올라와 고민이 많습니다. 피부가 쉽게 번들거리고, 트러블이 한번 생기면 잘 가라앉지 않으며, 흉터도 남는 것 같습니다. 현재 사용하는 스킨케어 루틴으로는 이러한 문제들이 개선되지 않아 답답합니다. 제 피부 타입과 고민에 맞는 효과적인 여드름 ...
+  30. case_id=COT_POR_M_O30_02342 vector_similarity=0.6943 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=32세 남성 복합성
+     question=안녕하세요, 32세 복합성 피부를 가진 남성입니다. 최근 환절기가 되면서 바람도 많이 불고 건조해져서 그런지, 이전에는 괜찮았던 볼 주변의 모공이 유독 눈에 띄게 커지고 피부결도 거칠어진 느낌입니다. 게다가 최근 잦은 야근으로 수면이 부족하고 스트레스가 심한데, 얼마 전 바꾼 화장품 탓인지 복합적인 문제인지 잘 모르겠습니...
+  31. case_id=COT_ACN_M_O30_02190 vector_similarity=0.6939 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=31세 남성 복합성
+     question=안녕하세요, 31세 복합성 피부를 가진 남성입니다. 다른 부위는 괜찮은데 유독 이마에만 뾰루지가 집중적으로 올라와서 스트레스를 받고 있습니다. 특히 환절기가 되면서 건조한 바람 때문에 피부가 더 예민해진 것 같고, 회사에서의 잦은 야근과 대인관계에서 오는 스트레스가 더해지니 이마 상태가 눈에 띄게 나빠지는 기분입니다. 이...
+  32. case_id=COT_POR_M_U30_05412 vector_similarity=0.6934 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=27세 남성 중성
+     question=안녕하세요. 저는 27세 남성이고, 피부 타입은 중성입니다. 평소에는 피부에 큰 불만이 없었는데, 최근 여름이 되면서 날씨가 덥고 습해져서 그런지 유독 양쪽 볼 모공이 이전보다 훨씬 넓어 보이고 도드라져서 신경이 쓰입니다. 잦은 야근으로 인한 스트레스나 최근에 바꾼 화장품 때문인지 원인도 복합적인 것 같아 답답합니다. 특...
+  33. case_id=COT_POR_M_U30_08058 vector_similarity=0.6934 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=27세 남성 중성
+     question=안녕하세요. 저는 27세 남성이고, 피부 타입은 중성입니다. 평소에는 피부에 큰 불만이 없었는데, 최근 여름이 되면서 날씨가 덥고 습해져서 그런지 유독 양쪽 볼 모공이 이전보다 훨씬 넓어 보이고 도드라져서 신경이 쓰입니다. 잦은 야근으로 인한 스트레스나 최근에 바꾼 화장품 때문인지 원인도 복합적인 것 같아 답답합니다. 특...
+  34. case_id=COT_ACN_F_U30_01658 vector_similarity=0.6929 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=29세 여성 중성
+     question=안녕하세요. 29세 중성 피부를 가진 여성입니다. 평소에는 괜찮다가도 생리 주기가 다가오면 어김없이 턱 주변으로 단단하고 아픈 뾰루지가 올라와서 스트레스가 많습니다. 최근에 화장품을 바꾼 탓인지, 아니면 수면 부족과 더운 날씨 때문인지 몰라도 이번 달에는 유독 턱 여드름이 더 심해진 것 같아요. 이렇게 복합적인 요인으로 ...
+  35. case_id=COT_POR_M_U30_04658 vector_similarity=0.6928 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=28세 남성 복합성
+     question=28살 복합성 피부를 가진 남성입니다. 최근 날씨가 급격히 더워지고 회사 업무 스트레스와 잦은 야근으로 피로가 쌓여서 그런지, 이전에는 신경 쓰이지 않던 양쪽 볼 모공이 눈에 띄게 커지고 늘어져 보입니다. T존은 번들거리는데 볼 주변은 오히려 건조해서 어떤 관리를 해야 할지 막막합니다. 특히 도드라지는 볼 모공을 효과적으...
+  36. case_id=COT_ACN_M_U30_04368 vector_similarity=0.6924 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=24세 남성 중성
+     question=24세 남성으로 중성 피부임에도 불구하고 이마, 코, 볼 부위에 반복적으로 여드름과 뾰루지가 발생하여 고민이 많습니다. 특히 이러한 트러블은 염증을 동반하고 사라진 후에도 흔적을 남기곤 합니다. 효과적인 피부 관리를 위해 어떤 성분들을 함유한 제품을 사용해야 할까요? 또한, 이러한 여드름과 뾰루지를 근본적으로 관리하고 예...
+  37. case_id=COT_POR_M_O30_07277 vector_similarity=0.6923 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=36세 남성 중성
+     question=안녕하세요. 저는 36세 중성 피부를 가진 남성입니다. 평소에는 피부 고민이 크지 않았는데, 최근 들어 유독 볼 부분의 모공이 눈에 띄게 넓어져서 스트레스입니다. 특히 여름철이 되면서 더 심해지는 것 같고, 바쁜 일상과 수면 부족도 영향을 주는 것 같습니다. 모공 관리를 위해 어떤 제품을 어떻게 사용해야 할지 막막합니다....
+  38. case_id=COT_ACN_M_U30_08286 vector_similarity=0.6921 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=26세 남성 복합성
+     question=26세 남성 복합성 피부인데, 볼과 코 주변에 반복적으로 여드름과 뾰루지가 올라와 고민입니다. 아침에 세안 후 스킨케어를 해도 오후가 되면 번들거리고, 저녁에는 다시 뾰루지가 붉게 돋아나는 경우가 많습니다. 이러한 여드름과 뾰루지를 효과적으로 관리하고 재발을 방지하기 위한 구체적인 스킨케어 루틴과 어떤 성분들을 함유한 제...
+  39. case_id=COT_POR_M_O30_01955 vector_similarity=0.6920 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=32세 남성 중성
+     question=안녕하세요, 저는 32세 중성 피부를 가진 남성입니다. 평소에는 피부에 큰 불만이 없었는데, 최근 들어 유독 볼 부위 모공이 눈에 띄게 넓어져서 고민입니다. 특히 여름철 더운 날씨에 피지 분비가 늘어나면서 모공이 더 도드라져 보이고, 잦은 야근과 업무 스트레스도 영향을 미치는 것 같습니다. 이런 복합적인 원인으로 인해 넓...
+  40. case_id=COT_ACN_M_O30_04958 vector_similarity=0.6916 rerank_input=yes
+     target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=30세 남성 복합성
+     question=30대 남성으로, 복합성 피부를 가지고 있으며 특히 볼과 코 주변에 자주 발생하는 여드름과 뾰루지 때문에 고민이 많습니다. 이 부위의 여드름과 뾰루지를 효과적으로 관리하고 재발을 방지하기 위한 스킨케어 루틴과 성분 선택에 대해 자세히 알고 싶습니다. 현재 상태를 개선하고 장기적으로 건강한 피부를 유지하기 위한 구체적인 조...
+- 단일 벡터 검색 결과를 고민 메타데이터로 선별한 뒤 재정렬합니다.
+
+[2. BGE 리랭커 Top-3 Case]
+- 리랭크 질의: 28살 남성입니다. 여름에는 이마와 코가 번들거리고 턱에는 면도 뒤 뾰루지가 나는데, 볼은 세안하면 당깁니다. 부위별로 자극을 줄이면서 아침저녁 관리와 제품 종류를 어떻게 나누면 좋을까요?
+- 입력 후보: 40건, 선택 상한: 3건
+  입력 1. case_id=COT_ACN_M_O30_03412 vector_similarity=0.7300 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=38세 남성 중성
+          question=안녕하세요, 저는 38세 남성으로 평소에는 중성 피부 타입이라 큰 트러블 없이 지내왔습니다. 그런데 최근 몇 달간 유독 턱 주변으로만 단단하고 아픈 뾰루지가 반복적으로 생겨서 스트레스가 많습니다. 특히 환절기에 바람을 많이 쐬거나, 업무 때문에 수면이 부족해지면 턱의 상태가 눈에 띄게 나빠지는 것 같습니다. 제가 사용하는...
+  입력 2. case_id=COT_ACN_M_O30_07762 vector_similarity=0.7180 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=38세 남성 중성
+          question=38세 남성으로 평소 중성 피부를 유지하고 있음에도 불구하고, 최근 들어 이마와 볼 부위에 잦은 여드름과 뾰루지 발생으로 큰 스트레스를 받고 있습니다. 이러한 성인 여드름 및 뾰루지 문제를 효과적으로 관리하고 개선하기 위해 어떤 스킨케어 성분들을 포함한 제품을 선택해야 할지 궁금합니다. 또한, 현재의 피부 상태를 고려하여...
+  입력 3. case_id=COT_ACN_M_U30_06096 vector_similarity=0.7157 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=28세 남성 복합성
+          question=28세 남성으로 복합성 피부인데, 특히 볼과 코 주변에 여드름과 뾰루지가 자주 올라와서 고민입니다. 이런 특정 부위에 발생하는 여드름을 효과적으로 관리하고 재발을 방지하기 위한 스킨케어 루틴은 어떻게 구성해야 할까요? 또한, 추천해주신 성분들(MINERAL SALTS, ALOE BARBADENSIS LEAF JUICE P...
+  입력 4. case_id=COT_ACN_M_O30_01313 vector_similarity=0.7157 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=32세 남성 중성
+          question=안녕하세요, 32세 중성 피부를 가진 직장인 남성입니다. 다른 부위는 괜찮은데 유독 이마에만 좁쌀 같은 뾰루지가 주기적으로 올라와서 스트레스가 많습니다. 특히 여름이나 겨울처럼 계절이 바뀔 때, 그리고 회사에서 야근이 잦아지거나 대인관계로 스트레스를 받으면 이마 피부가 급격히 안 좋아지는 것을 느낍니다. 혹시 제가 사용하...
+  입력 5. case_id=COT_ACN_M_U30_07463 vector_similarity=0.7124 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=27세 남성 복합성
+          question=안녕하세요, 저는 27살 복합성 피부를 가진 남성입니다. 최근 수면 부족과 업무 스트레스가 심해지면서 피부 상태가 급격히 안 좋아졌습니다. 특히 환절기라 바람이 많이 불어서 그런지, 다른 부위는 괜찮은데 유독 양쪽 볼에만 붉고 아픈 여드름이 계속해서 올라옵니다. 평소 사용하는 화장품 가짓수가 많은 편인데, 이것이 오히려 ...
+  입력 6. case_id=COT_ACN_M_U30_03390 vector_similarity=0.7117 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=24세 남성 중성
+          question=안녕하세요, 저는 24살 중성 피부를 가진 남성입니다. 평소에는 피부가 괜찮은 편인데, 유독 이마에만 뾰루지가 주기적으로 올라와서 스트레스입니다. 회사에서 잔업이 많거나 대인관계로 스트레스를 받으면 더 심해지고, 덥거나 추운 계절 변화에도 민감하게 반응하는 것 같습니다. 혹시 제가 사용하는 화장품의 양이나 횟수 문제인지,...
+  입력 7. case_id=COT_ACN_M_O30_05131 vector_similarity=0.7099 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=31세 남성 복합성
+          question=안녕하세요, 저는 31세 남성으로 복합성 피부를 가지고 있습니다. 최근 환절기가 되면서 바람도 많이 불고, 수면 부족과 복잡한 일상 때문에 스트레스가 심해졌습니다. 다른 부위는 괜찮은데 유독 양쪽 볼에만 붉고 아픈 여드름이 반복적으로 올라와서 고민입니다. 화장품을 너무 많이 바르는 건지, 아니면 다른 원인이 있는 건지 궁...
+  입력 8. case_id=COT_ACN_M_U30_08891 vector_similarity=0.7081 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=26세 남성 복합성
+          question=안녕하세요, 저는 26세 복합성 피부를 가진 남성입니다. 최근 환절기가 되면서 바람도 많이 불고, 수면 부족과 복잡한 일상 때문에 스트레스가 심해졌습니다. 설상가상으로 얼마 전 스킨케어 제품을 바꿨는데, 그 이후로 유독 이마 부위에 좁쌀여드름과 뾰루지가 집중적으로 올라오고 있습니다. T존은 번들거리는데 볼은 건조해서 어떻...
+  입력 9. case_id=COT_ACN_M_U30_02686 vector_similarity=0.7055 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=28세 남성 복합성
+          question=안녕하세요. 28세 남성으로 복합성 피부를 가지고 있으며, 특히 이마에 잦은 여드름과 뾰루지 때문에 고민이 많습니다. 아침에 일어나면 이마 부분이 유독 번들거리고, 작은 뾰루지들이 수시로 올라와 스트레스가 큽니다. 어떤 스킨케어 루틴을 가져야 이마의 여드름을 효과적으로 관리하고, 피부를 건강하게 유지할 수 있을까요? 특히...
+  입력 10. case_id=COT_ACN_M_O30_07243 vector_similarity=0.7049 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=39세 남성 복합성
+          question=안녕하세요, 저는 39세 남성이며 복합성 피부 타입입니다. 최근 들어 다른 부위보다 유독 이마 쪽에 뾰루지가 집중적으로 발생하여 스트레스를 받고 있습니다. 환절기라 바람도 많이 불고 건조한데, 업무 때문에 수면도 부족하고 일상이 복잡해 피로가 누적된 상태입니다. 사용하는 화장품 가짓수도 좀 많은 편인데, 이런 복합적인 요...
+  입력 11. case_id=COT_ACN_M_U30_06310 vector_similarity=0.7038 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=26세 남성 복합성
+          question=26세 복합성 피부를 가진 남성입니다. 최근 볼과 턱선 부위에 여드름과 뾰루지가 자주 올라와 고민이 많습니다. 특히 턱선 여드름은 면도 후 더 심해지는 경향도 있습니다. 이러한 피부 트러블을 효과적으로 관리하고 개선하기 위해 어떤 스킨케어 루틴을 따르는 것이 좋을까요? 염증을 진정시키고 재발을 방지하며, 유수분 밸런스를 ...
+  입력 12. case_id=COT_ACN_M_U30_01152 vector_similarity=0.7035 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=26세 남성 지성
+          question=안녕하세요, 저는 26살 지성 피부를 가진 남성입니다. 최근 들어 다른 부위보다 유독 이마에만 뾰루지가 집중적으로 올라와서 고민이 많습니다. 평소 수면이 부족하고 일상이 복잡해 스트레스가 심한 편인데, 최근 환절기라 바람까지 많이 부니 피부가 더 예민해진 것 같습니다. 제가 사용하는 화장품이 문제일 수도 있을까요? 이마 ...
+  입력 13. case_id=COT_ACN_M_O30_08667 vector_similarity=0.7026 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=37세 남성 중성
+          question=안녕하세요, 37세 중성 피부 타입의 남성입니다. 평소에는 피부가 괜찮은 편인데, 유독 양쪽 볼 주변으로만 주기적으로 여드름이나 뾰루지가 올라와서 고민입니다. 특히 최근처럼 계절이 바뀌면서 온습도 변화가 심하거나, 수면 부족과 복잡한 일상 때문에 스트레스가 심해질 때 볼에 트러블이 집중되는 경향이 있습니다. 이처럼 특정 ...
+  입력 14. case_id=COT_ACN_F_U30_08094 vector_similarity=0.7022 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=22세 여성 중성
+          question=안녕하세요, 저는 22세 여성으로 평소에는 중성 피부 타입인데 최근 들어 유독 양쪽 볼 부위에 뾰루지가 집중적으로 올라와서 스트레스입니다. 특히 생리 주기가 가까워지거나, 환절기라 바람이 많이 불 때, 그리고 과제나 시험 때문에 수면이 부족한 날이면 볼의 뾰루지가 더 붉어지고 아프게 느껴집니다. 얼마 전 바꾼 화장품이 원...
+  입력 15. case_id=COT_ACN_M_O30_05585 vector_similarity=0.7017 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=39세 남성 복합성
+          question=39세 복합성 피부를 가진 남성입니다. 최근 들어 입 주변, 턱, 그리고 볼 부위에 잦은 여드름과 뾰루지가 올라와 고민이 많습니다. 면도 후 트러블이 더 심해지는 경향이 있고, 피부가 전체적으로 예민해진 느낌입니다. 이러한 특정 부위의 여드름을 효과적으로 진정시키고 재발을 방지하며, 면도로 인한 자극을 최소화할 수 있는 ...
+  입력 16. case_id=COT_ACN_M_O30_04590 vector_similarity=0.7017 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=37세 남성 복합성
+          question=안녕하세요, 37세 복합성 피부를 가진 남성입니다. 다른 부위는 괜찮은데 유독 계절이 바뀌는 환절기, 특히 날씨가 급격히 더워지거나 추워질 때마다 턱 주변으로 크고 단단한 여드름이 계속해서 올라옵니다. 면도를 할 때마다 상처가 나기도 하고, 붉은 자국이 오래가서 여간 신경 쓰이는 게 아닙니다. 왜 턱에만 집중적으로 이런 ...
+  입력 17. case_id=COT_ACN_M_O30_03369 vector_similarity=0.7016 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=30세 남성 중성
+          question=안녕하세요, 저는 30대 중성 피부를 가진 남성입니다. 평소에는 피부 트러블이 거의 없는 편인데, 최근에 스킨케어 제품 라인을 바꾼 이후로 유독 턱 주변에만 붉고 아픈 뾰루지가 집중적으로 올라오고 있습니다. 이전에는 턱에 이렇게 여드름이 난 적이 없어서 당황스럽네요. 새로 바꾼 화장품이 제 피부와 맞지 않아서 생기는 문제...
+  입력 18. case_id=COT_ACN_M_U30_01432 vector_similarity=0.7007 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=26세 남성 복합성
+          question=안녕하세요, 저는 26세 복합성 피부를 가진 남성입니다. 평소 T존은 유분이 많고 U존은 건조한 편인데, 최근 환절기가 되면서 바람이 많이 부니 갑자기 볼 주변에 아프고 붉은 뾰루지가 많이 올라왔습니다. 건조한 바람 때문에 피부 장벽이 무너진 것인지, 아니면 다른 원인이 있는지 궁금합니다. 이렇게 민감해진 볼 피부를 진정...
+  입력 19. case_id=COT_ACN_M_O30_06994 vector_similarity=0.6966 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=30세 남성 복합성
+          question=안녕하세요. 저는 30대 남성이고 복합성 피부입니다. 평소 T존은 유분기가 많고 U존은 건조한 편인데, 최근 환절기에 바람을 많이 맞아서 그런지 유독 볼 주변으로 붉고 아픈 여드름이 계속 올라옵니다. 수면 부족과 스트레스도 심한 데다 얼마 전 화장품을 바꾼 것도 영향이 있는 것 같아 고민입니다. 제 볼에 집중적으로 나는 ...
+  입력 20. case_id=COT_ACN_M_O30_07507 vector_similarity=0.6965 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=35세 남성 중성
+          question=안녕하세요, 저는 35세 남성으로 평소에는 중성 피부 타입인데 유독 턱 주변에만 단단하고 아픈 여드름이 반복적으로 올라옵니다. 특히 여름철 무더위나 겨울철 차고 건조한 바람이 부는 등 계절적 요인이 심해질 때 턱 주변의 뾰루지가 더 악화되는 것 같습니다. 턱 여드름이 다른 부위보다 유독 심하게 나는 이유와 계절 변화가 구...
+  입력 21. case_id=COT_ACN_M_O30_00467 vector_similarity=0.6959 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=30세 남성 중성
+          question=안녕하세요, 저는 30대 남성으로 중성 피부를 가지고 있으며, 최근 들어 볼 부위에 뾰루지와 여드름이 자주 발생하여 큰 고민입니다. 특히 아침 면도 후에는 피부가 더욱 민감해지고 트러블이 붉게 올라오는 경향이 있습니다. 한번 생긴 여드름은 쉽게 가라앉지 않고 자국으로 남기도 하여 스트레스가 이만저만이 아닙니다. 볼 여드름...
+  입력 22. case_id=COT_ACN_M_O30_01972 vector_similarity=0.6948 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=32세 남성 복합성
+          question=32세 남성 복합성 피부로, 특히 입가, 턱, 볼 부위에 반복적으로 여드름과 뾰루지가 발생하여 고민이 많습니다. 면도 후나 스트레스 상황에서 더욱 심해지는 경향이 있는데, 이러한 성인 남성 여드름의 근본적인 원인은 무엇이며, 어떤 성분을 함유한 스킨케어 제품을 선택해야 효과적으로 관리하고 재발을 방지할 수 있을까요? 또한...
+  입력 23. case_id=COT_ACN_M_O30_00434 vector_similarity=0.6947 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=38세 남성 지성
+          question=38세 지성 피부 남성입니다. 특히 볼과 코 주변에 반복적으로 여드름과 뾰루지가 올라와 고민이 많습니다. 피부가 쉽게 번들거리고, 트러블이 한번 생기면 잘 가라앉지 않으며, 흉터도 남는 것 같습니다. 현재 사용하는 스킨케어 루틴으로는 이러한 문제들이 개선되지 않아 답답합니다. 제 피부 타입과 고민에 맞는 효과적인 여드름 ...
+  입력 24. case_id=COT_ACN_M_O30_02190 vector_similarity=0.6939 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=31세 남성 복합성
+          question=안녕하세요, 31세 복합성 피부를 가진 남성입니다. 다른 부위는 괜찮은데 유독 이마에만 뾰루지가 집중적으로 올라와서 스트레스를 받고 있습니다. 특히 환절기가 되면서 건조한 바람 때문에 피부가 더 예민해진 것 같고, 회사에서의 잦은 야근과 대인관계에서 오는 스트레스가 더해지니 이마 상태가 눈에 띄게 나빠지는 기분입니다. 이...
+  입력 25. case_id=COT_ACN_F_U30_01658 vector_similarity=0.6929 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=29세 여성 중성
+          question=안녕하세요. 29세 중성 피부를 가진 여성입니다. 평소에는 괜찮다가도 생리 주기가 다가오면 어김없이 턱 주변으로 단단하고 아픈 뾰루지가 올라와서 스트레스가 많습니다. 최근에 화장품을 바꾼 탓인지, 아니면 수면 부족과 더운 날씨 때문인지 몰라도 이번 달에는 유독 턱 여드름이 더 심해진 것 같아요. 이렇게 복합적인 요인으로 ...
+  입력 26. case_id=COT_ACN_M_U30_04368 vector_similarity=0.6924 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=24세 남성 중성
+          question=24세 남성으로 중성 피부임에도 불구하고 이마, 코, 볼 부위에 반복적으로 여드름과 뾰루지가 발생하여 고민이 많습니다. 특히 이러한 트러블은 염증을 동반하고 사라진 후에도 흔적을 남기곤 합니다. 효과적인 피부 관리를 위해 어떤 성분들을 함유한 제품을 사용해야 할까요? 또한, 이러한 여드름과 뾰루지를 근본적으로 관리하고 예...
+  입력 27. case_id=COT_ACN_M_U30_08286 vector_similarity=0.6921 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=26세 남성 복합성
+          question=26세 남성 복합성 피부인데, 볼과 코 주변에 반복적으로 여드름과 뾰루지가 올라와 고민입니다. 아침에 세안 후 스킨케어를 해도 오후가 되면 번들거리고, 저녁에는 다시 뾰루지가 붉게 돋아나는 경우가 많습니다. 이러한 여드름과 뾰루지를 효과적으로 관리하고 재발을 방지하기 위한 구체적인 스킨케어 루틴과 어떤 성분들을 함유한 제...
+  입력 28. case_id=COT_ACN_M_O30_04958 vector_similarity=0.6916 | target=여드름/뾰루지 | concerns=['여드름/뾰루지'] | profile=30세 남성 복합성
+          question=30대 남성으로, 복합성 피부를 가지고 있으며 특히 볼과 코 주변에 자주 발생하는 여드름과 뾰루지 때문에 고민이 많습니다. 이 부위의 여드름과 뾰루지를 효과적으로 관리하고 재발을 방지하기 위한 스킨케어 루틴과 성분 선택에 대해 자세히 알고 싶습니다. 현재 상태를 개선하고 장기적으로 건강한 피부를 유지하기 위한 구체적인 조...
+  입력 29. case_id=COT_POR_M_O30_02584 vector_similarity=0.7088 | target=모공 | concerns=['모공'] | profile=30세 남성 중성
+          question=안녕하세요, 저는 30대 중성 피부를 가진 남성입니다. 평소에는 피부에 큰 문제가 없었는데, 최근 여름이 되면서 날씨가 더워지니 유독 볼 쪽 모공이 눈에 띄게 커진 것 같습니다. 새로 바꾼 스킨케어 제품 때문인가 싶기도 하고, 단순히 계절 변화 때문인지 원인을 잘 모르겠습니다. 제 볼 모공을 효과적으로 관리할 수 있는 방...
+  입력 30. case_id=COT_POR_M_U30_00012 vector_similarity=0.7054 | target=모공 | concerns=['모공'] | profile=26세 남성 복합성
+          question=안녕하세요, 저는 26살 복합성 피부를 가진 남성입니다. T존은 유분기가 많은데 U존은 건조한 편입니다. 최근 날씨가 더워지고 업무 스트레스가 심해지면서 유독 양쪽 볼 모공이 눈에 띄게 넓어지고 까맣게 보이는 것 같아 고민입니다. 특히 코 옆 볼 부분이 축 늘어진 느낌이라 나이 들어 보일까 걱정됩니다. 최근에 화장품을 바...
+  입력 31. case_id=COT_POR_M_O30_01720 vector_similarity=0.6989 | target=모공 | concerns=['모공'] | profile=39세 남성 중성
+          question=안녕하세요, 39세 남성입니다. 저는 중성 피부인데, 최근 들어 환절기 바람 때문인지 유독 볼 쪽 모공이 늘어지고 커 보이는 것 같아 고민입니다. 평소 수면도 부족하고 일상이 복잡해 스트레스도 많은 편인데, 이러한 생활 습관도 영향을 미치는 걸까요? 화장품을 많이 바르지는 않지만, 지금 사용하는 제품들이 제 볼 모공 관리...
+  입력 32. case_id=COT_RED_M_O30_03477 vector_similarity=0.6963 | target=붉어짐(홍조) | concerns=['붉어짐(홍조)'] | profile=32세 남성 복합성
+          question=32세 남성으로, 복합성 피부를 가지고 있으며 특히 볼과 코 주변에 잦은 붉어짐(홍조) 때문에 고민이 많습니다. 피부가 쉽게 붉어지고, 때로는 따끔거리는 느낌도 있습니다. 이러한 민감한 홍조 피부를 진정시키고 개선하기 위해 어떤 성분의 스킨케어 제품을 사용해야 하며, 일상적인 피부 관리 루틴은 어떻게 구성해야 하는지 구체...
+  입력 33. case_id=COT_POR_M_O30_08995 vector_similarity=0.6951 | target=모공 | concerns=['모공'] | profile=30세 남성 중성
+          question=안녕하세요, 저는 30대 중성 피부를 가진 남성입니다. 평소 피부에는 큰 불만이 없는데, 유독 여름철 무더위나 겨울철의 차고 건조한 날씨처럼 계절이 크게 바뀔 때마다 양쪽 볼 부분의 모공이 유난히 넓어지고 도드라져 보여서 신경이 쓰입니다. 이렇게 특정 계절에 따라 심해지는 볼 모공을 효과적으로 관리하고, 평소에도 꾸준히 ...
+  입력 34. case_id=COT_POR_M_U30_01060 vector_similarity=0.6948 | target=모공 | concerns=['모공'] | profile=29세 남성 지성
+          question=안녕하세요, 29살 지성 피부를 가진 직장인 남성입니다. 최근 환절기가 되면서 바람도 많이 불고 건조해졌는데, 이상하게 피부는 더 번들거립니다. 회사에서는 잦은 잔업과 대인관계 스트레스가 심한데, 이 때문인지 최근에 화장품을 바꾼 탓인지 양쪽 볼 모공이 눈에 띄게 넓어지고 까맣게 보여서 큰 고민입니다. 볼 부분의 모공은 ...
+  입력 35. case_id=COT_POR_M_O30_02342 vector_similarity=0.6943 | target=모공 | concerns=['모공'] | profile=32세 남성 복합성
+          question=안녕하세요, 32세 복합성 피부를 가진 남성입니다. 최근 환절기가 되면서 바람도 많이 불고 건조해져서 그런지, 이전에는 괜찮았던 볼 주변의 모공이 유독 눈에 띄게 커지고 피부결도 거칠어진 느낌입니다. 게다가 최근 잦은 야근으로 수면이 부족하고 스트레스가 심한데, 얼마 전 바꾼 화장품 탓인지 복합적인 문제인지 잘 모르겠습니...
+  입력 36. case_id=COT_POR_M_U30_05412 vector_similarity=0.6934 | target=모공 | concerns=['모공'] | profile=27세 남성 중성
+          question=안녕하세요. 저는 27세 남성이고, 피부 타입은 중성입니다. 평소에는 피부에 큰 불만이 없었는데, 최근 여름이 되면서 날씨가 덥고 습해져서 그런지 유독 양쪽 볼 모공이 이전보다 훨씬 넓어 보이고 도드라져서 신경이 쓰입니다. 잦은 야근으로 인한 스트레스나 최근에 바꾼 화장품 때문인지 원인도 복합적인 것 같아 답답합니다. 특...
+  입력 37. case_id=COT_POR_M_U30_08058 vector_similarity=0.6934 | target=모공 | concerns=['모공'] | profile=27세 남성 중성
+          question=안녕하세요. 저는 27세 남성이고, 피부 타입은 중성입니다. 평소에는 피부에 큰 불만이 없었는데, 최근 여름이 되면서 날씨가 덥고 습해져서 그런지 유독 양쪽 볼 모공이 이전보다 훨씬 넓어 보이고 도드라져서 신경이 쓰입니다. 잦은 야근으로 인한 스트레스나 최근에 바꾼 화장품 때문인지 원인도 복합적인 것 같아 답답합니다. 특...
+  입력 38. case_id=COT_POR_M_U30_04658 vector_similarity=0.6928 | target=모공 | concerns=['모공'] | profile=28세 남성 복합성
+          question=28살 복합성 피부를 가진 남성입니다. 최근 날씨가 급격히 더워지고 회사 업무 스트레스와 잦은 야근으로 피로가 쌓여서 그런지, 이전에는 신경 쓰이지 않던 양쪽 볼 모공이 눈에 띄게 커지고 늘어져 보입니다. T존은 번들거리는데 볼 주변은 오히려 건조해서 어떤 관리를 해야 할지 막막합니다. 특히 도드라지는 볼 모공을 효과적으...
+  입력 39. case_id=COT_POR_M_O30_07277 vector_similarity=0.6923 | target=모공 | concerns=['모공'] | profile=36세 남성 중성
+          question=안녕하세요. 저는 36세 중성 피부를 가진 남성입니다. 평소에는 피부 고민이 크지 않았는데, 최근 들어 유독 볼 부분의 모공이 눈에 띄게 넓어져서 스트레스입니다. 특히 여름철이 되면서 더 심해지는 것 같고, 바쁜 일상과 수면 부족도 영향을 주는 것 같습니다. 모공 관리를 위해 어떤 제품을 어떻게 사용해야 할지 막막합니다....
+  입력 40. case_id=COT_POR_M_O30_01955 vector_similarity=0.6920 | target=모공 | concerns=['모공'] | profile=32세 남성 중성
+          question=안녕하세요, 저는 32세 중성 피부를 가진 남성입니다. 평소에는 피부에 큰 불만이 없었는데, 최근 들어 유독 볼 부위 모공이 눈에 띄게 넓어져서 고민입니다. 특히 여름철 더운 날씨에 피지 분비가 늘어나면서 모공이 더 도드라져 보이고, 잦은 야근과 업무 스트레스도 영향을 미치는 것 같습니다. 이런 복합적인 원인으로 인해 넓...
+- 모델: BAAI/bge-reranker-v2-m3
+  1. case_id=COT_ACN_M_U30_02686 rerank_score=0.9985
+  2. case_id=COT_ACN_M_U30_06096 rerank_score=0.9961
+  3. case_id=COT_POR_M_U30_04658 rerank_score=0.9872
+
+[3. Top-3 원문 LLM 관련 성분 선별]
+- LLM 입력 case_id: ['COT_ACN_M_U30_02686', 'COT_ACN_M_U30_06096', 'COT_POR_M_U30_04658']
+- 상태: success, model=gpt-4o-mini, prompt=nia-case-ingredient-selection/v2
+  1. case_id=COT_ACN_M_U30_02686 ingredients=['ALOEBARBADENSISLEAFJUICEPOWDER']
+     quote=이마 여드름 완화를 위해 추천 성분 중 ALOE BARBADENSIS LEAF JUICE POWDER와 CARAPA GUAIANENSIS SEED OIL은 뛰어난 진정 및 항염 효과로 붉고 자극받은 여드름 부위를 빠르게 완화하는 데 도움을 줍니다.
+  2. case_id=COT_ACN_M_U30_02686 ingredients=['CARAPA GUAIANENSIS SEED OIL']
+     quote=이마 여드름 완화를 위해 추천 성분 중 ALOE BARBADENSIS LEAF JUICE POWDER와 CARAPA GUAIANENSIS SEED OIL은 뛰어난 진정 및 항염 효과로 붉고 자극받은 여드름 부위를 빠르게 완화하는 데 도움을 줍니다.
+  3. case_id=COT_ACN_M_U30_02686 ingredients=['COCHLEARIA ARMORACIA (HORSERADISH) ROOT EXTRACT']
+     quote=COCHLEARIA ARMORACIA (HORSERADISH) ROOT EXTRACT의 강력한 항균 특성은 여드름균 활동을 억제하여 추가적인 뾰루지 발생을 예방하며, CHITIN은 피부 보호막을 형성하고 항균 효과로 여드름 관리에 유익합니다.
+  4. case_id=COT_ACN_M_U30_06096 ingredients=['ALOEBARBADENSISLEAFJUICEPOWDER']
+     quote=볼과 코 주변의 여드름 관리를 위해 추천 성분 중에서는 'ALOE BARBADENSIS LEAF JUICE POWDER', 'CARAPA GUAIANENSIS SEED OIL', 'COCHLEARIA ARMORACIA ROOT EXTRACT', 'CHITIN'이 특히 유용합니다.
+  5. case_id=COT_ACN_M_U30_06096 ingredients=['CARAPA GUAIANENSIS SEED OIL']
+     quote=볼과 코 주변의 여드름 관리를 위해 추천 성분 중에서는 'ALOE BARBADENSIS LEAF JUICE POWDER', 'CARAPA GUAIANENSIS SEED OIL', 'COCHLEARIA ARMORACIA ROOT EXTRACT', 'CHITIN'이 특히 유용합니다.
+  6. case_id=COT_ACN_M_U30_06096 ingredients=['COCHLEARIA ARMORACIA ROOT EXTRACT']
+     quote=볼과 코 주변의 여드름 관리를 위해 추천 성분 중에서는 'ALOE BARBADENSIS LEAF JUICE POWDER', 'CARAPA GUAIANENSIS SEED OIL', 'COCHLEARIA ARMORACIA ROOT EXTRACT', 'CHITIN'이 특히 유용합니다.
+  7. case_id=COT_POR_M_U30_04658 ingredients=['살리실산']
+     quote=저녁 세안 후 살리실산(BHA) 성분이 포함된 제품으로 볼과 T존을 중심으로 각질과 피지를 정돈해주세요.
+  8. case_id=COT_POR_M_U30_04658 ingredients=['나이아신아마이드']
+     quote=그 다음, 나이아신아마이드 세럼을 얼굴 전체에 발라 피지 조절과 피부 탄력 개선을 도와주는 것이 좋습니다.
+
+[4. Agent 별칭 처리 및 표준 ingredient_id 확정]
+- ALOEBARBADENSISLEAFJUICEPOWDER → 알로에베라잎즙가루 → 알로에베라잎즙가루 / 7989ceef-b0d9-49a9-9791-c25cde0cb730
+- CARAPA GUAIANENSIS SEED OIL → 안디로바씨오일 → 안디로바씨오일 / c165de49-0f65-40cf-b6b6-3c1c709b8aa2
+- COCHLEARIA ARMORACIA (HORSERADISH) ROOT EXTRACT → 호스래디시뿌리추출물 → 호스래디시뿌리추출물 / 79338929-c204-4577-9b3d-dc0a24e83c04
+- ALOEBARBADENSISLEAFJUICEPOWDER → 알로에베라잎즙가루 → 알로에베라잎즙가루 / 7989ceef-b0d9-49a9-9791-c25cde0cb730
+- CARAPA GUAIANENSIS SEED OIL → 안디로바씨오일 → 안디로바씨오일 / c165de49-0f65-40cf-b6b6-3c1c709b8aa2
+- COCHLEARIA ARMORACIA ROOT EXTRACT → 호스래디시뿌리추출물 → 호스래디시뿌리추출물 / 79338929-c204-4577-9b3d-dc0a24e83c04
+- 살리실산 → 살리실릭애씨드 → 살리실릭애씨드 / 5c3fa47f-b797-452c-bc86-04a872aa3f71
+- 나이아신아마이드 → 나이아신아마이드 → 나이아신아마이드 / 93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4
+
+[5. 성분별 Evidence 검색 및 청크 상세]
+1. Evidence 질의: 알로에베라잎즙가루: 이마와 코의 번들거림 턱의 면도 후 뾰루지 볼의 세안 후 당김 관련 효능 및 주의사항
+   ingredient_id: ['7989ceef-b0d9-49a9-9791-c25cde0cb730']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+2. Evidence 질의: 안디로바씨오일: 이마와 코의 번들거림 턱의 면도 후 뾰루지 볼의 세안 후 당김 관련 효능 및 주의사항
+   ingredient_id: ['c165de49-0f65-40cf-b6b6-3c1c709b8aa2']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+3. Evidence 질의: 호스래디시뿌리추출물: 이마와 코의 번들거림 턱의 면도 후 뾰루지 볼의 세안 후 당김 관련 효능 및 주의사항
+   ingredient_id: ['79338929-c204-4577-9b3d-dc0a24e83c04']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+4. Evidence 질의: 살리실릭애씨드: 이마와 코의 번들거림 턱의 면도 후 뾰루지 볼의 세안 후 당김 관련 효능 및 주의사항
+   ingredient_id: ['5c3fa47f-b797-452c-bc86-04a872aa3f71']
+   Claim당 Evidence 반환 상한: 5건
+   상태: success, 반환 Evidence: 5건
+   [1] Amended Safety Assessment of Salicylic Acid and Salicylates as Used in Cosmetics (Clinical Studies:4) | 검수: unreviewed | RRF: 0.0156, Vec: 0.5259, Rerank: 0.6282
+       본문: Thus, in order to overcome technical difficulties, the authors use and bioavailability following dermal application) times noted that a supramolecular approach was developed to se- the maximum daily e...
+   [2] 30% Supramolecular Salicylic Acid Improved Symptoms and Skin Barrier in Papulopustular Rosacea. (abstract:0) | 검수: unreviewed | RRF: 0.0143, Vec: 0.4789, Rerank: 0.6239
+       본문: BACKGROUND: Rosacea is a chronic skin condition that affects millions of people worldwide, and its management continues to pose a significant challenge in dermatology. AIM: In this study, we investiga...
+   [3] Amended Safety Assessment of Salicylic Acid and Salicylates as Used in Cosmetics (Clinical Studies:3) | 검수: unreviewed | RRF: 0.0164, Vec: 0.5591, Rerank: 0.5839
+       본문: concentration not stated), but not for Methyl Salicylate, So- A clinical trial was conducted using 34 patients with mild dium Salicylate, or Salicylic Acid. to moderate acne who were selected for trea...
+   [4] Clinical Efficacy of a Salicylic Acid-Containing Gel on Acne Management and Skin Barrier Function: A 21-Day Prospective Study. (abstract:0) | 검수: unreviewed | RRF: 0.0145, Vec: 0.4946, Rerank: 0.5437
+       본문: BACKGROUND: Acne vulgaris is a common skin condition characterized by excessive sebum production, inflammation, and compromised skin barrier function. Effective treatments should target both lesion re...
+   [5] Amended Safety Assessment of Salicylic Acid and Salicylates as Used in Cosmetics (Clinical Studies:2) | 검수: unreviewed | RRF: 0.0159, Vec: 0.5477, Rerank: 0.2767
+       본문: salicylism include nausea, confusion, dizziness, delirium, Salicylate (and methanol) followed by the application of psychosis, stupor, and coma. heat (skin and muscle necrosis and interstitial nephrit...
+5. Evidence 질의: 나이아신아마이드: 이마와 코의 번들거림 턱의 면도 후 뾰루지 볼의 세안 후 당김 관련 효능 및 주의사항
+   ingredient_id: ['93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4']
+   Claim당 Evidence 반환 상한: 5건
+   상태: success, 반환 Evidence: 5건
+   [1] Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:6) | 검수: unreviewed | RRF: 0.0159, Vec: 0.5301, Rerank: 0.6689
+       본문: acid. Erythema was assessed prior to treatment and 24 h after treatment. Stinging was assessed immediately, 2.5 min, 5 min, and 8 min after treatment. Niacinamide at 1, 2.5, 5, and 10% in distilled wa...
+   [2] Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:5) | 검수: unreviewed | RRF: 0.0145, Vec: 0.5031, Rerank: 0.5631
+       본문: Grades of reaction for both erythema and dryness were simi- lar for both substances. There were slight increases in the grades from the initial assessment at the eight minute mark, but grades generall...
+   [3] Niacinamide: A B vitamin that improves aging facial skin appearance. (abstract:0) | 검수: unreviewed | RRF: 0.0156, Vec: 0.5266, Rerank: 0.5563
+       본문: BACKGROUND: In multiple chronic clinical studies, topical niacinamide (vitamin B3) has been observed to be well tolerated by skin and to provide a broad array of improvements in the appearance of agin...
+   [4] Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:3) | 검수: unreviewed | RRF: 0.0133, Vec: 0.4834, Rerank: 0.5198
+       본문: The number of reactions at each grade associated with the test substance and standard were compared. Skin reactions caused by the test substance were compared with those caused by the standard in the ...
+   [5] A Double-Blind, Randomized Clinical Trial of Niacinamide 4% versus Hydroquinone 4% in the Treatment of Melasma (abstract:0) | 검수: unreviewed | RRF: 0.0154, Vec: 0.5120, Rerank: 0.4286
+       본문: 4. Dermatol Res Pract. 2011;2011:379173. doi: 10.1155/2011/379173. Epub 2011 Jul  21.  A Double-Blind, Randomized Clinical Trial of Niacinamide 4% versus Hydroquinone  4% in the Treatment of Melasma. ...
+
+[6. 상품 검색]
+1. ingredient_ids=[], category=None
+   상태: unsupported, 반환 상품: 0건
+
+[채택된 근거]
+- Clinical Efficacy of a Salicylic Acid-Containing Gel on Acne Management and Skin Barrier Function: A 21-Day Prospective Study. (abstract:0)
+- 30% Supramolecular Salicylic Acid Improved Symptoms and Skin Barrier in Papulopustular Rosacea. (abstract:0)
+- Amended Safety Assessment of Salicylic Acid and Salicylates as Used in Cosmetics (Clinical Studies:4)
+- Amended Safety Assessment of Salicylic Acid and Salicylates as Used in Cosmetics (Clinical Studies:3)
+- Amended Safety Assessment of Salicylic Acid and Salicylates as Used in Cosmetics (Clinical Studies:2)
+- Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:3)
+- Niacinamide: A B vitamin that improves aging facial skin appearance. (abstract:0)
+- A Double-Blind, Randomized Clinical Trial of Niacinamide 4% versus Hydroquinone 4% in the Treatment of Melasma (abstract:0)
+
+[7. Agent 최종 응답]
+유사 사례에서 질문과 관련해 언급된 성분: 알로에베라잎즙가루, 안디로바씨오일, 호스래디시뿌리추출물, 살리실릭애씨드, 나이아신아마이드
+
+공인 근거 확인: 살리실릭애씨드가 포함된 젤은 여드름을 효과적으로 줄이고 피부 수분을 개선하며 피부 장벽을 강화하는데 도움이 됩니다. (적용 조건: 제형=single_ingredient) 30%의 초분자 살리실릭애씨드는 지속적인 홍반을 줄이고 피부 장벽 기능을 향상시킵니다. (적용 조건: 제형=single_ingredient) 살리실릭애씨드는 저농도에서 최대 효능을 달성하고, pH가 낮을 때 피부 자극을 줄이는 데 도움이 됩니다. 살리실릭애씨드의 피부에 대한 자극은 어르신들이 사용했을 때 보고된 바 있습니다. 살리실릭애씨드 사용 시 주의해야 할 부작용에는 피부 자극과 과민 반응이 포함될 수 있습니다.
+
+공인 근거 확인: 나이아신아마이드는 1%와 3% 농도 사용 시 자극을 유발하지 않습니다. 나이아신아마이드는 여드름 피부 개선에 효과적입니다. (적용 조건: 제형=single_ingredient) 나이아신아마이드는 멜라스마 치료에 안전하고 효과적인 치료제입니다. (적용 조건: 제형=single_ingredient)
+
+현재 연결된 근거로 충분히 확인하지 못한 후보 성분: 알로에베라잎즙가루, 안디로바씨오일, 호스래디시뿌리추출물
+
+루틴 대표 상품을 선택하지 못했습니다.
+
+
+[보류 요약]
+- unsupported_condition: 2-Layer smoke 상품 검색은 성분 ID 필터가 필요합니다.
+- no_evidence: 현재 연결된 근거로 충분히 확인하지 못한 후보 성분: 알로에베라잎즙가루, 안디로바씨오일, 호스래디시뿌리추출물
+- missing_information: 이번 검색 결과에서 루틴 역할을 맡길 상품 후보가 없습니다.
+======================================================================

@@ -1,0 +1,453 @@
+.venv/Scripts/python.exe : Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to en
+able higher rate limits and faster downloads.
+At line:2 char:1
++ .venv/Scripts/python.exe -m tests.agent.interactive_two_layer_rag_cli ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Warning: You ar...ster downloads.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+
+======================================================================
+ 2-Layer 스킨케어 Agent LangGraph CLI
+DB: skincare_reference_20260923_v5_2
+Intent·답변 모델: openai / gpt-4o-mini
+Claim·Evidence 임베딩: BAAI/bge-m3 / 1024차원
+Evidence 리랭커: BAAI/bge-reranker-v2-m3
+Claim·Evidence·성분·상품: skincare_reference_20260923_v5_2 실제 DB
+상품 taxonomy: product-taxonomy/db-v1:297fb5629083
+히스토리·체크포인터·루틴: 개발용 메모리 구현
+실제 OpenAI API 호출 비용이 발생합니다.
+출력 모드: verbose
+======================================================================
+
+Loading weights:   0%|          | 0/391 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 391/391 [00:00<00:00, 10161.99it/s]
+
+Loading weights:   0%|          | 0/393 [00:00<?, ?it/s]
+Loading weights:   3%|▎         | 12/393 [00:00<00:03, 119.40it/s]
+Loading weights:   9%|▉         | 35/393 [00:00<00:01, 182.52it/s]
+Loading weights:  14%|█▎        | 54/393 [00:00<00:01, 183.35it/s]
+Loading weights:  19%|█▊        | 73/393 [00:00<00:02, 140.70it/s]
+Loading weights:  24%|██▍       | 96/393 [00:00<00:01, 158.65it/s]
+Loading weights:  29%|██▉       | 113/393 [00:00<00:01, 158.69it/s]
+Loading weights:  34%|███▎      | 132/393 [00:00<00:01, 157.03it/s]
+Loading weights:  38%|███▊      | 149/393 [00:00<00:01, 157.60it/s]
+Loading weights:  42%|████▏     | 166/393 [00:01<00:01, 138.89it/s]
+Loading weights:  49%|████▊     | 191/393 [00:01<00:01, 163.50it/s]
+Loading weights: 100%|██████████| 393/393 [00:01<00:00, 308.17it/s]
+
+======================================================================
+질문: 46살 여성이고 야외에서 일해 양 볼의 갈색 반점과 눈가 잔주름이 신경 쓰입니다. 피부는 건조하고 새 미백 제품을 바르면 따끔한데, 자외선 차단·보습·색소 관리 중 무엇부터 하고 어떤 제품 종류를 아침저녁에 배치해야 하나요?
+실행 결과: partial | 의도: product_discovery
+======================================================================
+
+[1. NIA Case Document 임베딩 검색]
+- 검색 질의: 46살 여성이고 야외에서 일해 양 볼의 갈색 반점과 눈가 잔주름이 신경 쓰입니다. 피부는 건조하고 새 미백 제품을 바르면 따끔한데, 자외선 차단·보습·색소 관리 중 무엇부터 하고 어떤 제품 종류를 아침저녁에 배치해야 하나요?
+- 후보 요청 수: 40
+- 상태: success, 반환: 40건
+  1. case_id=COT_WHT_F_O30_07357 vector_similarity=0.7052 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=37세 여성 복합성
+     question=안녕하세요. 저는 37세 복합성 피부를 가진 여성입니다. 특히 최근 몇 년 사이 양쪽 볼 주변으로 기미와 잡티가 눈에 띄게 늘고 피부톤이 전체적으로 칙칙해져서 스트레스를 받고 있습니다. 야외 활동 시 햇빛 노출이 잦고, 봄철에는 황사 같은 대기오염 때문에 피부가 더 민감해지는 것 같은데, 제 볼에 집중된 색소침착을 개선하...
+  2. case_id=COT_WHT_F_O30_07506 vector_similarity=0.7049 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=39세 여성 복합성
+     question=안녕하세요, 저는 39세 복합성 피부를 가진 여성입니다. 최근 들어 다른 부위보다 유독 양쪽 볼 부분의 기미와 색소침착이 눈에 띄게 짙어지고 피부톤이 전체적으로 칙칙해 보여서 큰 스트레스를 받고 있습니다. 특히 봄철 황사나 미세먼지가 심한 날이나 햇빛이 강한 날 외출하고 오면 볼 쪽이 더 어두워지는 느낌입니다. 이런 환경...
+  3. case_id=COT_WHT_F_O30_00348 vector_similarity=0.7031 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 복합성
+     question=안녕하세요, 저는 36세 복합성 피부를 가진 여성입니다. 최근 몇 년 사이 유독 양쪽 볼을 중심으로 기미와 색소침착이 눈에 띄게 늘고 피부톤이 전체적으로 칙칙해져 고민입니다. 특히 햇빛에 자주 노출되고 황사가 심한 날에는 볼 부분이 더 어두워 보이는 것 같아요. 이런 환경적 요인으로 인해 심해진 볼의 색소침착을 개선하고 ...
+  4. case_id=COT_WHT_F_O30_07246 vector_similarity=0.7021 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=39세 여성 복합성
+     question=저는 39세 복합성 피부를 가진 여성입니다. 특히 양쪽 볼에 기미와 색소침착이 점점 짙어지고 전체적으로 피부톤이 칙칙해 보여서 고민이에요. 평소 야외 활동이 잦아 햇빛에 많이 노출되고, 봄철에는 황사 같은 대기오염 물질도 신경 쓰이는데, 이런 환경적 요인들이 제 볼 부분의 색소 문제를 더 악화시키는 것 같아 걱정입니다. ...
+  5. case_id=COT_WHT_M_U30_01490 vector_similarity=0.6984 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=26세 남성 건성
+     question=안녕하세요, 26살 건성 피부를 가진 남성입니다. 최근 들어 다른 부위보다 유독 양쪽 볼에 거뭇거뭇한 색소침착과 기미 같은 잡티가 눈에 띄게 늘어나면서 피부가 전체적으로 칙칙해 보여 큰 고민입니다. 평소 야외 활동이 잦아 햇빛에 자주 노출되고, 특히 봄철 황사가 심할 때면 피부가 더 푸석하고 어두워지는 느낌입니다. 제 볼...
+  6. case_id=COT_WHT_F_O30_00299 vector_similarity=0.6980 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=35세 여성 건성
+     question=안녕하세요, 저는 35세 여성입니다. 피부 타입은 건성인데, 최근 햇빛 노출이 조금만 있어도 특히 양쪽 볼 주변으로 기미와 잡티 같은 색소 침착이 눈에 띄게 짙어지는 것 같아 고민입니다. 또한, 황사가 심한 날 외출하고 돌아오면 피부가 전체적으로 더 칙칙하고 푸석해 보이는 느낌이 듭니다. 제 볼에 집중적으로 나타나는 이런...
+  7. case_id=COT_WHT_M_O30_07303 vector_similarity=0.6959 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 남성 중성
+     question=38세 남성으로, 중성 피부임에도 불구하고 최근 몇 년간 볼, 광대, 그리고 눈가 주변에 두드러지는 색소침착, 기미, 그리고 전반적인 피부 칙칙함으로 인해 큰 고민을 가지고 있습니다. 특히 과거에는 없던 점들이나 넓은 부위의 얼룩덜룩함이 신경 쓰입니다. 이러한 피부 고민을 효과적으로 개선하고, 균일하고 밝은 피부 톤을 되...
+  8. case_id=COT_WHT_F_O30_01337 vector_similarity=0.6957 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 건성
+     question=안녕하세요. 저는 38세 건성 피부 여성입니다. 요즘 들어 볼 주변에 기미와 색소침착이 점점 심해지고 피부 톤도 전체적으로 칙칙해 보여 고민이 많습니다. 피부가 건조해서 미백 제품을 사용하면 더 건조해질까 걱정되기도 합니다. 이런 제 피부 고민을 해결하고 밝고 균일한 피부 톤을 되찾기 위해 어떤 스킨케어 루틴과 성분을 활...
+  9. case_id=COT_WHT_F_O30_06258 vector_similarity=0.6921 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 중성
+     question=안녕하세요, 저는 38세 중성 피부의 여성입니다. 최근 몇 년간 볼 부위에 색소침착, 기미가 눈에 띄게 늘고 피부 톤이 전반적으로 칙칙해지는 것이 가장 큰 피부 고민입니다. 특히 햇빛(자외선/블루라이트) 노출과 황사와 같은 대기오염물질이 많은 환경에서 생활하고 있어서 이러한 외부 요인들이 색소침착을 악화시키는 것 같습니다...
+  10. case_id=COT_WHT_M_O30_01966 vector_similarity=0.6914 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 남성 중성
+     question=36세 남성으로, 피부 타입은 중성입니다. 평소 야외 활동이 잦은 편이라 그런지 볼 부위에 기미와 같은 색소침착이 점점 짙어지고 피부 톤이 전체적으로 칙칙해 보여 고민입니다. 특히 황사가 심한 날에는 피부가 더 푸석하고 어두워지는 느낌을 받습니다. 자외선과 대기오염으로부터 피부를 보호하면서 이미 생긴 색소침착을 개선하고 ...
+  11. case_id=COT_WHT_F_O30_05057 vector_similarity=0.6903 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=37세 여성 복합성
+     question=안녕하세요, 저는 37세 복합성 피부를 가진 여성입니다. T존은 유분기가 있지만 U존, 특히 양쪽 볼 부위는 건조함을 느끼는데요. 최근 몇 년 사이 유독 볼 주변으로 기미와 자잘한 색소침착이 늘어나고 피부톤이 칙칙해져서 고민입니다. 평소 자외선 차단제는 바르지만, 황사가 심한 날이나 햇빛 아래 오래 있은 날이면 볼의 잡티...
+  12. case_id=COT_WHT_F_O30_06644 vector_similarity=0.6902 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 복합성
+     question=안녕하세요. 저는 36세 복합성 피부를 가진 여성입니다. 최근 몇 년간 특히 양쪽 볼을 중심으로 기미와 잡티 같은 색소침착이 점점 짙어지고, 피부톤 자체가 칙칙하고 어두워져서 큰 스트레스를 받고 있습니다. 야외 활동이 잦아 햇빛에 자주 노출되는 편이고, 봄철에는 황사 같은 대기오염도 심해지는데, 이런 환경적인 요인들이 제...
+  13. case_id=COT_WHT_M_O30_00517 vector_similarity=0.6869 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 남성 중성
+     question=36세 남성으로, 평소 중성 피부를 가지고 있음에도 불구하고 최근 볼 부위에 눈에 띄게 칙칙함과 함께 갈색빛 색소 침착(기미나 잡티처럼 보이는)이 두드러져 고민이 많습니다. 피부 톤이 전반적으로 균일하지 못하고 생기 없어 보여서 미백 기능성 제품을 찾고 있습니다. 이러한 볼 부위의 색소 침착 문제를 해결하고 피부 톤을 밝...
+  14. case_id=COT_WHT_F_U30_06911 vector_similarity=0.6865 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=29세 여성 건성
+     question=안녕하세요, 29세 건성 피부를 가진 여성입니다. 최근 몇 달 사이 눈에 띄게 볼 주변으로 기미와 잡티 같은 색소침착이 늘어나고 피부톤이 전반적으로 칙칙해져서 스트레스가 많습니다. 특히 야외에서 햇빛을 많이 쬐거나 미세먼지 농도가 높은 날에는 볼 부위가 더 어두워 보이는 느낌이 드는데, 이런 환경적 요인이 제 볼 색소 문...
+  15. case_id=COT_WHT_F_O30_08588 vector_similarity=0.6863 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 중성
+     question=안녕하세요, 저는 38세 여성이고 피부 타입은 중성입니다. 다른 부위보다 유독 양쪽 볼에 기미와 색소침착이 점점 짙어지고, 전체적인 피부톤도 칙칙해져서 고민이 많습니다. 특히 미세먼지가 심한 날 외출하고 돌아오면 볼 부분이 더 푸석하고 어두워 보이는 느낌이 듭니다. 제 볼에 집중된 기미와 잡티를 효과적으로 개선하고 맑은 ...
+  16. case_id=COT_WHT_M_O30_05115 vector_similarity=0.6861 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=39세 남성 지성
+     question=39세 지성 피부 남성입니다. 평소 야외 활동을 즐기는데, 최근 들어 햇빛에 노출되는 시간이 길어지면서 양쪽 볼 주변으로 기미처럼 거뭇한 색소침착이 점점 짙어지고 넓어지는 것 같아 걱정입니다. 특히 봄철에는 황사 같은 대기오염 물질 때문에 피부가 더 칙칙해 보입니다. 제 볼에 생긴 색소침착과 전반적인 칙칙함을 개선하기 위...
+  17. case_id=COT_WHT_F_O30_05826 vector_similarity=0.6844 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=35세 여성 건성
+     question=안녕하세요, 30대 후반 여성입니다. 건성 피부인데, 특히 볼 쪽에 색소침착과 기미, 그리고 전체적인 칙칙함이 너무 신경 쓰여요. 매일 자외선 차단제를 꼼꼼히 바르려고 노력하지만, 볼 부위는 다른 곳보다 더 잘 타는 것 같고, 기미도 점점 더 짙어지는 느낌이에요. 미세먼지가 심한 날에는 볼이 더 붉어지고 예민해지는 것 같...
+  18. case_id=COT_WHT_F_U30_05329 vector_similarity=0.6843 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=26세 여성 복합성
+     question=안녕하세요. 저는 26세 여성으로, T존은 유분기가 있지만 볼 주변은 건조한 복합성 피부입니다. 최근 들어 야외 활동 후 양쪽 볼에 기미처럼 보이는 갈색 색소 침착이 눈에 띄게 늘고, 전체적인 피부톤도 칙칙해져서 고민이 많습니다. 자외선과 미세먼지 같은 외부 환경 요인이 피부에 미치는 영향이 큰 것 같은데, 제 피부 고민...
+  19. case_id=COT_WHT_F_O30_02094 vector_similarity=0.6842 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 복합성
+     question=36세 복합성 피부를 가진 여성입니다. 특히 볼 부위에 색소침착, 기미, 전반적인 칙칙함 때문에 고민이 많습니다. 피부 톤을 균일하게 만들고 환하게 개선하며, 새로 생기는 색소침착을 예방하고 기존의 기미와 칙칙함을 효과적으로 관리하기 위한 구체적인 스킨케어 루틴과 추천 성분들을 포함한 상세한 관리 방안을 알려주세요. 민감...
+  20. case_id=COT_WHT_F_O30_01340 vector_similarity=0.6841 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=35세 여성 중성
+     question=안녕하세요, 35세 중성 피부를 가진 여성입니다. 특히 볼, 코, 이마 부위에 색소침착, 기미, 전반적인 칙칙함이 주된 피부 고민입니다. 햇빛 노출로 인한 잡티와 시간이 지나면서 더욱 두드러지는 기미 때문에 피부 톤이 균일하지 못하고 생기 없어 보여 스트레스가 많습니다. 이러한 미백 고민을 효과적으로 해결하고 피부 톤을 ...
+  21. case_id=COT_WHT_F_O30_06151 vector_similarity=0.6841 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=35세 여성 복합성
+     question=안녕하세요. 저는 35세 여성으로, T존은 지성이지만 볼은 건조한 복합성 피부 타입입니다. 가장 큰 고민은 햇빛에 노출될 때마다 볼 주변에 점점 짙어지는 기미와 색소침착입니다. 특히 황사가 심한 날에는 피부가 전체적으로 더 칙칙하고 푸석해지는 것을 느낍니다. 이러한 자외선과 대기오염으로 인한 색소 침착과 칙칙한 피부 톤을...
+  22. case_id=COT_WHT_F_O30_06922 vector_similarity=0.6839 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 지성
+     question=36세 지성 피부를 가진 여성입니다. 특히 볼과 눈가에 색소침착, 기미, 전반적인 피부 칙칙함이 주된 고민입니다. 이러한 복합적인 미백 문제와 칙칙함을 개선하고 밝고 균일한 피부 톤을 되찾기 위해 어떤 스킨케어 루틴과 성분을 선택해야 할까요? 또한, 지성 피부임에도 불구하고 눈가 주변은 민감할 수 있는데, 이 부위에 안전...
+  23. case_id=COT_WHT_F_O30_00381 vector_similarity=0.6835 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=33세 여성 복합성
+     question=안녕하세요. 33세 복합성 피부를 가진 여성입니다. 최근 몇 달 사이 눈에 띄게 양쪽 볼 주변으로 기미와 색소침착이 짙어지고, 전체적으로 안색이 칙칙해 보여 큰 스트레스를 받고 있습니다. 특히 햇빛이 강한 날 외출하거나 황사가 심한 날에는 유독 볼 부위가 더 어두워지는 느낌이 듭니다. 이런 환경적인 요인으로 인해 심화되는...
+  24. case_id=COT_WHT_F_O30_00439 vector_similarity=0.6817 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=39세 여성 건성
+     question=저는 39세 건성 피부를 가진 여성으로, 최근 몇 년간 볼과 눈 밑에 색소침착과 기미가 짙어지고 전체적으로 피부 톤이 칙칙해지는 것을 느끼고 있습니다. 특히 건조함 때문에 피부 장벽이 약해져 더욱 고민입니다. 이러한 고민을 해결하고 피부를 밝고 균일하게 가꿀 수 있는 효과적인 스킨케어 루틴과 함께, 앞서 추천해주신 성분들...
+  25. case_id=COT_WHT_F_U30_05211 vector_similarity=0.6815 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=28세 여성 복합성
+     question=안녕하세요. 저는 28세 복합성 피부를 가진 여성입니다. 최근 황사나 미세먼지가 심한 날이 많고, 야외 활동 시 햇빛에 노출되는 시간도 늘어나면서 유독 양쪽 볼 부위에 옅었던 기미와 색소침착이 눈에 띄게 진해지고 피부톤이 전반적으로 칙칙해져서 큰 스트레스를 받고 있습니다. 볼에 집중된 이러한 색소 문제를 효과적으로 관리하...
+  26. case_id=COT_WHT_M_U30_00470 vector_similarity=0.6810 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=29세 남성 지성
+     question=29세 지성 피부 남성으로, 볼 부위의 색소침착, 기미, 전반적인 칙칙함이 주된 피부 고민입니다. 특히 햇빛(자외선) 노출과 황사 같은 대기오염물질에 자주 노출되면서 이러한 문제들이 더욱 심화되는 것 같습니다. 이러한 피부 문제를 효과적으로 개선하고 피부 톤을 균일하게 밝히는 데 도움을 줄 수 있는 스킨케어 성분들은 무엇...
+  27. case_id=COT_POR_M_O30_05428 vector_similarity=0.6805 rerank_input=yes
+     target=모공 | concerns=['모공'] | profile=34세 남성 중성
+     question=34세 중성 피부를 가진 남성입니다. 평소에는 피부 고민이 크지 않았는데, 최근 들어 유독 양쪽 볼 부위의 모공이 예전보다 넓어지고 도드라져 보여 신경이 쓰입니다. 환절기라 바람도 많이 불고, 최근 업무 스트레스와 수면 부족까지 겹쳤습니다. 얼마 전 바꾼 화장품이 원인인지, 아니면 다른 이유가 있는 건지, 볼 모공을 효과...
+  28. case_id=COT_WHT_F_O30_02838 vector_similarity=0.6799 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 건성
+     question=안녕하세요, 저는 38세 여성이고 피부 타입은 건성입니다. 최근 들어 특히 양쪽 볼 부위에 기미와 색소침착이 눈에 띄게 늘어나고 피부톤이 전체적으로 칙칙해 보여서 큰 고민입니다. 평소 업무상 스마트폰 사용 시간이 길어 블루라이트 노출이 잦고, 봄철만 되면 황사 때문에 피부가 더 예민해지는 것을 느낍니다. 이런 복합적인 요...
+  29. case_id=COT_WHT_M_O30_02878 vector_similarity=0.6797 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=33세 남성 중성
+     question=저는 33세 남성으로 중성 피부를 가지고 있으며, 특히 볼 부위의 색소침착, 기미, 전반적인 칙칙함으로 인한 미백 개선에 큰 관심이 있습니다. 평소 햇빛(자외선 및 블루라이트) 노출이 많고, 황사 같은 대기오염 물질에도 자주 노출되는 환경에 있습니다. 이러한 환경적 요인들이 피부에 미치는 영향을 최소화하고, 피부톤을 균일...
+  30. case_id=COT_WHT_M_O30_00744 vector_similarity=0.6790 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 남성 중성
+     question=36세 중성 피부의 남성입니다. 최근 들어 다른 부위는 괜찮은데 유독 볼 주변으로 기미인지 색소침착인지 모를 거뭇한 자국들이 생기고 피부톤이 전체적으로 칙칙해 보여 고민입니다. 업무상 스마트폰 사용 시간이 길고, 봄철에는 황사 같은 외부 환경에도 자주 노출되는 편입니다. 이러한 블루라이트나 대기오염이 색소침착에 정말 영향...
+  31. case_id=COT_WHT_F_U30_03866 vector_similarity=0.6780 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=25세 여성 복합성
+     question=안녕하세요. 25세 복합성 피부를 가진 여성입니다. 현재 가장 큰 피부 고민은 볼과 코 주변에 생겨난 색소침착, 기미, 그리고 전체적으로 칙칙해 보이는 피부 톤입니다. 특히, 햇빛 노출이 많았던 여름 이후로 더 두드러지는 것 같아요. 어떤 성분들을 활용해야 효과적으로 미백 관리를 할 수 있을지, 그리고 어떤 방식으로 꾸준...
+  32. case_id=COT_WHT_F_O30_01545 vector_similarity=0.6774 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 중성
+     question=38세 여성으로, 피부 타입은 중성입니다. 최근 들어 볼 주변에 기미와 색소침착이 눈에 띄게 늘고 피부가 전체적으로 칙칙해 보여 고민이 많습니다. 평소 자외선 차단제를 바르려고 노력하지만, 야외 활동이 잦고 가끔 즐기는 음주 습관이 피부에 영향을 미치는 것 같습니다. 제 피부 고민을 해결하고 맑고 균일한 피부 톤을 되찾기...
+  33. case_id=COT_WHT_F_O30_03060 vector_similarity=0.6773 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 중성
+     question=36세 중성 피부를 가진 여성으로서, 최근 들어 볼과 광대 부위에 점점 짙어지는 기미와 색소침착, 그리고 전반적인 피부 칙칙함 때문에 고민이 많습니다. 피부 톤을 균일하게 만들고 멜라닌 생성을 억제하여 이러한 고민을 효과적으로 개선할 수 있는 스킨케어 방법과 구체적인 성분은 무엇이며, 일상생활에서 어떤 점들을 유의해야 할...
+  34. case_id=COT_WHT_F_O30_07301 vector_similarity=0.6772 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 복합성
+     question=30대 후반 복합성 피부를 가진 여성입니다. 업무 특성상 외부 활동이 잦은 편인데, 최근 들어 유독 볼과 코 주변에 기미와 잡티 같은 색소침착이 눈에 띄게 짙어지고 피부톤이 전체적으로 칙칙해져 고민입니다. 자외선 차단제는 매일 바르지만 미세먼지가 심한 날에는 피부가 더 어두워지는 느낌입니다. 저의 주된 고민 부위인 볼; ...
+  35. case_id=COT_WHT_M_O30_02042 vector_similarity=0.6768 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 남성 중성
+     question=36세 남성으로, 중성 피부이며 특히 볼 부위에 발생하는 색소침착, 기미, 전반적인 칙칙함으로 인해 피부 톤이 고르지 않아 고민이 많습니다. 피부를 맑고 환하게 만드는 효과적인 미백 관리 방법과 함께, 이러한 고민에 도움을 줄 수 있는 구체적인 성분 및 그 성분들을 활용한 스킨케어 루틴에 대해 자세히 알려주실 수 있을까요...
+  36. case_id=COT_WHT_F_O30_03793 vector_similarity=0.6767 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 여성 지성
+     question=저는 34세 지성 피부의 여성으로, 최근 몇 년간 볼과 입가 주변에 짙어진 기미와 색소침착으로 인해 피부 톤이 전반적으로 칙칙해 보여 큰 고민입니다. 특히 화장을 해도 잘 가려지지 않고, 시간이 지날수록 더욱 눈에 띄어 스트레스가 심합니다. 지성 피부 특성상 번들거림도 있지만, 가장 시급한 것은 미백 개선이라고 생각합니다...
+  37. case_id=COT_WHT_F_O30_02463 vector_similarity=0.6765 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=39세 여성 복합성
+     question=안녕하세요, 39세 복합성 피부를 가진 여성입니다. 최근 몇 달 사이 눈에 띄게 양쪽 볼 주변으로 기미와 색소침착이 짙어지고 피부톤이 전체적으로 칙칙해져서 큰 고민입니다. 업무상 하루 종일 핸드폰과 컴퓨터를 보는데, 이런 블루라이트 노출과 최근 심해진 미세먼지가 제 볼에 생긴 잡티들을 더욱 악화시키는 것 같아 걱정됩니다....
+  38. case_id=COT_WHT_F_O30_01118 vector_similarity=0.6763 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=35세 여성 중성
+     question=35세 여성으로, 중성 피부 타입임에도 불구하고 볼과 이마에 눈에 띄게 색소침착과 기미가 생겨 전반적으로 피부 톤이 칙칙해 보이는 것이 가장 큰 고민입니다. 특히 따뜻한 계절이 다가오면서 더욱 신경이 쓰이는데, 이러한 색소 문제를 효과적으로 개선하고 환하고 균일한 피부 톤을 되찾을 수 있는 스킨케어 방법과 함께, 추천 성...
+  39. case_id=COT_WHT_F_O30_08139 vector_similarity=0.6762 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 중성
+     question=36세 중성 피부의 여성입니다. 최근 볼과 관자놀이 부위에 색소침착, 기미가 눈에 띄게 진해지고 전반적으로 피부 톤이 칙칙해져 고민이 많습니다. 이와 같은 미백 문제를 해결하고 피부를 밝고 균일하게 개선하기 위해 어떤 스킨케어 성분들이 효과적이며, 일상생활에서는 어떻게 관리해야 할까요? 특히 제가 참고한 알로에신(ALOE...
+  40. case_id=COT_WHT_F_O30_05765 vector_similarity=0.6761 rerank_input=yes
+     target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 여성 복합성
+     question=안녕하세요. 저는 34세 복합성 피부를 가진 여성입니다. 다른 부위보다 유독 양쪽 볼을 중심으로 기미와 오래된 색소침착이 점점 짙어지고, 피부톤이 전체적으로 칙칙해 보여 큰 스트레스를 받고 있습니다. 평소 햇빛 노출이 잦은 편이고, 봄철 황사가 심할 때는 피부가 더 민감해지면서 볼 부분의 잡티가 더 도드라져 보이는 것 같...
+- 단일 벡터 검색 결과를 고민 메타데이터로 선별한 뒤 재정렬합니다.
+
+[2. BGE 리랭커 Top-3 Case]
+- 리랭크 질의: 46살 여성이고 야외에서 일해 양 볼의 갈색 반점과 눈가 잔주름이 신경 쓰입니다. 피부는 건조하고 새 미백 제품을 바르면 따끔한데, 자외선 차단·보습·색소 관리 중 무엇부터 하고 어떤 제품 종류를 아침저녁에 배치해야 하나요?
+- 입력 후보: 40건, 선택 상한: 3건
+  입력 1. case_id=COT_WHT_M_U30_01490 vector_similarity=0.6984 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=26세 남성 건성
+          question=안녕하세요, 26살 건성 피부를 가진 남성입니다. 최근 들어 다른 부위보다 유독 양쪽 볼에 거뭇거뭇한 색소침착과 기미 같은 잡티가 눈에 띄게 늘어나면서 피부가 전체적으로 칙칙해 보여 큰 고민입니다. 평소 야외 활동이 잦아 햇빛에 자주 노출되고, 특히 봄철 황사가 심할 때면 피부가 더 푸석하고 어두워지는 느낌입니다. 제 볼...
+  입력 2. case_id=COT_WHT_F_O30_00299 vector_similarity=0.6980 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=35세 여성 건성
+          question=안녕하세요, 저는 35세 여성입니다. 피부 타입은 건성인데, 최근 햇빛 노출이 조금만 있어도 특히 양쪽 볼 주변으로 기미와 잡티 같은 색소 침착이 눈에 띄게 짙어지는 것 같아 고민입니다. 또한, 황사가 심한 날 외출하고 돌아오면 피부가 전체적으로 더 칙칙하고 푸석해 보이는 느낌이 듭니다. 제 볼에 집중적으로 나타나는 이런...
+  입력 3. case_id=COT_WHT_F_O30_01337 vector_similarity=0.6957 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 건성
+          question=안녕하세요. 저는 38세 건성 피부 여성입니다. 요즘 들어 볼 주변에 기미와 색소침착이 점점 심해지고 피부 톤도 전체적으로 칙칙해 보여 고민이 많습니다. 피부가 건조해서 미백 제품을 사용하면 더 건조해질까 걱정되기도 합니다. 이런 제 피부 고민을 해결하고 밝고 균일한 피부 톤을 되찾기 위해 어떤 스킨케어 루틴과 성분을 활...
+  입력 4. case_id=COT_WHT_F_U30_06911 vector_similarity=0.6865 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=29세 여성 건성
+          question=안녕하세요, 29세 건성 피부를 가진 여성입니다. 최근 몇 달 사이 눈에 띄게 볼 주변으로 기미와 잡티 같은 색소침착이 늘어나고 피부톤이 전반적으로 칙칙해져서 스트레스가 많습니다. 특히 야외에서 햇빛을 많이 쬐거나 미세먼지 농도가 높은 날에는 볼 부위가 더 어두워 보이는 느낌이 드는데, 이런 환경적 요인이 제 볼 색소 문...
+  입력 5. case_id=COT_WHT_F_O30_05826 vector_similarity=0.6844 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=35세 여성 건성
+          question=안녕하세요, 30대 후반 여성입니다. 건성 피부인데, 특히 볼 쪽에 색소침착과 기미, 그리고 전체적인 칙칙함이 너무 신경 쓰여요. 매일 자외선 차단제를 꼼꼼히 바르려고 노력하지만, 볼 부위는 다른 곳보다 더 잘 타는 것 같고, 기미도 점점 더 짙어지는 느낌이에요. 미세먼지가 심한 날에는 볼이 더 붉어지고 예민해지는 것 같...
+  입력 6. case_id=COT_WHT_F_O30_00439 vector_similarity=0.6817 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=39세 여성 건성
+          question=저는 39세 건성 피부를 가진 여성으로, 최근 몇 년간 볼과 눈 밑에 색소침착과 기미가 짙어지고 전체적으로 피부 톤이 칙칙해지는 것을 느끼고 있습니다. 특히 건조함 때문에 피부 장벽이 약해져 더욱 고민입니다. 이러한 고민을 해결하고 피부를 밝고 균일하게 가꿀 수 있는 효과적인 스킨케어 루틴과 함께, 앞서 추천해주신 성분들...
+  입력 7. case_id=COT_WHT_F_O30_02838 vector_similarity=0.6799 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 건성
+          question=안녕하세요, 저는 38세 여성이고 피부 타입은 건성입니다. 최근 들어 특히 양쪽 볼 부위에 기미와 색소침착이 눈에 띄게 늘어나고 피부톤이 전체적으로 칙칙해 보여서 큰 고민입니다. 평소 업무상 스마트폰 사용 시간이 길어 블루라이트 노출이 잦고, 봄철만 되면 황사 때문에 피부가 더 예민해지는 것을 느낍니다. 이런 복합적인 요...
+  입력 8. case_id=COT_WHT_F_O30_07357 vector_similarity=0.7052 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=37세 여성 복합성
+          question=안녕하세요. 저는 37세 복합성 피부를 가진 여성입니다. 특히 최근 몇 년 사이 양쪽 볼 주변으로 기미와 잡티가 눈에 띄게 늘고 피부톤이 전체적으로 칙칙해져서 스트레스를 받고 있습니다. 야외 활동 시 햇빛 노출이 잦고, 봄철에는 황사 같은 대기오염 때문에 피부가 더 민감해지는 것 같은데, 제 볼에 집중된 색소침착을 개선하...
+  입력 9. case_id=COT_WHT_F_O30_07506 vector_similarity=0.7049 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=39세 여성 복합성
+          question=안녕하세요, 저는 39세 복합성 피부를 가진 여성입니다. 최근 들어 다른 부위보다 유독 양쪽 볼 부분의 기미와 색소침착이 눈에 띄게 짙어지고 피부톤이 전체적으로 칙칙해 보여서 큰 스트레스를 받고 있습니다. 특히 봄철 황사나 미세먼지가 심한 날이나 햇빛이 강한 날 외출하고 오면 볼 쪽이 더 어두워지는 느낌입니다. 이런 환경...
+  입력 10. case_id=COT_WHT_F_O30_00348 vector_similarity=0.7031 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 복합성
+          question=안녕하세요, 저는 36세 복합성 피부를 가진 여성입니다. 최근 몇 년 사이 유독 양쪽 볼을 중심으로 기미와 색소침착이 눈에 띄게 늘고 피부톤이 전체적으로 칙칙해져 고민입니다. 특히 햇빛에 자주 노출되고 황사가 심한 날에는 볼 부분이 더 어두워 보이는 것 같아요. 이런 환경적 요인으로 인해 심해진 볼의 색소침착을 개선하고 ...
+  입력 11. case_id=COT_WHT_F_O30_07246 vector_similarity=0.7021 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=39세 여성 복합성
+          question=저는 39세 복합성 피부를 가진 여성입니다. 특히 양쪽 볼에 기미와 색소침착이 점점 짙어지고 전체적으로 피부톤이 칙칙해 보여서 고민이에요. 평소 야외 활동이 잦아 햇빛에 많이 노출되고, 봄철에는 황사 같은 대기오염 물질도 신경 쓰이는데, 이런 환경적 요인들이 제 볼 부분의 색소 문제를 더 악화시키는 것 같아 걱정입니다. ...
+  입력 12. case_id=COT_WHT_M_O30_07303 vector_similarity=0.6959 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 남성 중성
+          question=38세 남성으로, 중성 피부임에도 불구하고 최근 몇 년간 볼, 광대, 그리고 눈가 주변에 두드러지는 색소침착, 기미, 그리고 전반적인 피부 칙칙함으로 인해 큰 고민을 가지고 있습니다. 특히 과거에는 없던 점들이나 넓은 부위의 얼룩덜룩함이 신경 쓰입니다. 이러한 피부 고민을 효과적으로 개선하고, 균일하고 밝은 피부 톤을 되...
+  입력 13. case_id=COT_WHT_F_O30_06258 vector_similarity=0.6921 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 중성
+          question=안녕하세요, 저는 38세 중성 피부의 여성입니다. 최근 몇 년간 볼 부위에 색소침착, 기미가 눈에 띄게 늘고 피부 톤이 전반적으로 칙칙해지는 것이 가장 큰 피부 고민입니다. 특히 햇빛(자외선/블루라이트) 노출과 황사와 같은 대기오염물질이 많은 환경에서 생활하고 있어서 이러한 외부 요인들이 색소침착을 악화시키는 것 같습니다...
+  입력 14. case_id=COT_WHT_M_O30_01966 vector_similarity=0.6914 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 남성 중성
+          question=36세 남성으로, 피부 타입은 중성입니다. 평소 야외 활동이 잦은 편이라 그런지 볼 부위에 기미와 같은 색소침착이 점점 짙어지고 피부 톤이 전체적으로 칙칙해 보여 고민입니다. 특히 황사가 심한 날에는 피부가 더 푸석하고 어두워지는 느낌을 받습니다. 자외선과 대기오염으로부터 피부를 보호하면서 이미 생긴 색소침착을 개선하고 ...
+  입력 15. case_id=COT_WHT_F_O30_05057 vector_similarity=0.6903 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=37세 여성 복합성
+          question=안녕하세요, 저는 37세 복합성 피부를 가진 여성입니다. T존은 유분기가 있지만 U존, 특히 양쪽 볼 부위는 건조함을 느끼는데요. 최근 몇 년 사이 유독 볼 주변으로 기미와 자잘한 색소침착이 늘어나고 피부톤이 칙칙해져서 고민입니다. 평소 자외선 차단제는 바르지만, 황사가 심한 날이나 햇빛 아래 오래 있은 날이면 볼의 잡티...
+  입력 16. case_id=COT_WHT_F_O30_06644 vector_similarity=0.6902 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 복합성
+          question=안녕하세요. 저는 36세 복합성 피부를 가진 여성입니다. 최근 몇 년간 특히 양쪽 볼을 중심으로 기미와 잡티 같은 색소침착이 점점 짙어지고, 피부톤 자체가 칙칙하고 어두워져서 큰 스트레스를 받고 있습니다. 야외 활동이 잦아 햇빛에 자주 노출되는 편이고, 봄철에는 황사 같은 대기오염도 심해지는데, 이런 환경적인 요인들이 제...
+  입력 17. case_id=COT_WHT_M_O30_00517 vector_similarity=0.6869 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 남성 중성
+          question=36세 남성으로, 평소 중성 피부를 가지고 있음에도 불구하고 최근 볼 부위에 눈에 띄게 칙칙함과 함께 갈색빛 색소 침착(기미나 잡티처럼 보이는)이 두드러져 고민이 많습니다. 피부 톤이 전반적으로 균일하지 못하고 생기 없어 보여서 미백 기능성 제품을 찾고 있습니다. 이러한 볼 부위의 색소 침착 문제를 해결하고 피부 톤을 밝...
+  입력 18. case_id=COT_WHT_F_O30_08588 vector_similarity=0.6863 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 중성
+          question=안녕하세요, 저는 38세 여성이고 피부 타입은 중성입니다. 다른 부위보다 유독 양쪽 볼에 기미와 색소침착이 점점 짙어지고, 전체적인 피부톤도 칙칙해져서 고민이 많습니다. 특히 미세먼지가 심한 날 외출하고 돌아오면 볼 부분이 더 푸석하고 어두워 보이는 느낌이 듭니다. 제 볼에 집중된 기미와 잡티를 효과적으로 개선하고 맑은 ...
+  입력 19. case_id=COT_WHT_M_O30_05115 vector_similarity=0.6861 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=39세 남성 지성
+          question=39세 지성 피부 남성입니다. 평소 야외 활동을 즐기는데, 최근 들어 햇빛에 노출되는 시간이 길어지면서 양쪽 볼 주변으로 기미처럼 거뭇한 색소침착이 점점 짙어지고 넓어지는 것 같아 걱정입니다. 특히 봄철에는 황사 같은 대기오염 물질 때문에 피부가 더 칙칙해 보입니다. 제 볼에 생긴 색소침착과 전반적인 칙칙함을 개선하기 위...
+  입력 20. case_id=COT_WHT_F_U30_05329 vector_similarity=0.6843 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=26세 여성 복합성
+          question=안녕하세요. 저는 26세 여성으로, T존은 유분기가 있지만 볼 주변은 건조한 복합성 피부입니다. 최근 들어 야외 활동 후 양쪽 볼에 기미처럼 보이는 갈색 색소 침착이 눈에 띄게 늘고, 전체적인 피부톤도 칙칙해져서 고민이 많습니다. 자외선과 미세먼지 같은 외부 환경 요인이 피부에 미치는 영향이 큰 것 같은데, 제 피부 고민...
+  입력 21. case_id=COT_WHT_F_O30_02094 vector_similarity=0.6842 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 복합성
+          question=36세 복합성 피부를 가진 여성입니다. 특히 볼 부위에 색소침착, 기미, 전반적인 칙칙함 때문에 고민이 많습니다. 피부 톤을 균일하게 만들고 환하게 개선하며, 새로 생기는 색소침착을 예방하고 기존의 기미와 칙칙함을 효과적으로 관리하기 위한 구체적인 스킨케어 루틴과 추천 성분들을 포함한 상세한 관리 방안을 알려주세요. 민감...
+  입력 22. case_id=COT_WHT_F_O30_01340 vector_similarity=0.6841 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=35세 여성 중성
+          question=안녕하세요, 35세 중성 피부를 가진 여성입니다. 특히 볼, 코, 이마 부위에 색소침착, 기미, 전반적인 칙칙함이 주된 피부 고민입니다. 햇빛 노출로 인한 잡티와 시간이 지나면서 더욱 두드러지는 기미 때문에 피부 톤이 균일하지 못하고 생기 없어 보여 스트레스가 많습니다. 이러한 미백 고민을 효과적으로 해결하고 피부 톤을 ...
+  입력 23. case_id=COT_WHT_F_O30_06151 vector_similarity=0.6841 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=35세 여성 복합성
+          question=안녕하세요. 저는 35세 여성으로, T존은 지성이지만 볼은 건조한 복합성 피부 타입입니다. 가장 큰 고민은 햇빛에 노출될 때마다 볼 주변에 점점 짙어지는 기미와 색소침착입니다. 특히 황사가 심한 날에는 피부가 전체적으로 더 칙칙하고 푸석해지는 것을 느낍니다. 이러한 자외선과 대기오염으로 인한 색소 침착과 칙칙한 피부 톤을...
+  입력 24. case_id=COT_WHT_F_O30_06922 vector_similarity=0.6839 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 지성
+          question=36세 지성 피부를 가진 여성입니다. 특히 볼과 눈가에 색소침착, 기미, 전반적인 피부 칙칙함이 주된 고민입니다. 이러한 복합적인 미백 문제와 칙칙함을 개선하고 밝고 균일한 피부 톤을 되찾기 위해 어떤 스킨케어 루틴과 성분을 선택해야 할까요? 또한, 지성 피부임에도 불구하고 눈가 주변은 민감할 수 있는데, 이 부위에 안전...
+  입력 25. case_id=COT_WHT_F_O30_00381 vector_similarity=0.6835 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=33세 여성 복합성
+          question=안녕하세요. 33세 복합성 피부를 가진 여성입니다. 최근 몇 달 사이 눈에 띄게 양쪽 볼 주변으로 기미와 색소침착이 짙어지고, 전체적으로 안색이 칙칙해 보여 큰 스트레스를 받고 있습니다. 특히 햇빛이 강한 날 외출하거나 황사가 심한 날에는 유독 볼 부위가 더 어두워지는 느낌이 듭니다. 이런 환경적인 요인으로 인해 심화되는...
+  입력 26. case_id=COT_WHT_F_U30_05211 vector_similarity=0.6815 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=28세 여성 복합성
+          question=안녕하세요. 저는 28세 복합성 피부를 가진 여성입니다. 최근 황사나 미세먼지가 심한 날이 많고, 야외 활동 시 햇빛에 노출되는 시간도 늘어나면서 유독 양쪽 볼 부위에 옅었던 기미와 색소침착이 눈에 띄게 진해지고 피부톤이 전반적으로 칙칙해져서 큰 스트레스를 받고 있습니다. 볼에 집중된 이러한 색소 문제를 효과적으로 관리하...
+  입력 27. case_id=COT_WHT_M_U30_00470 vector_similarity=0.6810 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=29세 남성 지성
+          question=29세 지성 피부 남성으로, 볼 부위의 색소침착, 기미, 전반적인 칙칙함이 주된 피부 고민입니다. 특히 햇빛(자외선) 노출과 황사 같은 대기오염물질에 자주 노출되면서 이러한 문제들이 더욱 심화되는 것 같습니다. 이러한 피부 문제를 효과적으로 개선하고 피부 톤을 균일하게 밝히는 데 도움을 줄 수 있는 스킨케어 성분들은 무엇...
+  입력 28. case_id=COT_WHT_M_O30_02878 vector_similarity=0.6797 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=33세 남성 중성
+          question=저는 33세 남성으로 중성 피부를 가지고 있으며, 특히 볼 부위의 색소침착, 기미, 전반적인 칙칙함으로 인한 미백 개선에 큰 관심이 있습니다. 평소 햇빛(자외선 및 블루라이트) 노출이 많고, 황사 같은 대기오염 물질에도 자주 노출되는 환경에 있습니다. 이러한 환경적 요인들이 피부에 미치는 영향을 최소화하고, 피부톤을 균일...
+  입력 29. case_id=COT_WHT_M_O30_00744 vector_similarity=0.6790 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 남성 중성
+          question=36세 중성 피부의 남성입니다. 최근 들어 다른 부위는 괜찮은데 유독 볼 주변으로 기미인지 색소침착인지 모를 거뭇한 자국들이 생기고 피부톤이 전체적으로 칙칙해 보여 고민입니다. 업무상 스마트폰 사용 시간이 길고, 봄철에는 황사 같은 외부 환경에도 자주 노출되는 편입니다. 이러한 블루라이트나 대기오염이 색소침착에 정말 영향...
+  입력 30. case_id=COT_WHT_F_U30_03866 vector_similarity=0.6780 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=25세 여성 복합성
+          question=안녕하세요. 25세 복합성 피부를 가진 여성입니다. 현재 가장 큰 피부 고민은 볼과 코 주변에 생겨난 색소침착, 기미, 그리고 전체적으로 칙칙해 보이는 피부 톤입니다. 특히, 햇빛 노출이 많았던 여름 이후로 더 두드러지는 것 같아요. 어떤 성분들을 활용해야 효과적으로 미백 관리를 할 수 있을지, 그리고 어떤 방식으로 꾸준...
+  입력 31. case_id=COT_WHT_F_O30_01545 vector_similarity=0.6774 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 중성
+          question=38세 여성으로, 피부 타입은 중성입니다. 최근 들어 볼 주변에 기미와 색소침착이 눈에 띄게 늘고 피부가 전체적으로 칙칙해 보여 고민이 많습니다. 평소 자외선 차단제를 바르려고 노력하지만, 야외 활동이 잦고 가끔 즐기는 음주 습관이 피부에 영향을 미치는 것 같습니다. 제 피부 고민을 해결하고 맑고 균일한 피부 톤을 되찾기...
+  입력 32. case_id=COT_WHT_F_O30_03060 vector_similarity=0.6773 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 중성
+          question=36세 중성 피부를 가진 여성으로서, 최근 들어 볼과 광대 부위에 점점 짙어지는 기미와 색소침착, 그리고 전반적인 피부 칙칙함 때문에 고민이 많습니다. 피부 톤을 균일하게 만들고 멜라닌 생성을 억제하여 이러한 고민을 효과적으로 개선할 수 있는 스킨케어 방법과 구체적인 성분은 무엇이며, 일상생활에서 어떤 점들을 유의해야 할...
+  입력 33. case_id=COT_WHT_F_O30_07301 vector_similarity=0.6772 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=38세 여성 복합성
+          question=30대 후반 복합성 피부를 가진 여성입니다. 업무 특성상 외부 활동이 잦은 편인데, 최근 들어 유독 볼과 코 주변에 기미와 잡티 같은 색소침착이 눈에 띄게 짙어지고 피부톤이 전체적으로 칙칙해져 고민입니다. 자외선 차단제는 매일 바르지만 미세먼지가 심한 날에는 피부가 더 어두워지는 느낌입니다. 저의 주된 고민 부위인 볼; ...
+  입력 34. case_id=COT_WHT_M_O30_02042 vector_similarity=0.6768 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 남성 중성
+          question=36세 남성으로, 중성 피부이며 특히 볼 부위에 발생하는 색소침착, 기미, 전반적인 칙칙함으로 인해 피부 톤이 고르지 않아 고민이 많습니다. 피부를 맑고 환하게 만드는 효과적인 미백 관리 방법과 함께, 이러한 고민에 도움을 줄 수 있는 구체적인 성분 및 그 성분들을 활용한 스킨케어 루틴에 대해 자세히 알려주실 수 있을까요...
+  입력 35. case_id=COT_WHT_F_O30_03793 vector_similarity=0.6767 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 여성 지성
+          question=저는 34세 지성 피부의 여성으로, 최근 몇 년간 볼과 입가 주변에 짙어진 기미와 색소침착으로 인해 피부 톤이 전반적으로 칙칙해 보여 큰 고민입니다. 특히 화장을 해도 잘 가려지지 않고, 시간이 지날수록 더욱 눈에 띄어 스트레스가 심합니다. 지성 피부 특성상 번들거림도 있지만, 가장 시급한 것은 미백 개선이라고 생각합니다...
+  입력 36. case_id=COT_WHT_F_O30_02463 vector_similarity=0.6765 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=39세 여성 복합성
+          question=안녕하세요, 39세 복합성 피부를 가진 여성입니다. 최근 몇 달 사이 눈에 띄게 양쪽 볼 주변으로 기미와 색소침착이 짙어지고 피부톤이 전체적으로 칙칙해져서 큰 고민입니다. 업무상 하루 종일 핸드폰과 컴퓨터를 보는데, 이런 블루라이트 노출과 최근 심해진 미세먼지가 제 볼에 생긴 잡티들을 더욱 악화시키는 것 같아 걱정됩니다....
+  입력 37. case_id=COT_WHT_F_O30_01118 vector_similarity=0.6763 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=35세 여성 중성
+          question=35세 여성으로, 중성 피부 타입임에도 불구하고 볼과 이마에 눈에 띄게 색소침착과 기미가 생겨 전반적으로 피부 톤이 칙칙해 보이는 것이 가장 큰 고민입니다. 특히 따뜻한 계절이 다가오면서 더욱 신경이 쓰이는데, 이러한 색소 문제를 효과적으로 개선하고 환하고 균일한 피부 톤을 되찾을 수 있는 스킨케어 방법과 함께, 추천 성...
+  입력 38. case_id=COT_WHT_F_O30_08139 vector_similarity=0.6762 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=36세 여성 중성
+          question=36세 중성 피부의 여성입니다. 최근 볼과 관자놀이 부위에 색소침착, 기미가 눈에 띄게 진해지고 전반적으로 피부 톤이 칙칙해져 고민이 많습니다. 이와 같은 미백 문제를 해결하고 피부를 밝고 균일하게 개선하기 위해 어떤 스킨케어 성분들이 효과적이며, 일상생활에서는 어떻게 관리해야 할까요? 특히 제가 참고한 알로에신(ALOE...
+  입력 39. case_id=COT_WHT_F_O30_05765 vector_similarity=0.6761 | target=미백(색소침착/기미/칙칙함) | concerns=['미백(색소침착/기미/칙칙함)'] | profile=34세 여성 복합성
+          question=안녕하세요. 저는 34세 복합성 피부를 가진 여성입니다. 다른 부위보다 유독 양쪽 볼을 중심으로 기미와 오래된 색소침착이 점점 짙어지고, 피부톤이 전체적으로 칙칙해 보여 큰 스트레스를 받고 있습니다. 평소 햇빛 노출이 잦은 편이고, 봄철 황사가 심할 때는 피부가 더 민감해지면서 볼 부분의 잡티가 더 도드라져 보이는 것 같...
+  입력 40. case_id=COT_POR_M_O30_05428 vector_similarity=0.6805 | target=모공 | concerns=['모공'] | profile=34세 남성 중성
+          question=34세 중성 피부를 가진 남성입니다. 평소에는 피부 고민이 크지 않았는데, 최근 들어 유독 양쪽 볼 부위의 모공이 예전보다 넓어지고 도드라져 보여 신경이 쓰입니다. 환절기라 바람도 많이 불고, 최근 업무 스트레스와 수면 부족까지 겹쳤습니다. 얼마 전 바꾼 화장품이 원인인지, 아니면 다른 이유가 있는 건지, 볼 모공을 효과...
+- 모델: BAAI/bge-reranker-v2-m3
+  1. case_id=COT_WHT_F_U30_05329 rerank_score=0.9607
+  2. case_id=COT_WHT_F_O30_00299 rerank_score=0.9512
+  3. case_id=COT_WHT_F_O30_05057 rerank_score=0.9446
+
+[3. Top-3 원문 LLM 관련 성분 선별]
+- LLM 입력 case_id: ['COT_WHT_F_U30_05329', 'COT_WHT_F_O30_00299', 'COT_WHT_F_O30_05057']
+- 상태: success, model=gpt-4o-mini, prompt=nia-case-ingredient-selection/v2
+  1. case_id=COT_WHT_F_U30_05329 ingredients=['알로에신']
+     quote=첫째, '알로에신(Aloesin)'은 멜라닌 생성 과정의 핵심 효소인 티로시나아제(Tyrosinase)의 활성을 직접적으로 억제합니다.
+  2. case_id=COT_WHT_F_U30_05329 ingredients=['헥사펩타이드-2']
+     quote=둘째, '헥사펩타이드-2(Hexapeptide-2)'는 멜라닌 세포 자극 호르몬(α-MSH)의 수용체(MC1R)에 결합하는 것을 방해하는 역할을 합니다.
+  3. case_id=COT_WHT_F_U30_05329 ingredients=['댕댕이나무열매즙']
+     quote=셋째, '댕댕이나무열매즙(Lonicera Caerulea Fruit Juice)'은 안토시아닌과 비타민 C가 풍부하여 강력한 항산화 작용을 합니다.
+  4. case_id=COT_WHT_F_O30_00299 ingredients=['나이아신아마이드']
+     quote=저녁에는 꼼꼼한 세안 후 나이아신아마이드나 트라넥삼산 성분의 미백 기능성 제품을 사용하여 볼 부위를 집중 관리하는 것을 추천합니다.
+  5. case_id=COT_WHT_F_O30_00299 ingredients=['비타민 C']
+     quote=아침에는 비타민 C 성분 제품으로 피부를 보호하고, 저녁에는 꼼꼼한 세안 후 나이아신아마이드나 트라넥삼산 성분의 미백 기능성 제품을 사용하여 볼 부위를 집중 관리하는 것을 추천합니다.
+  6. case_id=COT_WHT_F_O30_00299 ingredients=['트라넥삼산']
+     quote=저녁에는 꼼꼼한 세안 후 나이아신아마이드나 트라넥삼산 성분의 미백 기능성 제품을 사용하여 볼 부위를 집중 관리하는 것을 추천합니다.
+  7. case_id=COT_WHT_F_O30_05057 ingredients=['나이아신아마이드']
+     quote=첫째, '나이아신아마이드'는 생성된 멜라닌이 각질세포로 이동하는 것을 억제하여 피부톤을 맑게 해줍니다.
+  8. case_id=COT_WHT_F_O30_05057 ingredients=['비타민C']
+     quote=둘째, '비타민C' 유도체는 강력한 항산화제로, 자외선과 대기오염으로 인한 손상을 막고 멜라닌 생성 효소인 티로시나아제 활성을 억제합니다.
+  9. case_id=COT_WHT_F_O30_05057 ingredients=['트라넥사믹애씨드']
+     quote=셋째, 기미가 동반된 경우 '트라넥사믹애씨드' 성분은 자외선으로 인한 멜라닌 생성 신호 전달 과정을 차단하여 색소침착 완화에 도움을 줄 수 있습니다.
+
+[4. Agent 별칭 처리 및 표준 ingredient_id 확정]
+- 알로에신 → 알로에신 → 알로에신 / 1b117d3c-abf6-4f2b-98be-f610a592a67c
+- 헥사펩타이드-2 → 헥사펩타이드-2 → 헥사펩타이드-2 / 1f3efc9f-a60d-4c0a-be46-f740e98ea0e0
+- 댕댕이나무열매즙 → 댕댕이나무열매즙 → 댕댕이나무열매즙 / ef8d0ffd-e21e-4bf7-baec-cd5f1a1b2daa
+- 나이아신아마이드 → 나이아신아마이드 → 나이아신아마이드 / 93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4
+- 비타민 C → 아스코빅애씨드 → 아스코빅애씨드 / bf432576-e990-4b02-ac67-9d414af42d76
+- 트라넥삼산 → 트라넥삼산 → no_results
+- 나이아신아마이드 → 나이아신아마이드 → 나이아신아마이드 / 93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4
+- 비타민C → 아스코빅애씨드 → 아스코빅애씨드 / bf432576-e990-4b02-ac67-9d414af42d76
+- 트라넥사믹애씨드 → 트라넥사믹애씨드 → 트라넥사믹애씨드 / 95ff3311-de1d-4921-bb5e-71ffb50008fc
+
+[5. 성분별 Evidence 검색 및 청크 상세]
+1. Evidence 질의: 알로에신: 건조 관련 효능 및 주의사항
+   ingredient_id: ['1b117d3c-abf6-4f2b-98be-f610a592a67c']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+2. Evidence 질의: 헥사펩타이드-2: 건조 관련 효능 및 주의사항
+   ingredient_id: ['1f3efc9f-a60d-4c0a-be46-f740e98ea0e0']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+3. Evidence 질의: 댕댕이나무열매즙: 건조 관련 효능 및 주의사항
+   ingredient_id: ['ef8d0ffd-e21e-4bf7-baec-cd5f1a1b2daa']
+   Claim당 Evidence 반환 상한: 5건
+   상태: no_results, 반환 Evidence: 0건
+4. Evidence 질의: 나이아신아마이드: 건조 관련 효능 및 주의사항
+   ingredient_id: ['93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4']
+   Claim당 Evidence 반환 상한: 5건
+   상태: success, 반환 Evidence: 5건
+   [1] Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:2) | 검수: unreviewed | RRF: 0.0149, Vec: 0.5117, Rerank: 0.5650
+       본문: Unilever (1998o) tested the skin irritation potential of a skin cream containing 3% Niacinamide on 32 healthy adults (13 males and 19 females). The patches were applied to the outer surface of the upp...
+   [2] Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:3) | 검수: unreviewed | RRF: 0.0133, Vec: 0.4705, Rerank: 0.5455
+       본문: The number of reactions at each grade associated with the test substance and standard were compared. Skin reactions caused by the test substance were compared with those caused by the standard in the ...
+   [3] Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:5) | 검수: unreviewed | RRF: 0.0156, Vec: 0.5307, Rerank: 0.4860
+       본문: Grades of reaction for both erythema and dryness were simi- lar for both substances. There were slight increases in the grades from the initial assessment at the eight minute mark, but grades generall...
+   [4] Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:6) | 검수: unreviewed | RRF: 0.0159, Vec: 0.5363, Rerank: 0.4248
+       본문: acid. Erythema was assessed prior to treatment and 24 h after treatment. Stinging was assessed immediately, 2.5 min, 5 min, and 8 min after treatment. Niacinamide at 1, 2.5, 5, and 10% in distilled wa...
+   [5] Niacinamide: A B vitamin that improves aging facial skin appearance. (abstract:0) | 검수: unreviewed | RRF: 0.0152, Vec: 0.5179, Rerank: 0.2899
+       본문: BACKGROUND: In multiple chronic clinical studies, topical niacinamide (vitamin B3) has been observed to be well tolerated by skin and to provide a broad array of improvements in the appearance of agin...
+5. Evidence 질의: 아스코빅애씨드: 건조 관련 효능 및 주의사항
+   ingredient_id: ['bf432576-e990-4b02-ac67-9d414af42d76']
+   Claim당 Evidence 반환 상한: 5건
+   상태: success, 반환 Evidence: 5건
+   [1] Final Report of the Safety Assessment of L-Ascorbic Acid, Calcium Ascorbate, Magnesium Ascorbate, Magnesium Ascorbyl Phosphate, Sodium Ascorbate, and Sodium Ascorbyl Phosphate as Used in Cosmetics (DISCUSSION:17) | 검수: unreviewed | RRF: 0.0159, Vec: 0.5247, Rerank: 0.4362
+       본문: The CIR Expert Panel determined the data provided in this report to be sufficient to assess the safety of L-Ascorbic Acid, phate. Because of the structural and functional similarities of these ingredi...
+   [2] Final Report of the Safety Assessment of L-Ascorbic Acid, Calcium Ascorbate, Magnesium Ascorbate, Magnesium Ascorbyl Phosphate, Sodium Ascorbate, and Sodium Ascorbyl Phosphate as Used in Cosmetics (CLINICAL ASSESSMENT OF SAFETY:8) | 검수: unreviewed | RRF: 0.0156, Vec: 0.5135, Rerank: 0.2278
+       본문: the higher doses were observed in five adults and four infants and included nausea, vomiting, diarrhea, flushing of the face, headache, fatigue, and disturbed sleep. Skin rashes were also seen in the ...
+   [3] Final Report of the Safety Assessment of L-Ascorbic Acid, Calcium Ascorbate, Magnesium Ascorbate, Magnesium Ascorbyl Phosphate, Sodium Ascorbate, and Sodium Ascorbyl Phosphate as Used in Cosmetics (CLINICAL ASSESSMENT OF SAFETY:9) | 검수: unreviewed | RRF: 0.0164, Vec: 0.5351, Rerank: 0.2253
+       본문: During the first 15 days the subjects received daily supplements of 200 mg of Ascorbic Acid, and during the next 2 weeks they were given 2 g of Ascorbic Acid per day. Supplementation of 200 mg of Asco...
+   [4] Use of topical ascorbic acid and its effects on photodamaged skin topography. (abstract:0) | 검수: unreviewed | RRF: 0.0125, Vec: 0.4517, Rerank: 0.2204
+       본문: OBJECTIVE: To determine the efficacy of topical ascorbic acid application in treating mild to moderate photodamage of facial skin using an objective, computer-assisted image analysis of skin surface t...
+   [5] Final Report of the Safety Assessment of L-Ascorbic Acid, Calcium Ascorbate, Magnesium Ascorbate, Magnesium Ascorbyl Phosphate, Sodium Ascorbate, and Sodium Ascorbyl Phosphate as Used in Cosmetics (CLINICAL ASSESSMENT OF SAFETY:12) | 검수: unreviewed | RRF: 0.0149, Vec: 0.5033, Rerank: 0.1981
+       본문: which was tolerated without further difficulty. Application of topical Ascorbic Acid in an aqueous formulation resulted in a significant decrease in post CO laser resurfacing erythema by the 8th posto...
+6. Evidence 질의: 트라넥사믹애씨드: 건조 관련 효능 및 주의사항
+   ingredient_id: ['95ff3311-de1d-4921-bb5e-71ffb50008fc']
+   Claim당 Evidence 반환 상한: 5건
+   상태: success, 반환 Evidence: 3건
+   [1] Clinical Efficacy of Topical Tranexamic Acid With Microneedling in Melasma. (abstract:0) | 검수: unreviewed | RRF: 0.0164, Vec: 0.5528, Rerank: 0.4281
+       본문: BACKGROUND: Melasma is a common, recurrent, and refractory cause of facial pigmentation resulting in cosmetic disfigurement. Tranexamic acid (TA) has been used systemically and locally for clearance o...
+   [2] The efficacy and safety of microneedling with topical tranexamic acid for melasma treatment: A systematic review and meta-analysis. (abstract:0) | 검수: unreviewed | RRF: 0.0159, Vec: 0.5049, Rerank: 0.0841
+       본문: OBJECTIVE: Microneedling with topical tranexamic acid (TXA) is a novel treatment option for melasma; however, the efficacy and safety of this combined administration therapy is in controversial. This ...
+   [3] Optimizing Melasma Management With Topical Tranexamic Acid: An Expert Consensus. (abstract:0) | 검수: unreviewed | RRF: 0.0161, Vec: 0.5214, Rerank: 0.0537
+       본문: Because of its complex pathogenesis, chronicity, and high rates of recurrence, melasma is regarded as a challenging skin disorder. Topical treatments are often offered as first-line therapy. However, ...
+
+[6. 상품 검색]
+1. ingredient_ids=['93bd6d73-d9f2-460b-9b0e-1d99b0e7dbe4', 'bf432576-e990-4b02-ac67-9d414af42d76', '95ff3311-de1d-4921-bb5e-71ffb50008fc', '1b117d3c-abf6-4f2b-98be-f610a592a67c', '1f3efc9f-a60d-4c0a-be46-f740e98ea0e0', 'ef8d0ffd-e21e-4bf7-baec-cd5f1a1b2daa'], category=None
+   상태: success, 반환 상품: 30건
+   - 넘버즈인 No.5 글루타치온 TXA 어드밴스드 Dark Spot 앰플 Concentrate (앰플)
+   - 닥터알테아 비타민C 부스팅 세럼 30ml (에센스·세럼)
+   - 베로벤 래디언스 나이아신아마이드 10% 앰플 50ml (앰플)
+   - [산리오 에디션] 구달 청귤 비타C E TXA 세럼 30ml*2 (+폼폼푸린 에코백) (에센스·세럼)
+   - 아누아 [세트] 나이아신아마이드 5 TXA 마스크시트 (+1매) (마스크·패치)
+   - 네오젠 Dermalogy 더블 Vita 캡슐 클렌징 폼 150ml (클렌저)
+   - CNP 더마+ Answer 브라이트닝 부스터 TXA-PDRN 앰플 30ml (기타)
+   - 디마르3 Etsere Melacare 크림 65mL (크림·로션)
+   - 닥터지 Vita Clear Gluta 샷 10+ 블레미쉬 세럼 30ml (에센스·세럼)
+   - EQQUALBERRY 비타민 Illuminating 토너 150ml (토너·패드)
+
+[상품 후보]
+1. 넘버즈인 No.5 글루타치온 TXA 어드밴스드 Dark Spot 앰플 Concentrate [미검수 근거]
+2. 닥터알테아 비타민C 부스팅 세럼 30ml [미검수 근거]
+3. 베로벤 래디언스 나이아신아마이드 10% 앰플 50ml [미검수 근거]
+4. [산리오 에디션] 구달 청귤 비타C E TXA 세럼 30ml*2 (+폼폼푸린 에코백) [미검수 근거]
+5. 아누아 [세트] 나이아신아마이드 5 TXA 마스크시트 (+1매) [미검수 근거]
+6. 네오젠 Dermalogy 더블 Vita 캡슐 클렌징 폼 150ml [미검수 근거]
+7. CNP 더마+ Answer 브라이트닝 부스터 TXA-PDRN 앰플 30ml [미검수 근거]
+8. 디마르3 Etsere Melacare 크림 65mL [미검수 근거]
+9. 닥터지 Vita Clear Gluta 샷 10+ 블레미쉬 세럼 30ml [미검수 근거]
+10. EQQUALBERRY 비타민 Illuminating 토너 150ml [미검수 근거]
+11. 구달 청귤 비타C 나이아신아마이드 10 토닝 앰플 30ml [미검수 근거]
+12. coopy Melasma Clear 크림 50ml [미검수 근거]
+13. 메디필 Melanon X 앰플 클렌저 150ml [미검수 근거]
+14. EQQUALBERRY 비타민 Illuminating 크림 50ml [미검수 근거]
+15. Arencia 레드 Smoothie 세럼 8 30ml [Claim 기반]
+16. luvum 그린 Citrus 비타민C 젤 크림+ 50ml [미검수 근거]
+17. DEMAR3 Etsere Melatonic 앰플 70mL [미검수 근거]
+18. athe 토닝 Vita EGF 세럼 30mL [Claim 기반]
+19. 닥터지 Vita Clear Gluta 샷 7+ Wrapping 블레미쉬 크림 50ml [미검수 근거]
+20. AHC Ten Revolution 리얼 아이크림 포 Face 35mL [Claim 기반]
+21. 메디필 Melanonx 앰플 RX 30ml [미검수 근거]
+22. 넘버즈인 No.5 글루타치온 비타민 컨센트레이트 세럼 30ml 듀오 세트 [미검수 근거]
+23. 센텔리안24 글루타치온 토닝 부스팅 앰플 30ml [미검수 근거]
+24. NINELESS Mela-Pro 5% 트라넥삼산 세럼 30ml [미검수 근거]
+25. 센텔리안24 엑스퍼트 Madeca Mela Capture 앰플 Max 45mL [미검수 근거]
+26. 하루하루원더 센텔라 4% TXA 젤 세럼 [미검수 근거]
+27. Arencia 레드 Smoothie 세럼 30 50g [Claim 기반]
+28. 미샤 비타C 플러스 아스코빅애씨드 스팟 교정 앰플 패드 [미검수 근거]
+29. 루븀 그린시트러스 비타민C 세럼+ 30ml [미검수 근거]
+30. 넘버즈인 No.5 Glutatione 비타민 Concentrated 세럼 30ml 세트 (+패드 6매) [미검수 근거]
+
+[채택된 근거]
+- Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:2)
+- Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:3)
+- Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:5)
+- Final Report of the Safety Assessment of Niacinamide and Niacin (CLINICAL ASSESSMENT OF SAFETY:6)
+- Niacinamide: A B vitamin that improves aging facial skin appearance. (abstract:0)
+- Final Report of the Safety Assessment of L-Ascorbic Acid, Calcium Ascorbate, Magnesium Ascorbate, Magnesium Ascorbyl Phosphate, Sodium Ascorbate, and Sodium Ascorbyl Phosphate as Used in Cosmetics (CLINICAL ASSESSMENT OF SAFETY:8)
+- Final Report of the Safety Assessment of L-Ascorbic Acid, Calcium Ascorbate, Magnesium Ascorbate, Magnesium Ascorbyl Phosphate, Sodium Ascorbate, and Sodium Ascorbyl Phosphate as Used in Cosmetics (DISCUSSION:17)
+- Use of topical ascorbic acid and its effects on photodamaged skin topography. (abstract:0)
+- Clinical Efficacy of Topical Tranexamic Acid With Microneedling in Melasma. (abstract:0)
+- The efficacy and safety of microneedling with topical tranexamic acid for melasma treatment: A systematic review and meta-analysis. (abstract:0)
+
+[7. Agent 최종 응답]
+유사 사례에서 질문과 관련해 언급된 성분: 알로에신, 헥사펩타이드-2, 댕댕이나무열매즙, 나이아신아마이드, 아스코빅애씨드, 트라넥삼산, 트라넥사믹애씨드
+
+공인 근거 확인: 나이아신아마이드가 포함된 3% 피부 크림은 32명의 성인에서 피부 자극 가능성을 평가받았으며, 전반적으로 낮은 자극 수준을 나타냈다. 1% 나이아신아마이드를 포함한 피부 크림은 사용 후 피부 반응이 기준 제품과 유의미한 차이를 보이지 않았다. 1% 및 3% 나이아신아마이드를 포함한 피부 크림은 자극을 유발하지 않으며, 자극의 증거가 관찰되지 않았다. 1%, 2.5%, 5%, 10% 농도의 나이아신아마이드 용액이 자극 반응을 일으키지 않았다. 5% 나이아신아마이드가 포함된 크림이 주름과 색소침착, 피부 탄력 개선에 도움이 된다. (적용 조건: 제형=single_ingredient)
+
+공인 근거 확인: 아스코빅애씨드가 높은 용량에서 부작용을 일으킬 수 있는데, 이러한 부작용으로는 메스꺼움, 구토, 설사 등이 포함됩니다. 아스코빅애씨드는 특정 조건 하에서 유전 독성을 보일 수 있으므로, 조심스럽게 사용해야 합니다. 아스코빅애씨드를 화장품에 사용할 때 항산화제로 작용하도록 보장해야 하며, 특정 금속 이온과의 결합이 우려됩니다. 아스코빅애씨드를 주 성분으로 포함한 임상 시험 결과, 설치류에서 진행성 종양 유발자로 작용할 수 있으나 이는 나트륨 이온 농도와 관련이 있습니다. 아스코빅애씨드가 얼굴의 미세한 주름과 피부 질감을 개선하는 데에 효과적임이 입증되었습니다. (적용 조건: 제형=single_ingredient)
+
+공인 근거 확인: 트라넥사믹 애씨드는 멜라스마의 치료에 효과적일 수 있다. (적용 조건: 제형=combination_formulation) 트라넥사믹 애씨드를 사용한 미세 바늘 치료는 멜라스마 치료의 대안이 될 수 있다. (적용 조건: 제형=single_ingredient)
+
+현재 연결된 근거로 충분히 확인하지 못한 후보 성분: 알로에신, 헥사펩타이드-2, 댕댕이나무열매즙
+
+표준 성분을 확정하지 못한 Case 관련 성분: 트라넥삼산
+
+역할별 제품 후보:
+[케어]
+1번. 넘버즈인 No.5 글루타치온 TXA 어드밴스드 Dark Spot 앰플 Concentrate (미검수 근거)
+2번. 닥터알테아 비타민C 부스팅 세럼 30ml (미검수 근거)
+3번. 베로벤 래디언스 나이아신아마이드 10% 앰플 50ml (미검수 근거)
+4번. [산리오 에디션] 구달 청귤 비타C E TXA 세럼 30ml*2 (+폼폼푸린 에코백) (미검수 근거)
+9번. 닥터지 Vita Clear Gluta 샷 10+ 블레미쉬 세럼 30ml (미검수 근거)
+10번. EQQUALBERRY 비타민 Illuminating 토너 150ml (미검수 근거)
+11번. 구달 청귤 비타C 나이아신아마이드 10 토닝 앰플 30ml (미검수 근거)
+15번. Arencia 레드 Smoothie 세럼 8 30ml (미검수 근거)
+17번. DEMAR3 Etsere Melatonic 앰플 70mL (미검수 근거)
+18번. athe 토닝 Vita EGF 세럼 30mL (미검수 근거)
+21번. 메디필 Melanonx 앰플 RX 30ml (미검수 근거)
+22번. 넘버즈인 No.5 글루타치온 비타민 컨센트레이트 세럼 30ml 듀오 세트 (미검수 근거)
+23번. 센텔리안24 글루타치온 토닝 부스팅 앰플 30ml (미검수 근거)
+24번. NINELESS Mela-Pro 5% 트라넥삼산 세럼 30ml (미검수 근거)
+25번. 센텔리안24 엑스퍼트 Madeca Mela Capture 앰플 Max 45mL (미검수 근거)
+26번. 하루하루원더 센텔라 4% TXA 젤 세럼 (미검수 근거)
+27번. Arencia 레드 Smoothie 세럼 30 50g (미검수 근거)
+28번. 미샤 비타C 플러스 아스코빅애씨드 스팟 교정 앰플 패드 (미검수 근거)
+29번. 루븀 그린시트러스 비타민C 세럼+ 30ml (미검수 근거)
+30번. 넘버즈인 No.5 Glutatione 비타민 Concentrated 세럼 30ml 세트 (+패드 6매) (미검수 근거)
+[보습]
+8번. 디마르3 Etsere Melacare 크림 65mL (미검수 근거)
+12번. coopy Melasma Clear 크림 50ml (미검수 근거)
+14번. EQQUALBERRY 비타민 Illuminating 크림 50ml (미검수 근거)
+16번. luvum 그린 Citrus 비타민C 젤 크림+ 50ml (미검수 근거)
+19번. 닥터지 Vita Clear Gluta 샷 7+ Wrapping 블레미쉬 크림 50ml (미검수 근거)
+[세안]
+6번. 네오젠 Dermalogy 더블 Vita 캡슐 클렌징 폼 150ml (미검수 근거)
+13번. 메디필 Melanon X 앰플 클렌저 150ml (미검수 근거)
+[미분류]
+5번. 아누아 [세트] 나이아신아마이드 5 TXA 마스크시트 (+1매) (미검수 근거)
+7번. CNP 더마+ Answer 브라이트닝 부스터 TXA-PDRN 앰플 30ml (미검수 근거)
+20번. AHC Ten Revolution 리얼 아이크림 포 Face 35mL (미검수 근거)
+
+[보류 요약]
+- no_evidence: 현재 연결된 근거로 충분히 확인하지 못한 후보 성분: 알로에신, 헥사펩타이드-2, 댕댕이나무열매즙
+- missing_information: 표준 성분을 확정하지 못한 Case 관련 성분: 트라넥삼산
+======================================================================
