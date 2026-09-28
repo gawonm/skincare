@@ -22,6 +22,11 @@ export function buildProductDetailPath(productId: string): string {
   return `/product/${productId}`;
 }
 
+/** 원화 가격 표시 형식. 천 단위 구분 쉼표 + "원". */
+export function formatPriceWon(won: number): string {
+  return `${won.toLocaleString("ko-KR")}원`;
+}
+
 /** `models.product.ProductServiceCategory` 미러(값 문자열이 같아야 필터가 통한다). */
 export enum ProductServiceCategory {
   EssenceSerum = "에센스·세럼",

@@ -17,6 +17,7 @@ import {
   ApplicabilityStatus,
   ChatErrorCode,
   ChatIntent,
+  ChatSectionType,
   ChatTurnStatus,
   ConstraintSource,
   DayPeriod,
@@ -30,6 +31,7 @@ import {
   UnverifiableReason,
   Weekday,
 } from "../constants/chat";
+import { ProductServiceCategory } from "../constants/product";
 
 /** `ChatSendMessageRequest` 미러. 방 식별자는 서버가 로그인 사용자로 찾으므로 없다. */
 export const chatSendRequestSchema = z.object({
@@ -224,6 +226,100 @@ export const routineSaveHandoffSchema = z.object({
 });
 export type RoutineSaveHandoff = z.infer<typeof routineSaveHandoffSchema>;
 
+// --- sections (docs/contracts/front-to-backend.md "응답 확장: 섹션") ---
+//
+// message 를 문단 순서대로 나눠 종류 태그(type)를 붙인 것. artifacts 와 달리 태그가 있어
+// z.discriminatedUnion 으로 구분한다. 원본은 `backend/schemas/chat.py`.
+
+const productCardViewSchema = z.object({
+  rank: z.number().int().min(1),
+  product_id: z.string().min(1),
+  name: z.string().min(1),
+  // 아래 넷은 backend 가 product 테이블에서 보강한 값이라 없을 수 있다(개발용 fixture 등).
+  brand: z.string().nullable(),
+  image_url: z.string().nullable(),
+  lowest_price: z.number().int().nullable(),
+  service_category: z.nativeEnum(ProductServiceCategory).nullable(),
+  reasons: z.array(z.string()),
+  cautions: z.array(z.string()),
+  basis_label: z.string().nullable(),
+});
+export type ProductCardView = z.infer<typeof productCardViewSchema>;
+
+const productGroupViewSchema = z.object({
+  role_label: z.string().nullable(),
+  items: z.array(productCardViewSchema).min(1),
+});
+export type ProductGroupView = z.infer<typeof productGroupViewSchema>;
+
+export const chatTextSectionSchema = z.object({
+  type: z.literal(ChatSectionType.Text),
+  text: z.string().min(1),
+});
+
+export const chatProductListSectionSchema = z.object({
+  type: z.literal(ChatSectionType.ProductList),
+  candidate_set_id: z.string().min(1),
+  groups: z.array(productGroupViewSchema).min(1),
+  text: z.string().min(1),
+});
+export type ChatProductListSection = z.infer<typeof chatProductListSectionSchema>;
+
+const routineStepViewSchema = z.object({
+  period: z.nativeEnum(DayPeriod),
+  order: z.number().int().min(1),
+  product_id: z.string().min(1),
+  product_name: z.string().min(1),
+  reason: z.string().min(1),
+});
+
+const routineDayViewSchema = z.object({
+  weekday: z.nativeEnum(Weekday),
+  steps: z.array(routineStepViewSchema).min(1),
+});
+
+export const chatRoutineSectionSchema = z.object({
+  type: z.literal(ChatSectionType.Routine),
+  routine_id: z.string().min(1),
+  version: z.number().int().min(1),
+  days: z.array(routineDayViewSchema),
+  constraints: z.array(z.string()),
+  changes: z.array(z.string()),
+  text: z.string().min(1),
+});
+
+export const referenceViewSchema = z.object({
+  source_title: z.string().min(1),
+  locator: z.string().min(1),
+  url: z.string().nullable(),
+  source_type: z.nativeEnum(EvidenceSourceType),
+});
+export type ReferenceView = z.infer<typeof referenceViewSchema>;
+
+export const chatEvidenceSectionSchema = z.object({
+  type: z.literal(ChatSectionType.Evidence),
+  answer_id: z.string().min(1),
+  subject: z.string().min(1),
+  text: z.string().min(1),
+  references: z.array(referenceViewSchema),
+});
+
+export const chatNoticeSectionSchema = z.object({
+  type: z.literal(ChatSectionType.Notice),
+  kind: z.nativeEnum(UnresolvedKind),
+  detail: z.string().min(1),
+  retryable: z.boolean(),
+});
+
+export const chatSectionSchema = z.discriminatedUnion("type", [
+  chatTextSectionSchema,
+  chatProductListSectionSchema,
+  chatRoutineSectionSchema,
+  chatEvidenceSectionSchema,
+  chatNoticeSectionSchema,
+]);
+export type ChatSection = z.infer<typeof chatSectionSchema>;
+
 /** `ChatTurnResponse` 미러. */
 export const chatTurnResponseSchema = z.object({
   chat_room_id: z.string().min(1),
@@ -239,5 +335,6 @@ export const chatTurnResponseSchema = z.object({
   error_code: z.nativeEnum(ChatErrorCode).nullable(),
   retryable: z.boolean(),
   save_handoff: routineSaveHandoffSchema.nullable(),
+  sections: z.array(chatSectionSchema).min(1),
 });
 export type ChatTurnResponse = z.infer<typeof chatTurnResponseSchema>;
