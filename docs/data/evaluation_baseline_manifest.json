@@ -1,0 +1,45 @@
+{
+  "manifest_version": "1",
+  "data_state_id": "skincare-ref-v5_2__alembic-cdff29b164d8__manifest-1",
+  "generated_at": "2026-09-30",
+  "measured_code_commit": "ea915de",
+  "measured_branch_of_docs": "docs/data-runtime-quality-audits-v2",
+  "db_name": "skincare_reference_20260923_v5_2",
+  "alembic_revision": "cdff29b164d8",
+  "alembic_parent_revision_of_dump": "9f4c2a7d8e61",
+  "row_counts": {
+    "nia_case_document": 3581,
+    "product": 2262,
+    "product_ingredient_snapshot": 2216,
+    "product_ingredient": 84390,
+    "ingredient_master": 21974,
+    "evidence_document": 128,
+    "evidence_chunk": 8487
+  },
+  "corpus_versions": {
+    "nia_case_document.text_version": "nia_case_text/v1",
+    "nia_case_document.embedding_model": "BAAI/bge-m3",
+    "evidence_chunk.embedding_model": "BAAI/bge-m3",
+    "embedding_dimension": 1024,
+    "vector_index": "hnsw (ix_nia_case_document_embedding_hnsw, ix_evidence_chunk_embedding_hnsw)"
+  },
+  "runtime_models_reported": {
+    "embedding_model": "BAAI/bge-m3",
+    "reranker_model": "BAAI/bge-reranker-v2-m3",
+    "source": "Notion WBS 3.3.2 (Q01~Q05 실행 기록). 실행 당시 config.yaml 값은 저장소에 기록되지 않음",
+    "chat_model": null,
+    "chat_model_note": "실행 당시 값이 기록되지 않았다. config.yaml.sample 기본값은 gpt-4o-mini 이지만 실제 사용값으로 간주하지 않는다"
+  },
+  "dump": {
+    "name": "skincare_reference_2026-09-23_v5_2.dump",
+    "sha256": null,
+    "sha256_note": "복원 DB와 dump 바이트 동일성을 검증하지 않아 기록하지 않는다"
+  },
+  "baseline_run": {
+    "scenarios": ["Q01", "Q02", "Q03", "Q04", "Q05"],
+    "executed_db_name": null,
+    "executed_db_note": "Q01~Q05는 평가용 DB(dump 복원 후 head 로 upgrade)에서 실행된 것으로 Notion 에 기록돼 있다. 그 DB 이름·commit 은 이 저장소에 기록돼 있지 않고, 위 row_counts 와 이전 측정 기준값이 일치하는 것까지만 확인했다",
+    "executed_git_commit": null,
+    "raw_logs_in_repo": false
+  }
+}
