@@ -77,7 +77,7 @@
   unclassified 54).
 - `unclassified` 상품은 selector가 루틴 입력으로 **1개만** 넘긴다. 마스크·패치가 159개여도 대표 1개만 쓰인다.
 
-## FOLLOW-UP (수정하지 않음)
+## External ownership follow-up (수정하지 않음)
 
 - `service_category` NULL 154건의 `category1` 대체 경로 정리 (Data: 분류 backfill / Backend: COALESCE 쿼리).
 - 선케어·마스크·패치를 루틴에서 어떻게 다룰지 정책 (Agent 결정).

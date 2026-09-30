@@ -31,29 +31,31 @@
   "해당 출처는 생명주기 개념이 없음"으로 읽는 것이 §13.1과 일치한다.
 - 성분 연결이 없는 chunk 3건은 모두 CIR이다.
 
-## 옛 문서와 충돌하는 문장 (이번 배치에서 정정)
+## External ownership follow-up — 옛 문서와 §13.1의 의미 차이
 
-| 문서 | 옛 내용 | 조치 |
+아래 문서는 Data 파트 소유가 아니므로 이번 Data 브랜치에서 수정하지 않았다. 각 담당 파트가 정정할지 판단한다.
+
+| 문서 (소유) | 현재 내용 | §13.1과의 차이 |
 | --- | --- | --- |
-| [docs/agent/README.md](../agent/README.md) "Evidence RAG 검수 상태 계약 보류" | 계약 미확정, Data와 합의 필요, PubMed 3건 등 | §13.1 확정으로 정정 |
-| [docs/backend/README.md](../backend/README.md) "확정 정책과 후속 항목" 1항, "`document_status` 매핑 보류" | `NULL → UNREVIEWED` 유지 | §13.1 확정으로 정정 |
-| [PROJECT_OVERVIEW_FOR_PRESENTATION.md](../PROJECT_OVERVIEW_FOR_PRESENTATION.md) | `UNREVIEWED` Evidence 보수 정책 | §13.1 기준으로 정정 |
-| [backend-to-agent.md](../contracts/backend-to-agent.md) §9.1 | "저장값만 신뢰, NULL을 검증 완료로 승격하지 않는다" | §13.1 참조 한 줄 추가 |
+| [docs/agent/README.md](../agent/README.md) "Evidence RAG 검수 상태 계약 보류" (Agent) | 계약 미확정으로 서술, Data와 합의 필요, PubMed 3건 기준 | §13.1은 2026-09-22 확정. `document_status`는 생명주기 메타데이터이며 답변 차단 기준이 아니다. 별도 `review_status` 컬럼도 만들지 않는다 |
+| [docs/backend/README.md](../backend/README.md) "확정 정책과 후속 항목" 1항, "`document_status` 매핑 보류" (Backend) | `NULL → UNREVIEWED` 유지, `final`/`amended_final` 의미를 Data와 합의해야 한다고 서술 | 위와 같음. 합의 대상이 아니라 확정된 계약이다 |
+| [PROJECT_OVERVIEW_FOR_PRESENTATION.md](../PROJECT_OVERVIEW_FOR_PRESENTATION.md) 190행, 248행 (공용) | `UNREVIEWED` Evidence를 Citation·`SUPPORTED`로 승격하지 않는 정책, "`VERIFIED` 매핑 계약 확정"을 남은 과제로 표기 | §13.1과 다르다 |
+| [backend-to-agent.md](../contracts/backend-to-agent.md) §9.1 (공용 계약) | "저장값만 신뢰, NULL을 검증 완료로 승격하지 않는다" | §13.1 참조가 없어 §13.1과 충돌해 읽힐 수 있다. 계약 변경은 양쪽 합의가 필요하다 |
 
 ## 정정하지 않은 역사 문서 (기록용)
 
-작성 당시 상황을 남기는 문서라 수정하지 않는다. 읽을 때 §13.1이 우선한다.
+작성 당시 상황을 남기는 문서라 수정 대상이 아니다. 읽을 때 §13.1이 우선한다.
 
 - [2026-09-23_AGENT_CLAIM_ROUTINE_EVIDENCE_HANDOFF.md](../coordination/2026-09-23_AGENT_CLAIM_ROUTINE_EVIDENCE_HANDOFF.md)
 - [TWO_LAYER_RAG_FOLLOWUP_PLAN.md](../agent/TWO_LAYER_RAG_FOLLOWUP_PLAN.md)
 - [AGENT_INTEGRATION_REVIEW.md](../agent/AGENT_INTEGRATION_REVIEW.md)
 - [agent.md](../agent.md)
 
-## FOLLOW-UP — runtime 코드 잔여물 (수정하지 않음)
+## External ownership follow-up — runtime 코드 잔여물
 
-문서만 정정하고 코드는 §13.1과 아직 어긋난다. 별도 agent/backend 작업이 필요하다.
+코드는 §13.1과 아직 어긋난다. 별도 Agent/Backend 작업이 필요하며 이 브랜치에서는 수정하지 않았다.
 
-- `backend/services/two_layer_rag_adapters.py:303,415-418`: `_VERIFIED_STATUS = "verified"` 매핑은 DB 제약상 성립할 수 없다.
-  결과적으로 모든 Evidence가 `UNREVIEWED`가 된다.
-- `agent/claim_verification.py:167`, `agent/rag/routine_planner.py:320`은 `review_status is VERIFIED`를 게이트로 쓴다.
-- `agent/nodes.py:879,959`, `agent/rag/schemas.py:769`, `agent/rag_response.py:426`에 "미검수" 문구가 남아 있다.
+- Backend: `backend/services/two_layer_rag_adapters.py:303,415-418`의 `_VERIFIED_STATUS = "verified"` 매핑은
+  DB 제약상 성립할 수 없다. 결과적으로 모든 Evidence가 `UNREVIEWED`가 된다.
+- Agent: `agent/claim_verification.py:167`, `agent/rag/routine_planner.py:320`은 `review_status is VERIFIED`를 게이트로 쓴다.
+- Agent: `agent/nodes.py:879,959`, `agent/rag/schemas.py:769`, `agent/rag_response.py:426`에 "미검수" 문구가 남아 있다.
