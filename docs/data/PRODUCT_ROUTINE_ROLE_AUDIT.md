@@ -5,8 +5,8 @@
 > - DB: `skincare_reference_20260923_v5_2` (로컬 Docker, SELECT 전용) — Alembic `cdff29b164d8`
 > - DB 이름과 핸드오프 기준 dump 이름이 대응하지만 dump 바이트 일치는 확인하지 않아 SHA256은 적지 않는다.
 > - 핵심 행 수: `product` 2,262 (confirmed 성분 ≥1: 2,180)
-> - 수치 원본: [product_routine_role_distribution.csv](product_routine_role_distribution.csv),
->   [product_routine_role_ambiguous_samples.csv](product_routine_role_ambiguous_samples.csv)
+> - 수치 원본(로컬 생성물, git 미추적): `product_routine_role_distribution.csv`,
+>   `product_routine_role_ambiguous_samples.csv`
 > - 방법: 운영과 같은 방식(`COALESCE(service_category, product_type_normalized, category1)`)으로 `ProductRecord`를
 >   만들어 실제 `RoutineProductSelector.role()`을 호출했다. LLM 실행 없음, DB 쓰기 없음.
 

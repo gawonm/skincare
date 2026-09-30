@@ -1,9 +1,0 @@
-target_concern,case_id_prefix,total,training,validation,share_pct,target_missing_in_skin_concerns
-모공,POR,1532,1353,179,42.78,0
-미백(색소침착/기미/칙칙함),WHT,1244,1098,146,34.74,2
-여드름/뾰루지,ACN,686,621,65,19.16,0
-붉어짐(홍조),RED,50,46,4,1.40,0
-과각질/악건성,DRY,38,32,6,1.06,1
-주름,WRK,25,23,2,0.70,0
-민감성(트러블/자극감),SEN,4,3,1,0.11,0
-피부처짐/탄력저하,SAG,2,1,1,0.06,0

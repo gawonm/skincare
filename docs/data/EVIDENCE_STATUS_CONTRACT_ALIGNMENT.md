@@ -5,7 +5,7 @@
 > - DB: `skincare_reference_20260923_v5_2` (로컬 Docker, SELECT 전용) — Alembic `cdff29b164d8`
 > - DB 이름과 핸드오프 기준 dump(`skincare_reference_2026-09-23_v5_2.dump`) 이름이 대응하지만, dump 자체와의 바이트 일치는 확인하지 않아 SHA256은 적지 않는다.
 > - 핵심 행 수: `evidence_document` 128 (MFDS 11 / CIR 15 / PubMed 102), `evidence_chunk` 8,487
-> - 수치 원본: [evidence_status_distribution.csv](evidence_status_distribution.csv)
+> - 수치 원본: `evidence_status_distribution.csv` (로컬 생성물, git 미추적)
 
 ## 기준 계약
 

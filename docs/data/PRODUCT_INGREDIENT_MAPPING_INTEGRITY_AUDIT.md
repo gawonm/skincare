@@ -5,7 +5,7 @@
 > - DB: `skincare_reference_20260923_v5_2` (로컬 Docker, SELECT 전용) — Alembic `cdff29b164d8`
 > - DB 이름과 핸드오프 기준 dump 이름이 대응하지만 dump 바이트 일치는 확인하지 않아 SHA256은 적지 않는다.
 > - 핵심 행 수: `product` 2,262 / `product_ingredient_snapshot` 2,216 / `product_ingredient` 84,390
-> - 수치 원본: [product_ingredient_integrity_metrics.csv](product_ingredient_integrity_metrics.csv)
+> - 수치 원본: `product_ingredient_integrity_metrics.csv` (로컬 생성물, git 미추적)
 
 ## 결론
 
