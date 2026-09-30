@@ -453,9 +453,6 @@ class ProductRepository(ABC):
 Evidence 검수 상태는 저장값만 신뢰한다. 통합 fixture라는 이유로 `NULL` 상태를 검증 완료로
 승격하는 별도 완화 정책은 두지 않는다.
 
-> `document_status`의 현행 의미는 [13.1절](#131-document_status의-의미)이 우선한다. 이 값은 생명주기
-> 메타데이터이며 답변 차단 조건이 아니다.
-
 ### 9.2 Claim 조회와 DTO 매핑
 
 `ClaimSearchRequest`는 `annotation_version`을 필수로 받고, `query`와 `skin_concerns`를 순서대로
