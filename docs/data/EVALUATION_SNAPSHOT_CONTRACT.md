@@ -2,7 +2,7 @@
 
 > - generated_at: 2026-09-30 / 코드 기준 commit `ea915de`
 > - DB: `skincare_reference_20260923_v5_2` (SELECT 전용) — Alembic `cdff29b164d8`
-> - Data manifest: [evaluation_baseline_manifest.json](evaluation_baseline_manifest.json)
+> - Data manifest: `evaluation_baseline_manifest.json` (로컬 생성물, git 미추적. 값은 아래 §3 표와 같다)
 > - 이 문서는 **제안**이다. Agent 쪽 fixture는 만들지 않았고 Agent/Backend 파일도 수정하지 않았다.
 
 ## 0. 먼저 알아야 할 한계
@@ -31,7 +31,7 @@ fixture 형식의 확정은 Agent 파트 결정이며, 공용 계약이 필요�
 
 ## 3. A. Data State Manifest
 
-파일: [evaluation_baseline_manifest.json](evaluation_baseline_manifest.json). 현재 값은 DB SELECT로 확인했다.
+파일: `evaluation_baseline_manifest.json`(git 미추적, 로컬 보관). 아래 표가 그 내용이다. 현재 값은 DB SELECT로 확인했다.
 
 | 필드 | 현재 값 | 비고 |
 | --- | --- | --- |
