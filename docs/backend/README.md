@@ -97,11 +97,12 @@ SQL은 Repository에만 두며, Agent가 `AsyncSession`, SQLAlchemy 모델 또�
 
 ### 확정 정책과 후속 항목
 
-1. **Evidence 검수 상태**
-   - 현재 PubMed 3건의 `evidence_document.document_status`가 `NULL`이다.
-   - `UNREVIEWED`로 변환하며 Citation과 `SUPPORTED` 근거로 승격하지 않는다.
-   - 연결 Claim은 `INSUFFICIENT`가 되지만 `CLAIM_ONLY` 상품 후보로 유지한다.
-   - 검증 완료 자료로 사용할 의도라면 Data 파트에서 저장값 또는 명시적인 매핑 규칙을 제공해야 한다.
+1. **Evidence `document_status`** (2026-09-22 확정, [backend-to-agent.md §13.1](../contracts/backend-to-agent.md))
+   - `document_status`는 문서 생명주기 메타데이터이며 답변 가능 여부의 검수 상태가 아니다.
+   - Backend는 저장값을 지우거나 `verified`로 바꿔 쓰지 않고, Agent는 이 값으로 답변을 막지 않는다.
+   - `v5_2` 기준 값이 있는 문서는 CIR 15건뿐이고 MFDS·PubMed 113건은 `NULL`이다
+     ([근거](../data/EVIDENCE_STATUS_CONTRACT_ALIGNMENT.md)).
+   - 어댑터의 `"verified"` 매핑은 계약과 어긋난 잔여 코드다. 후속 작업으로 정리한다.
 2. **Alembic revision**
    - dump의 revision은 `3165318c750d`, 현재 코드 head는 `d4c2a7e91b30`이다.
    - 현재 저장소는 `3165318c750d`를 알지 못하므로 dump 복원 후 `alembic upgrade`를 실행하지 않는다.
@@ -183,35 +184,24 @@ uv run python -m backend.services.nia_case_ingestion_service
   AI 채팅(미정), 회원가입 확장(성별·연령대·약관동의 — 확정 및 구현 완료.
   `models/user.py`, `backend/schemas/auth.py`)
 
-## Evidence RAG `document_status` 매핑 보류 (2026-09-17)
+## Evidence `document_status` 계약 (2026-09-22 확정, 2026-09-30 정정)
 
-`TwoLayerEvidenceSearchBackend`는 DB의 `evidence_document.document_status`를 Agent의
-`EvidenceReviewStatus`로 바꾸는 경계다. 따라서 저장 상태 매핑이 Backend 어댑터에 있는 구조는
-유지한다. 다만 현재 `_VERIFIED_STATUS = "verified"`는 확정된 저장 계약이 아니다.
+> 이 절은 2026-09-17의 "매핑 보류" 내용을 대체한다. 기준은
+> [backend-to-agent.md §13.1](../contracts/backend-to-agent.md)이다.
 
-실제 `skincare_latest` DB의 `ck_evidence_document_document_status`가 허용하는 값은 다음과 같다.
+`evidence_document.document_status`는 원문 문서의 생명주기 메타데이터다. 검수 상태가 아니므로
+`EvidenceReviewStatus`로 변환해 답변을 막는 용도로 쓰지 않는다. `ck_evidence_document_document_status`
+허용값은 다음과 같다.
 
 ```text
 final, amended_final, tentative, draft, rereview, unknown, NULL
 ```
 
-`verified`는 허용값이 아니므로 현재 어댑터의 조건은 실제 DB에서 참이 될 수 없다. 이 코드는
-2026-09-17 읽기 전용 smoke 구현 당시 `document_status=NULL → UNREVIEWED` 동작을 보수적으로
-보장하기 위해 둔 임시 매핑이다. 당시 세 PubMed 행이 모두 `NULL`이어서 검수 완료 상태의 양방향
-계약은 검증하지 못했다.
-
-Evidence RAG 저장·검수 흐름을 구현하기 전까지는 다음 기준을 따른다.
-
-- 현행 `NULL → UNREVIEWED` 동작을 유지한다.
-- `peer_reviewed_study`를 사람 검수 완료 상태로 대신 사용하지 않는다.
-- `final` 또는 `amended_final`을 임의로 `VERIFIED`에 연결하지 않는다.
-- DB CHECK 제약조건을 우회해 `verified` 값을 직접 저장하지 않는다.
-
-후속 구현에서는 Data 파트와 `final`/`amended_final`의 의미를 먼저 합의한다. 사람 검수 완료 의미가
-맞으면 허용 상태 집합을 Enum으로 정의해 Backend 어댑터에서 `VERIFIED`로 변환한다. 문서 생명주기
-상태일 뿐이라면 `review_status` 같은 별도 컬럼이 필요하며, 이 경우 ERD 문서 확인 후 모델과
-마이그레이션을 작성한다. 어느 경우든 `docs/contracts/backend-to-agent.md`의 현재 `verified` 예시는
-실제 저장 계약에 맞게 먼저 수정하고 통합 테스트를 추가한다.
+- 저장값을 삭제하거나 `verified`로 바꿔 쓰지 않는다. 스키마와 마이그레이션도 바꾸지 않는다.
+- 현재 `TwoLayerEvidenceSearchBackend`의 `_VERIFIED_STATUS = "verified"` 매핑은 DB 제약상 성립할 수 없어
+  실제로는 모든 Evidence가 `UNREVIEWED`가 된다. 계약과 어긋난 잔여 코드이며 후속 작업으로 정리한다
+  (이 문서 정정에서는 코드를 수정하지 않았다).
+- 데이터 분포와 정정 대상 목록은 [EVIDENCE_STATUS_CONTRACT_ALIGNMENT.md](../data/EVIDENCE_STATUS_CONTRACT_ALIGNMENT.md)를 본다.
 
 ## NIA Claim 적재 연결 (2026-09-21)
 

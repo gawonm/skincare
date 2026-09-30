@@ -171,30 +171,18 @@ DB 통합 테스트는 active/잘못된 annotation version 분리와 최신 dump
 
 정식 `backend → agent` 계약은 호출자인 backend가 소유하며 위 문서의 합의 내용을 따른다.
 
-## Evidence RAG 검수 상태 계약 보류 (2026-09-17)
+## Evidence `document_status` 계약 (2026-09-22 확정, 2026-09-30 정정)
 
-현재 Evidence RAG의 저장·검수 계약은 아직 확정하지 않았다. Agent는 저장소의 원시 상태 문자열을
-직접 해석하지 않고, Backend가 변환한 `EvidenceReviewStatus`만 사용한다.
+> 이 절은 2026-09-17의 "검수 상태 계약 보류" 내용을 대체한다. 기준은
+> [backend-to-agent.md §13.1](../contracts/backend-to-agent.md)이다. 데이터 근거는
+> [EVIDENCE_STATUS_CONTRACT_ALIGNMENT.md](../data/EVIDENCE_STATUS_CONTRACT_ALIGNMENT.md)에 있다.
 
-- `VERIFIED`: 검수 완료로 합의된 저장 상태만 변환 대상이다. Citation과 `SUPPORTED` 판정에
-  사용할 수 있다.
-- `UNREVIEWED`: 검색 결과에는 남기지만 Citation과 `SUPPORTED` 판정에는 사용하지 않는다.
-  연결된 Claim은 `INSUFFICIENT`가 되며, 명시적 상반·오류가 아니라면 `CLAIM_ONLY` 탐색 후보로
-  유지한다.
-- `evidence_level=peer_reviewed_study`는 자료 유형·근거 등급이지 사람 검수 완료 상태가 아니다.
-  이 값만으로 `VERIFIED`로 승격하지 않는다.
-
-최신 `skincare_reference_2026-09-20_v2` dump의 `evidence_document.document_status` 허용값은
-`final`, `amended_final`, `tentative`, `draft`, `rereview`, `unknown`, `NULL`이다. MFDS 11문서와
-PubMed 3문서는 모두 `NULL`이므로 현재 Agent에서는 모두 `UNREVIEWED`로 보인다.
-
-현재 Backend 어댑터가 확인하는 문자열 `verified`는 dump의 CHECK 제약조건에 존재하지 않아 실제로
-성립할 수 없다. 이는 Evidence RAG 계약 확정 전의 임시 매핑이며, 운영 가능한 검수 상태 계약으로
-간주하지 않는다. Evidence RAG 구현을 이어갈 때 Data 파트와 아래 중 하나를 먼저 합의한다.
-
-1. `final`/`amended_final` 중 어떤 값이 사람 검수 완료를 의미하는지 확정하고 Backend 매핑을 수정한다.
-2. `document_status`가 문서 생명주기만 나타낸다면 별도 `review_status`를 ERD·마이그레이션에 추가한다.
-
-합의 전에는 Agent의 검수 게이트를 완화하거나 PubMed 자료를 자동으로 `VERIFIED` 처리하지 않는다.
-계약이 확정되면 `docs/contracts/backend-to-agent.md`, Agent 회귀 테스트, 실제 DB smoke 결과를 함께
-갱신한다.
+- `evidence_document.document_status`는 원문 문서의 생명주기 메타데이터이고, 답변 가능 여부를 정하는
+  검수 상태가 아니다. Agent는 이 값으로 답변을 막거나 사용자에게 경고하지 않는다.
+- 답변 가능성은 허용 출처, 질문 축 관련성, 적용 조건, non-demo 여부, 인용문 검증으로 판정한다.
+- 별도 `review_status` 컬럼은 만들지 않고 스키마·마이그레이션도 바꾸지 않는다.
+- `v5_2` 기준 허용값은 `final`, `amended_final`, `tentative`, `draft`, `rereview`, `unknown`, `NULL`이다.
+  값이 있는 문서는 CIR 15건뿐이고, MFDS 11건·PubMed 102건은 모두 `NULL`이다.
+- 아래 코드는 아직 이 계약과 어긋나 있다(후속 작업, 이 문서 정정에서는 수정하지 않음):
+  Backend 어댑터의 `"verified"` 매핑(DB 제약상 성립 불가)과 `EvidenceReviewStatus.VERIFIED` 게이트,
+  "미검수" 사용자 문구.

@@ -1,0 +1,6 @@
+source_type,document_status,evidence_level,document_count,chunk_count,chunk_without_ingredient_link
+cir,amended_final,expert_reviewed,2,13,2
+cir,final,expert_reviewed,12,82,1
+cir,rereview,expert_reviewed,1,2,0
+mfds,NULL,official_regulatory,11,8288,0
+pubmed_abstract,NULL,peer_reviewed_study,102,102,0

@@ -187,7 +187,7 @@ flowchart LR
 - Evidence는 문서와 청크를 분리해 원문 위치, 문서 유형, DOI/PMID/URL, 관할, 검수 상태를 보존한다.
 - 검색은 벡터 기반 후보 검색과 텍스트 조건을 결합할 수 있다.
 - 복수 성분 Claim은 성분별 Evidence로 나누어 확인하며, 하나의 Evidence를 복합 Claim 전체의 근거로 과장하지 않는다.
-- 현재 `UNREVIEWED` Evidence는 Citation이나 `SUPPORTED` 결론으로 승격하지 않는 보수적 정책을 사용한다.
+- `document_status`는 문서 생명주기 메타데이터이며 답변 가능 여부의 검수 상태가 아니다. 답변 가능성은 허용 출처, 질문 축 관련성, 적용 조건, 인용문 검증으로 판정한다 ([계약 §13.1](contracts/backend-to-agent.md)).
 
 ### 7.4 NIA Case RAG 최근 성능 평가
 
@@ -245,7 +245,7 @@ flowchart LR
 | 영역 | 현재 상태 | 다음 과제 |
 | --- | --- | --- |
 | NIA Case 검색 | Dense Top-40 + BGE reranker Top-3, 피부 상태-관리 부적합 안전 브레이크 적용 | 전체 질의에서 Case 출력률과 강한 관련성 트레이드오프 확인 |
-| Evidence RAG | Evidence 저장소·검색 어댑터·보수적 검수 정책 구현 | 실제 `document_status`와 `VERIFIED` 매핑 계약 확정 |
+| Evidence RAG | Evidence 저장소·검색 어댑터 구현, `document_status`는 생명주기 메타데이터로 확정(계약 §13.1) | 어댑터의 `verified` 매핑 등 §13.1과 어긋난 runtime 잔여 코드 정리 |
 | 제품 데이터 | 제품·전성분·표준 성분 매칭 저장 구조 구현 | 상품 데이터 최신화와 API/UI 노출 범위 확정 |
 | 채팅 Backend | 인증·저장형 채팅·Agent 조립 연결 | 운영 환경에서 모델·DB 설정과 관찰성 고도화 |
 | 채팅 Frontend | 기본 채팅 및 인증 흐름 구현 | Artifact·Citation·partial 응답을 이해하기 쉬운 UI로 설계 |

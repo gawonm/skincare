@@ -1,0 +1,21 @@
+metric,definition,value
+product_ingredient_total,product_ingredient 전체 행,84390
+mapping_confirmed,match_acceptance=confirmed,78280
+mapping_needs_review,match_acceptance=needs_review,2693
+mapping_unmatched,match_acceptance=unmatched,3417
+token_parse_needs_review,token_parse_status=needs_review,51
+product_total,product 행,2262
+snapshot_total,product_ingredient_snapshot 행,2216
+product_without_snapshot,snapshot이 없는 product,46
+snapshot_without_product,product가 없는 snapshot,0
+product_with_confirmed_ge1,confirmed 성분 1개 이상 상품,2180
+product_with_confirmed_0,confirmed 성분 0개 상품,82
+confirmed_with_null_ingredient_id,confirmed인데 ingredient_id NULL,0
+nonconfirmed_with_ingredient_id,비confirmed인데 ingredient_id 있음,0
+orphan_ingredient_id,ingredient_master에 없는 ingredient_id,0
+duplicate_raw_text_hash_groups,raw_text_hash가 2회 이상인 해시 수,67
+duplicate_raw_text_hash_extra_snapshots,중복 해시로 초과된 snapshot 수(전체-고유),80
+water_needs_review,matching_name=Water 이면서 needs_review,1933
+fragrance_unmatched,matching_name=Fragrance 이면서 unmatched,524
+key_actives_token_confirmed,"raw_token에 retinol|salicylic|glycolic(대소문자 무시) 포함, confirmed",460
+key_actives_token_not_confirmed,"위와 같은 조건, 비confirmed",17

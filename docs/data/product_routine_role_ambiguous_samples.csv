@@ -1,0 +1,48 @@
+ambiguity_reason,source,source_product_id,display_title,resolved_category,service_category,selector_role,confirmed_ingredient_count
+NAME_DOWNGRADE,oliveyoung_global,GA220514943,OOTD PM 오버나이트 아이크림 25mL,크림·로션,크림·로션,unclassified,28
+NAME_DOWNGRADE,oliveyoung_global,GA221116704,하루하루원더 블랙 쌀 바쿠치올 아이크림 20ml,크림·로션,크림·로션,unclassified,39
+NAME_DOWNGRADE,oliveyoung_global,GA230518657,Dr.twentyproject Lifderm Auto 아이크림 20mL,크림·로션,크림·로션,unclassified,70
+NAME_DOWNGRADE,oliveyoung_global,GA231020660,AHC Ten Revolution 리얼 아이크림 포 Face 35mL,크림·로션,크림·로션,unclassified,225
+NAME_DOWNGRADE,oliveyoung_global,GA231120893,아비브 콜라겐 아이크림 Jericho 로즈 Tube 30mL,크림·로션,크림·로션,unclassified,59
+NAME_DOWNGRADE,oliveyoung_global,GA231221487,썸바이미 레티놀 인텐스 어드밴스드 트리플 Action 아이크림 30mL,크림·로션,크림·로션,unclassified,80
+NAME_DOWNGRADE,oliveyoung_global,GA240122018,토리든 Cellmazing 스몰 Molecule 콜라겐 퍼밍 아이크림 30mL,크림·로션,크림·로션,unclassified,53
+NAME_DOWNGRADE,oliveyoung_global,GA240825328,스킨1004 Madagascar 센텔라 Probio-Cica 바쿠치올 아이크림 20ml,크림·로션,크림·로션,unclassified,45
+NAME_DOWNGRADE,oliveyoung_global,GA241026024,LBB Goldrella 펩타이드 28 Anti-Melanin 마스크 크림 100ml,크림·로션,크림·로션,unclassified,36
+NAME_DOWNGRADE,oliveyoung_global,GA241026035,LBB 인텐시브 모이스처라이징 아이크림 15ml,크림·로션,크림·로션,unclassified,31
+SERVICE_CATEGORY_NULL_FALLBACK,oliveyoung_global,GA210000145,MdoC 릴리프 Tonic With Aftershave 150ml,OliveYoungGlobal,,unclassified,46
+SERVICE_CATEGORY_NULL_FALLBACK,oliveyoung_global,GA210000381,Trilogy Certified Organic Rosehip 오일 20ml,OliveYoungGlobal,,unclassified,0
+SERVICE_CATEGORY_NULL_FALLBACK,oliveyoung_global,GA210000563,로벡틴 인텐스 글로우 오일 30ml,OliveYoungGlobal,,unclassified,12
+SERVICE_CATEGORY_NULL_FALLBACK,oliveyoung_global,GA210000663,넥스케어 블레미쉬 Clear 커버 26+52 Count (Round Shape),OliveYoungGlobal,,unclassified,0
+SERVICE_CATEGORY_NULL_FALLBACK,oliveyoung_global,GA210000953,이소이 Acni Dr. 1st 컨트롤 Tonic 90ml,OliveYoungGlobal,,unclassified,18
+SERVICE_CATEGORY_NULL_FALLBACK,oliveyoung_global,GA210001045,셀퓨전씨 TRE.AC 모이스처 젤 Oint 100ml,OliveYoungGlobal,,unclassified,32
+SERVICE_CATEGORY_NULL_FALLBACK,oliveyoung_global,GA210001199,넥스케어 블레미쉬 Clear 커버 릴리프 45+30 Count (Round Shape),OliveYoungGlobal,,unclassified,13
+SERVICE_CATEGORY_NULL_FALLBACK,oliveyoung_global,GA210001339,셀퓨전씨 Post α Centecassol Ointment 40ml,OliveYoungGlobal,,unclassified,0
+SERVICE_CATEGORY_NULL_FALLBACK,oliveyoung_global,GA210002720,라네즈 옴므 액티브 워터 모이스처라이저 125ml,OliveYoungGlobal,,unclassified,23
+SERVICE_CATEGORY_NULL_FALLBACK,oliveyoung_global,GA210003767,하다라보 Gokujyun 밀크 140ml,OliveYoungGlobal,,unclassified,21
+UNMAPPED_CATEGORY,oliveyoung_global,GA210000004,시니크 퍼펙트 필링 Gommage 젤,기타,기타,unclassified,43
+UNMAPPED_CATEGORY,oliveyoung_global,GA210000128,Detclear AHA 필링 젤리 180ml (Mixed Fruit),기타,기타,unclassified,0
+UNMAPPED_CATEGORY,oliveyoung_global,GA210000129,Detclear AHA 필링 젤리 180ml (Mixed Berry),기타,기타,unclassified,19
+UNMAPPED_CATEGORY,oliveyoung_global,GA210000130,Detclear AHA 필링 젤리 180ml (Unscented),기타,기타,unclassified,10
+UNMAPPED_CATEGORY,oliveyoung_global,GA210000147,MdoC Whitening 올인원 150ml,기타,기타,unclassified,52
+UNMAPPED_CATEGORY,oliveyoung_global,GA210001062,CICA·GO 시카 엑스퍼트 미스트 토너 150ml,기타,기타,unclassified,15
+UNMAPPED_CATEGORY,oliveyoung_global,GA210001479,로벡틴 시카 케어 Spot 밤 40ml,기타,기타,unclassified,31
+UNMAPPED_CATEGORY,oliveyoung_global,GA210002034,에스트라 Atobarrier 365 크림 미스트 120ml,기타,기타,unclassified,15
+UNMAPPED_CATEGORY,oliveyoung_global,GA210003716,라카브르 옴므 Re:charge 시카 올인원 에센스,기타,기타,unclassified,34
+UNMAPPED_CATEGORY,oliveyoung_global,GA210003749,GRAYMELIN Pineapple 마일드 필링 젤 100ml,기타,기타,unclassified,33
+UNMAPPED_CATEGORY,oliveyoung_global,GA210000033,"CNP Laboratory Hydrogel Eye 리프팅 패치 (4매,8 패치)",마스크·패치,마스크·패치,unclassified,13
+UNMAPPED_CATEGORY,oliveyoung_global,GA210000525,코스알엑스 Acne Pimple 마스터 패치 24 Count,마스크·패치,마스크·패치,unclassified,0
+UNMAPPED_CATEGORY,oliveyoung_global,GA210000759,Easyderm Beauty 패치 69매,마스크·패치,마스크·패치,unclassified,0
+UNMAPPED_CATEGORY,oliveyoung_global,GA210002084,ELABAND Hydro Dot Eraser 패치 10mm (60+24 Count),마스크·패치,마스크·패치,unclassified,0
+UNMAPPED_CATEGORY,oliveyoung_global,GA210002271,넥스케어 Easy Pick 블레미쉬 패치 케어 63 Count,마스크·패치,마스크·패치,unclassified,0
+UNMAPPED_CATEGORY,oliveyoung_global,GA210002272,넥스케어 Easy Pick 블레미쉬 패치 릴리프 68 Count,마스크·패치,마스크·패치,unclassified,0
+UNMAPPED_CATEGORY,oliveyoung_global,GA210003170,Dr+wonder 원더 패치 Mint 60 Count + 15 Count,마스크·패치,마스크·패치,unclassified,0
+UNMAPPED_CATEGORY,oliveyoung_global,GA210003340,코스알엑스 Clear Fit 마스터 패치 18 Count,마스크·패치,마스크·패치,unclassified,0
+UNMAPPED_CATEGORY,oliveyoung_global,GA210003342,코스알엑스 AC Collection Acne 패치 26 Count,마스크·패치,마스크·패치,unclassified,0
+UNMAPPED_CATEGORY,oliveyoung_global,GA210003374,넥스케어 블레미쉬 패치 릴리프 63 + 48 Count,마스크·패치,마스크·패치,unclassified,0
+UNMAPPED_CATEGORY,oliveyoung_global,GA230518675,마녀공장 얼티밋 올인원 Sun 로션 100mL,선케어,선케어,unclassified,46
+UNMAPPED_CATEGORY,oliveyoung_global,GA250530973,APLB 레티놀 비타민C 비타민E 선크림 40ml,선케어,선케어,unclassified,48
+UNMAPPED_CATEGORY,oliveyoung_global,GA250631431,달바 워터풀 UV 에센스 비타민C&콜라겐 50ml,선케어,선케어,unclassified,63
+UNMAPPED_CATEGORY,oliveyoung_global,GA250732001,slowpure 글로우 Up 플루이드 Sun 세럼 50ml,선케어,선케어,unclassified,62
+UNMAPPED_CATEGORY,oliveyoung_global,GA250732002,slowpure 아쿠아 플루이드 Sun 세럼 50ml,선케어,선케어,unclassified,37
+UNMAPPED_CATEGORY,oliveyoung_global,GA251033912,Dr. Bio Eco Sun 모이스처라이저 100g,선케어,선케어,unclassified,54
+UNMAPPED_CATEGORY,oliveyoung_global,GA260338429,이지듀 EGFx Downtime Sun 35ml,선케어,선케어,unclassified,65
